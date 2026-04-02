@@ -1,0 +1,50 @@
+use_default_settings: true
+
+server:
+  secret_key: "harness-local-dev-key-change-in-prod"
+  bind_address: "0.0.0.0"
+  port: 8080
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+engines:
+  # --- Reliable general search ---
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+    disabled: false
+
+  - name: bing
+    engine: bing
+    shortcut: bi
+    disabled: false
+
+  # --- Code & projects ---
+  - name: github
+    engine: github
+    shortcut: gh
+    disabled: false
+
+  # --- Academic ---
+  - name: arxiv
+    engine: arxiv
+    shortcut: ar
+    disabled: false
+
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+    disabled: false
+
+  # --- Disabled: unstable or blocked by anti-bot ---
+  # Google: frequently returns CAPTCHAs to SearXNG instances
+  - name: google
+    engine: google
+    shortcut: go
+    disabled: true

@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Evidence",
+  "description": "Unified evidence object used across all agents and skills in the research harness.",
+  "type": "object",
+  "required": ["query", "source_type", "url", "title", "summary", "retrieved_at", "retrieval_status"],
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "The search query or research question that produced this evidence."
+    },
+    "source_type": {
+      "type": "string",
+      "enum": ["github", "arxiv", "blog", "docs", "forum", "paper", "patent", "other"],
+      "description": "Type of source."
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL of the source."
+    },
+    "title": {
+      "type": "string",
+      "description": "Title of the page or resource."
+    },
+    "summary": {
+      "type": "string",
+      "description": "2-5 sentence summary of the content."
+    },
+    "content_md": {
+      "type": "string",
+      "description": "Full or partial content in Markdown format. Optional for large pages."
+    },
+    "published_at": {
+      "type": ["string", "null"],
+      "format": "date",
+      "description": "Publication or last-updated date of the source. Null if unknown."
+    },
+    "retrieved_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when this evidence was retrieved."
+    },
+    "license": {
+      "type": ["string", "null"],
+      "description": "License of the project or content, if applicable."
+    },
+    "freshness_signals": {
+      "type": "object",
+      "description": "Signals related to how current the source is.",
+      "properties": {
+        "last_commit_date": { "type": ["string", "null"], "format": "date" },
+        "latest_release_date": { "type": ["string", "null"], "format": "date" },
+        "page_updated_date": { "type": ["string", "null"], "format": "date" }
+      }
+    },
+    "community_signals": {
+      "type": "object",
+      "description": "Signals related to community activity.",
+      "properties": {
+        "stars": { "type": ["integer", "null"] },
+        "forks": { "type": ["integer", "null"] },
+        "open_issues": { "type": ["integer", "null"] },
+        "contributors": { "type": ["integer", "null"] }
+      }
+    },
+    "evidence_spans": {
+      "type": "array",
+      "description": "Specific text spans or quotes that support the evidence.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["confirmed", "likely", "unknown"],
+      "description": "Confidence level of this evidence."
+    },
+    "retrieval_status": {
+      "type": "string",
+      "enum": ["succeeded", "failed", "partial", "cached"],
+      "description": "Status of the retrieval attempt."
+    },
+    "scores": {
+      "type": "object",
+      "description": "Ranking scores assigned during evidence evaluation.",
+      "properties": {
+        "freshness": { "type": "number", "minimum": 0, "maximum": 5 },
+        "credibility": { "type": "number", "minimum": 0, "maximum": 5 },
+        "reproducibility": { "type": "number", "minimum": 0, "maximum": 5 },
+        "community_activity": { "type": "number", "minimum": 0, "maximum": 5 }
+      }
+    }
+  }
+}
