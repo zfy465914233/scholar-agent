@@ -1,7 +1,6 @@
 """Shared configuration reader for Lore Agent.
 
-Looks for .lore.json in the current working directory and walks up to find it.
-If not found, falls back to defaults inside the lore-agent directory.
+Looks for .lore.json walking up from cwd. If not found, defaults to cwd.
 
 Config file format (.lore.json):
 {
@@ -19,10 +18,10 @@ from pathlib import Path
 # Lore Agent's own directory (where this file lives)
 LORE_ROOT = Path(__file__).resolve().parents[1]
 
-# Defaults when running standalone (lore-agent is the project root)
+# Defaults: always resolve relative to cwd, not lore-agent directory
 _DEFAULTS = {
-    "knowledge_dir": str(LORE_ROOT / "knowledge"),
-    "index_path": str(LORE_ROOT / "indexes" / "local" / "index.json"),
+    "knowledge_dir": str(Path.cwd() / "knowledge"),
+    "index_path": str(Path.cwd() / "indexes" / "local" / "index.json"),
     "lore_dir": str(LORE_ROOT),
 }
 
