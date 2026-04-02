@@ -32,7 +32,7 @@ SAMPLE_PROMPT_BUNDLE = {
     },
     "citations": [
         {
-            "evidence_id": "markov-chain-definition",
+            "evidence_id": "example-markov-chain-definition",
             "origin": "local",
             "title": "Markov Chain Definition",
             "source_type": "definition",

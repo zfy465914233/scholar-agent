@@ -1,5 +1,9 @@
 # Lore — Domain Knowledge Agent with Local Retrieval
 
+![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![MCP Ready](https://img.shields.io/badge/MCP-Ready-brightgreen.svg)
+
 A self-contained knowledge system that can be dropped into any project. Provides semantic search over a local knowledge base, web research via SearXNG, structured answer synthesis, and a knowledge improvement loop — all accessible to Claude Code and VS Code Copilot through MCP.
 
 ## Quick Start
@@ -119,4 +123,4 @@ python -m pytest tests/ -v
 
 ## License
 
-Internal use. See individual knowledge cards for source attribution.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

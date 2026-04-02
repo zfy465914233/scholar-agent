@@ -23,18 +23,16 @@ class DomainSeedCardsTest(unittest.TestCase):
                 f"stdout={build_result.stdout!r} stderr={build_result.stderr!r}"
             )
 
-    def test_domain_seed_cards_are_indexed(self) -> None:
+    def test_example_cards_are_indexed(self) -> None:
         payload = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
         doc_ids = {doc["doc_id"] for doc in payload["documents"]}
-        self.assertIn("qpe-error-bound-derivation", doc_ids)
-        self.assertIn("lp-duality-theorem", doc_ids)
-        self.assertIn("quantization-aware-training-method", doc_ids)
+        self.assertIn("example-markov-chain-definition", doc_ids)
 
-    def test_domain_seed_cards_are_retrievable(self) -> None:
+    def test_example_cards_are_retrievable(self) -> None:
         command = [
             sys.executable,
             "scripts/local_retrieve.py",
-            "qpe error bound",
+            "Markov chain definition",
             "--index",
             str(INDEX_PATH),
             "--limit",
@@ -45,7 +43,7 @@ class DomainSeedCardsTest(unittest.TestCase):
 
         payload = json.loads(result.stdout)
         doc_ids = [item["doc_id"] for item in payload["results"]]
-        self.assertIn("qpe-error-bound-derivation", doc_ids)
+        self.assertIn("example-markov-chain-definition", doc_ids)
 
 
 if __name__ == "__main__":

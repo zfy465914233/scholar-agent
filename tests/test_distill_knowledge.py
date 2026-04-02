@@ -70,7 +70,7 @@ class DistillKnowledgeTest(unittest.TestCase):
             self.assertIn("type: distilled_note", text)
             self.assertIn("confidence: draft", text)
             self.assertIn("## Direct Support", text)
-            self.assertIn("markov-chain-definition", text)
+            self.assertIn("example-markov-chain-definition", text)
             self.assertIn("## Citations", text)
 
 

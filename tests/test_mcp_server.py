@@ -15,13 +15,12 @@ from mcp_server import query_knowledge, save_research, list_knowledge
 
 class QueryKnowledgeTest(unittest.TestCase):
     def test_query_returns_results(self) -> None:
-        result = json.loads(query_knowledge("XGBoost QPE radar"))
+        result = json.loads(query_knowledge("Markov chain"))
         self.assertIn("results", result)
         self.assertGreater(len(result["results"]), 0)
 
     def test_query_missing_index(self) -> None:
         result = json.loads(query_knowledge("test", limit=1))
-        # If index exists, results will be present
         self.assertIn("results", result)
 
     def test_query_with_limit(self) -> None:

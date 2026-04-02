@@ -26,18 +26,15 @@ class LocalIndexTest(unittest.TestCase):
 
         payload = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
         self.assertIn("documents", payload)
-        self.assertGreaterEqual(len(payload["documents"]), 2)
+        self.assertGreaterEqual(len(payload["documents"]), 1)
 
         doc_ids = {doc["doc_id"] for doc in payload["documents"]}
-        self.assertIn("markov-chain-definition", doc_ids)
-        self.assertIn("stationary-distribution-derivation", doc_ids)
+        self.assertIn("example-markov-chain-definition", doc_ids)
         self.assertNotIn("README", doc_ids)
 
-        definition_doc = next(doc for doc in payload["documents"] if doc["doc_id"] == "markov-chain-definition")
+        definition_doc = next(doc for doc in payload["documents"] if doc["doc_id"] == "example-markov-chain-definition")
         self.assertEqual("definition", definition_doc["type"])
-        self.assertEqual("markov_chain", definition_doc["topic"])
-        self.assertIn("markov-chain", definition_doc["tags"])
-        self.assertIn("Markov chain is a stochastic process", definition_doc["search_text"])
+        self.assertIn("Markov", definition_doc["search_text"])
 
 
 if __name__ == "__main__":

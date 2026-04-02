@@ -27,7 +27,7 @@ class LocalRagSmokeTest(unittest.TestCase):
             [
                 sys.executable,
                 "scripts/local_retrieve.py",
-                "stationary distribution derivation",
+                "Markov chain stochastic process",
                 "--index",
                 str(INDEX_PATH),
                 "--limit",
@@ -45,7 +45,7 @@ class LocalRagSmokeTest(unittest.TestCase):
 
         payload = json.loads(retrieve_result.stdout)
         doc_ids = [item["doc_id"] for item in payload["results"]]
-        self.assertIn("stationary-distribution-derivation", doc_ids)
+        self.assertIn("example-markov-chain-definition", doc_ids)
 
 
 if __name__ == "__main__":

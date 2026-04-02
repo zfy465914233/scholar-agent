@@ -102,18 +102,6 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
                 capture_output=True, text=True, cwd=ROOT,
             )
 
-    def test_xgboost_qpe_card_is_retrievable(self) -> None:
-        """Verify the real XGBoost QPE research card is retrievable."""
-        result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_retrieve.py"),
-             "XGBoost radar QPE", "--index", str(INDEX_PATH), "--limit", "3"],
-            capture_output=True, text=True, cwd=SCRIPTS,
-        )
-        self.assertEqual(0, result.returncode, msg=result.stderr)
-        payload = json.loads(result.stdout)
-        self.assertGreater(len(payload["results"]), 0)
-        self.assertIn("xgboost", payload["results"][0]["doc_id"].lower())
-
     def test_close_loop_card_has_all_sections(self) -> None:
         """Card written by close_knowledge_loop must contain all standard sections."""
         answer = {

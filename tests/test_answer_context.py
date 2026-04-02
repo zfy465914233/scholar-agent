@@ -51,10 +51,10 @@ class AnswerContextTest(unittest.TestCase):
         self.assertGreaterEqual(len(payload["citations"]), 1)
 
         citation_ids = {item["evidence_id"] for item in payload["citations"]}
-        self.assertIn("markov-chain-definition", citation_ids)
+        self.assertIn("example-markov-chain-definition", citation_ids)
 
         direct_ids = {item["evidence_id"] for item in payload["direct_support"]}
-        self.assertIn("markov-chain-definition", direct_ids)
+        self.assertIn("example-markov-chain-definition", direct_ids)
 
         self.assertTrue(
             any("web evidence" in note.lower() or "web source" in note.lower() for note in payload["uncertainty_notes"])

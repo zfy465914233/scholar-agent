@@ -87,7 +87,7 @@ class PromoteDraftTest(unittest.TestCase):
             self.assertIn("type: definition", text)
             self.assertIn("origin: promoted_from_distilled_note", text)
             self.assertIn("source_refs:", text)
-            self.assertIn("markov-chain-definition", text)
+            self.assertIn("example-markov-chain-definition", text)
             self.assertIn("## Candidate Summary", text)
 
     def test_promote_draft_routes_additional_card_types(self) -> None:
