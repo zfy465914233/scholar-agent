@@ -1,14 +1,12 @@
 """Synthesize a structured answer from an evidence-driven prompt bundle.
 
-This module closes the biggest gap in the system: it takes the rendered prompt
-bundle (system + user prompt from render_answer_bundle.py) and calls an LLM to
-produce a structured answer with grounded claims, inferences, uncertainty, and
-citation tracking.
+Supports two modes:
+  1. API mode: calls an OpenAI-compatible LLM API
+  2. Local mode: uses a pre-written answer JSON (--local-answer)
 
-LLM backend configuration (environment variables):
+Configuration (environment variables):
   LLM_API_URL  – base URL for OpenAI-compatible chat completions endpoint.
-                 Default: https://api.openai.com/v1
-  LLM_API_KEY  – API key. Required in production; omitted for local/offline.
+  LLM_API_KEY  – API key.
   LLM_MODEL    – model identifier. Default: gpt-4o-mini
 """
 
@@ -21,7 +19,6 @@ import sys
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 
@@ -77,6 +74,16 @@ def parse_args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Print the API request payload without calling the LLM.",
+    )
+    parser.add_argument(
+        "--local-answer",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a JSON file containing a pre-written structured answer. "
+            "Skips the LLM API call entirely. Use this when the LLM answer is "
+            "provided externally (e.g. by a host agent)."
+        ),
     )
     return parser.parse_args()
 
@@ -141,24 +148,17 @@ def call_llm(request_payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def parse_answer(raw_content: str) -> dict[str, Any]:
-    """Extract structured answer JSON from the LLM response.
-
-    The LLM may wrap JSON in markdown code fences or add preamble text.
-    This function handles both cases.
-    """
+    """Extract structured answer JSON from the LLM response."""
     text = raw_content.strip()
 
-    # Strip markdown code fences if present
     if text.startswith("```"):
         lines = text.split("\n")
-        # Remove first line (```json or ```) and last line (```)
         lines = [l for l in lines if not l.strip().startswith("```")]
         text = "\n".join(lines).strip()
 
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
-        # Try to find JSON object within the text
         start = text.find("{")
         end = text.rfind("}") + 1
         if start >= 0 and end > start:
@@ -188,7 +188,7 @@ def build_synthesis_output(
     answer: dict[str, Any],
     prompt_bundle: dict[str, Any],
     model: str,
-    usage: dict[str, int],
+    usage: dict[str, Any],
 ) -> dict[str, Any]:
     """Assemble the final synthesis output with metadata."""
     return {
@@ -203,8 +203,21 @@ def build_synthesis_output(
     }
 
 
-def synthesize(prompt_bundle: dict[str, Any], model: str, dry_run: bool = False) -> dict[str, Any]:
-    """Full synthesis pipeline: build request, call LLM, parse response."""
+def synthesize(
+    prompt_bundle: dict[str, Any],
+    model: str,
+    dry_run: bool = False,
+    local_answer: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Full synthesis pipeline.
+
+    If local_answer is provided, it is used directly without calling any API.
+    """
+    if local_answer is not None:
+        return build_synthesis_output(
+            local_answer, prompt_bundle, model, {"source": "local"}
+        )
+
     request_payload = build_chat_request(prompt_bundle, model)
 
     if dry_run:
@@ -223,7 +236,11 @@ def main() -> int:
     model = args.model or LLM_MODEL
     prompt_bundle = load_prompt_bundle(args.prompt_bundle)
 
-    output = synthesize(prompt_bundle, model, dry_run=args.dry_run)
+    local_answer = None
+    if args.local_answer:
+        local_answer = json.loads(args.local_answer.read_text(encoding="utf-8"))
+
+    output = synthesize(prompt_bundle, model, dry_run=args.dry_run, local_answer=local_answer)
     text = json.dumps(output, ensure_ascii=False, indent=2)
 
     if args.output:
