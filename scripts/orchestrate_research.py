@@ -20,6 +20,13 @@ LATEST_PATTERNS = (
     "today",
     "current",
     "sota",
+    # Synonym expansion: Chinese equivalents
+    "最新",
+    "最近",
+    "进展",
+    "前沿",
+    "现状",
+    "当前",
 )
 DEFINITION_PATTERNS = (
     "what is",
@@ -29,6 +36,12 @@ DEFINITION_PATTERNS = (
     "derivation",
     "theorem",
     "proof",
+    # Synonym expansion: Chinese equivalents
+    "什么是",
+    "定义",
+    "推导",
+    "证明",
+    "原理",
 )
 CODE_PATTERNS = (
     "bug",
@@ -37,7 +50,14 @@ CODE_PATTERNS = (
     "failing test",
     "script",
     "code",
+    # Synonym expansion
+    "报错",
+    "异常",
+    "调试",
 )
+
+# Threshold: if top BM25 score is below this, consider web-led even without keyword match
+LOCAL_SCORE_THRESHOLD = 2.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -74,7 +94,7 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.lower()).strip()
 
 
-def classify_route(query: str) -> str:
+def classify_route(query: str, index_path: Path | None = None) -> str:
     normalized = normalize_text(query)
 
     if any(pattern in normalized for pattern in LATEST_PATTERNS):
@@ -83,7 +103,32 @@ def classify_route(query: str) -> str:
         return "local-led"
     if any(pattern in normalized for pattern in CODE_PATTERNS):
         return "context-led"
+
+    # Probe retrieval: if local knowledge has a strong match, prefer local-led
+    top_score = _probe_local_score(query, index_path)
+    if top_score is not None:
+        if top_score >= LOCAL_SCORE_THRESHOLD:
+            return "local-led"
+        else:
+            return "web-led"
+
     return "mixed"
+
+
+def _probe_local_score(query: str, index_path: Path | None = None) -> float | None:
+    """Probe local retrieval and return the top-1 BM25 score, or None if unavailable."""
+    if index_path is None or not index_path.exists():
+        return None
+    try:
+        from local_retrieve import retrieve_bm25
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        documents = payload.get("documents", [])
+        if not documents:
+            return None
+        results = retrieve_bm25(query, documents, 1)
+        return results[0]["score"] if results else 0.0
+    except Exception:
+        return None
 
 
 def build_decision(route: str, has_web_evidence: bool) -> dict[str, object]:
@@ -138,7 +183,7 @@ def generate_web_evidence(query: str, research_script: Path) -> tuple[Path | Non
 
 def main() -> int:
     args = parse_args()
-    route = classify_route(args.query) if args.mode == "auto" else args.mode
+    route = classify_route(args.query, args.index) if args.mode == "auto" else args.mode
     generated_web_path: Path | None = None
     warnings: list[str] = []
 

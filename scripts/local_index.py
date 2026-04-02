@@ -21,6 +21,17 @@ def parse_args() -> argparse.Namespace:
         default=Path("indexes/local/index.json"),
         help="Output path for the generated index.",
     )
+    parser.add_argument(
+        "--build-embedding-index",
+        action="store_true",
+        help="Also build an embedding index alongside the BM25 index.",
+    )
+    parser.add_argument(
+        "--embedding-output",
+        type=Path,
+        default=Path("indexes/local/embeddings.json"),
+        help="Output path for the embedding index.",
+    )
     return parser.parse_args()
 
 
@@ -134,6 +145,21 @@ def main() -> int:
     payload = build_index(args.knowledge_root)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    if args.build_embedding_index:
+        try:
+            from embedding_retrieve import build_embedding_index as build_emb
+            emb_index = build_emb(payload.get("documents", []))
+            valid = sum(1 for e in emb_index["embeddings"] if e)
+            total = len(emb_index["doc_ids"])
+            args.embedding_output.parent.mkdir(parents=True, exist_ok=True)
+            args.embedding_output.write_text(
+                json.dumps(emb_index, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+            print(f"Embedding index: {valid}/{total} docs embedded → {args.embedding_output}", file=__import__("sys").stderr)
+        except Exception as exc:
+            print(f"Warning: embedding index build failed ({exc}), skipping", file=__import__("sys").stderr)
+
     return 0
 
 
