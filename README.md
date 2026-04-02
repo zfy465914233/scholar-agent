@@ -143,8 +143,34 @@ python scripts/close_knowledge_loop.py \
 ## Running Tests
 
 ```bash
-python -m pytest tests/ -v
+python -m pytest tests/ -v    # 74 tests, ~4s
 ```
+
+## Benchmark
+
+Built-in eval harness with 8 benchmark cases across 4 query categories.
+
+```bash
+python scripts/run_eval.py --dry-run
+```
+
+| Metric | Score |
+|---|---|
+| **Route accuracy** | 100% (8/8) |
+| **Retrieval hit rate** | 100% (8/8) |
+| **Min citations met** | 100% (8/8) |
+| **Errors** | 0 |
+
+Breakdown by category:
+
+| Category | Cases | Route correct | Retrieval hit |
+|---|---|---|---|
+| Definition (local-led) | 3 | 3/3 | 3/3 |
+| Derivation (mixed) | 2 | 2/2 | 2/2 |
+| Freshness (web-led) | 2 | 2/2 | 2/2 |
+| Comparison (mixed) | 1 | 1/1 | 1/1 |
+
+> Note: Dry-run mode skips LLM calls. `answer_present_rate` is 0% in dry-run since no LLM generates answers. With a live LLM, answer quality is additionally evaluated.
 
 ## License
 
