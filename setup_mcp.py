@@ -6,9 +6,11 @@ Usage:
   python lore-agent/setup_mcp.py
 
 This will:
-  1. Add Lore MCP server to .mcp.json (Claude Code)
-  2. Add Lore MCP server to .vscode/mcp.json (VS Code Copilot)
-  3. Add a CLAUDE.md snippet instructing the AI to use Lore tools
+  1. Create .lore.json config pointing knowledge to the parent project
+  2. Create knowledge/ and indexes/ directories in the parent project
+  3. Add Lore MCP server to .mcp.json (Claude Code)
+  4. Add Lore MCP server to .vscode/mcp.json (VS Code Copilot)
+  5. Add a CLAUDE.md snippet instructing the AI to use Lore tools
 """
 
 from __future__ import annotations
@@ -117,6 +119,55 @@ def setup_claude_md(parent_root: Path, lore_dir: Path) -> None:
     print(f"  Updated {claude_md_path.relative_to(parent_root)}")
 
 
+def setup_lore_config(parent_root: Path, lore_dir: Path) -> None:
+    """Create .lore.json in the parent project pointing knowledge to parent."""
+    config_path = parent_root / ".lore.json"
+
+    config = {
+        "knowledge_dir": "./knowledge",
+        "index_path": "./indexes/local/index.json",
+        "lore_dir": f"./{lore_dir.relative_to(parent_root)}",
+    }
+
+    if config_path.exists():
+        existing = json.loads(config_path.read_text(encoding="utf-8"))
+        existing.update(config)
+        config = existing
+
+    config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"  Updated {config_path.relative_to(parent_root)}")
+
+    # Create knowledge and indexes directories
+    (parent_root / "knowledge").mkdir(exist_ok=True)
+    (parent_root / "indexes" / "local").mkdir(parents=True, exist_ok=True)
+
+    # Copy templates if knowledge dir is empty
+    knowledge_dir = parent_root / "knowledge"
+    templates_src = lore_dir / "knowledge" / "templates"
+    templates_dst = knowledge_dir / "templates"
+    if templates_src.exists() and not templates_dst.exists():
+        import shutil
+        shutil.copytree(templates_src, templates_dst)
+        print(f"  Copied templates to knowledge/templates/")
+
+    # Copy example card if knowledge dir has no cards
+    has_cards = any(
+        p.is_file() and p.suffix == ".md" and "templates" not in p.parts
+        for p in knowledge_dir.rglob("*.md")
+    )
+    if not has_cards:
+        examples_src = lore_dir / "knowledge" / "examples"
+        examples_dst = knowledge_dir / "examples"
+        if examples_src.exists():
+            import shutil
+            if not examples_dst.exists():
+                shutil.copytree(examples_src, examples_dst)
+            else:
+                for f in examples_src.glob("*.md"):
+                    shutil.copy2(f, examples_dst / f.name)
+            print(f"  Copied example cards to knowledge/examples/")
+
+
 def main() -> int:
     lore_dir = get_lore_dir()
     if lore_dir == Path.cwd():
@@ -124,10 +175,11 @@ def main() -> int:
     else:
         parent_root = Path.cwd()
 
-    print(f"Setting up Lore Agent MCP for: {parent_root}")
+    print(f"Setting up Lore Agent for: {parent_root}")
     print(f"Lore directory: {lore_dir}")
     print()
 
+    setup_lore_config(parent_root, lore_dir)
     setup_claude_code(parent_root, lore_dir)
     setup_vscode(parent_root, lore_dir)
     setup_claude_md(parent_root, lore_dir)

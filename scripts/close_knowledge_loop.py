@@ -25,9 +25,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
-DEFAULT_KNOWLEDGE_ROOT = ROOT / "knowledge"
-DEFAULT_INDEX = ROOT / "indexes" / "local" / "index.json"
 ANSWER_SCHEMA_PATH = ROOT / "schemas" / "answer.schema.json"
+
+# Import config helpers
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+from lore_config import get_knowledge_dir, get_index_path
+
+DEFAULT_KNOWLEDGE_ROOT = get_knowledge_dir()
+DEFAULT_INDEX = get_index_path()
 
 
 def parse_args() -> argparse.Namespace:

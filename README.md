@@ -52,10 +52,13 @@ python lore-agent/setup_mcp.py
 ```
 
 This automatically:
+- Creates `.lore.json` config pointing knowledge to your project root
+- Creates `knowledge/` and `indexes/` directories in your project
+- Copies templates and example cards to get you started
 - Injects MCP config into `.mcp.json` (Claude Code) and `.vscode/mcp.json` (VS Code Copilot)
 - Adds a `CLAUDE.md` snippet instructing the AI to prioritize Lore tools
 
-After restarting Claude Code or VS Code, the AI will automatically discover and use `query_knowledge`, `save_research`, and `list_knowledge`.
+Knowledge lives in **your project**, not inside lore-agent. After restarting Claude Code or VS Code, the AI will automatically discover and use `query_knowledge`, `save_research`, and `list_knowledge`.
 
 ## MCP Integration
 

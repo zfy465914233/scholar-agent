@@ -44,10 +44,8 @@ from close_knowledge_loop import (
     validate_answer_schema,
 )
 from close_knowledge_loop import reindex as _reindex
+from lore_config import get_knowledge_dir, get_index_path
 from local_retrieve import retrieve
-
-KNOWLEDGE_ROOT = ROOT / "knowledge"
-DEFAULT_INDEX = ROOT / "indexes" / "local" / "index.json"
 
 try:
     from fastmcp import FastMCP
@@ -71,13 +69,13 @@ def query_knowledge(query: str, limit: int = 5) -> str:
         query: The search query in natural language.
         limit: Maximum number of results to return (default 5).
     """
-    if not DEFAULT_INDEX.exists():
+    if not get_index_path().exists():
         return json.dumps({
             "error": "Knowledge index not found. Run local_index.py first.",
             "results": [],
         })
 
-    result = retrieve(query, DEFAULT_INDEX, limit)
+    result = retrieve(query, get_index_path(), limit)
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
@@ -108,10 +106,10 @@ def save_research(query: str, answer_json: str) -> str:
     warnings = validate_answer_schema(answer_data)
 
     # Build knowledge card
-    card_path = build_knowledge_card(query, answer_data, None, KNOWLEDGE_ROOT)
+    card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir())
 
     # Rebuild index
-    reindex_ok = _reindex(DEFAULT_INDEX)
+    reindex_ok = _reindex(get_index_path())
 
     return json.dumps({
         "status": "ok",
@@ -132,7 +130,7 @@ def list_knowledge(topic: str | None = None) -> str:
         topic: Optional topic filter (e.g. 'qpe', 'markov_chain'). Returns all if omitted.
     """
     cards = []
-    for domain_dir in KNOWLEDGE_ROOT.iterdir():
+    for domain_dir in get_knowledge_dir().iterdir():
         if not domain_dir.is_dir() or domain_dir.name == "templates":
             continue
         if topic and domain_dir.name != topic:
