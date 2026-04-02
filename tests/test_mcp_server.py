@@ -52,6 +52,7 @@ class SaveResearchTest(unittest.TestCase):
         import subprocess
         subprocess.run(
             [sys.executable, str(SCRIPTS / "local_index.py"),
+             "--knowledge-root", str(ROOT / "tests" / "fixtures"),
              "--output", str(ROOT / "indexes" / "local" / "index.json")],
             capture_output=True, text=True, cwd=ROOT,
         )
@@ -72,12 +73,31 @@ class SaveResearchTest(unittest.TestCase):
         import subprocess
         subprocess.run(
             [sys.executable, str(SCRIPTS / "local_index.py"),
+             "--knowledge-root", str(ROOT / "tests" / "fixtures"),
              "--output", str(ROOT / "indexes" / "local" / "index.json")],
             capture_output=True, text=True, cwd=ROOT,
         )
 
 
 class ListKnowledgeTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        # Copy fixture card to knowledge dir so list_knowledge can find it
+        import shutil
+        cls.fixture = ROOT / "tests" / "fixtures" / "example-markov-chain.md"
+        cls.target_dir = ROOT / "knowledge" / "examples"
+        cls.target_dir.mkdir(parents=True, exist_ok=True)
+        cls.target = cls.target_dir / "example-markov-chain.md"
+        if not cls.target.exists():
+            shutil.copy2(cls.fixture, cls.target)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls.target.exists():
+            cls.target.unlink()
+        if cls.target_dir.exists() and not any(cls.target_dir.iterdir()):
+            cls.target_dir.rmdir()
+
     def test_list_all_cards(self) -> None:
         result = json.loads(list_knowledge())
         self.assertIn("cards", result)

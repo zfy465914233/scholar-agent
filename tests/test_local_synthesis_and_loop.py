@@ -58,7 +58,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         # Rebuild index to include any new cards
         subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_index.py"), "--output", str(INDEX_PATH)],
+            [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
             capture_output=True, text=True, cwd=ROOT,
         )
 
@@ -98,7 +98,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             card_path.unlink()
             # Reindex without the test card
             subprocess.run(
-                [sys.executable, str(SCRIPTS / "local_index.py"), "--output", str(INDEX_PATH)],
+                [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
                 capture_output=True, text=True, cwd=ROOT,
             )
 
@@ -144,7 +144,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             # Clean up
             card_path.unlink()
             subprocess.run(
-                [sys.executable, str(SCRIPTS / "local_index.py"), "--output", str(INDEX_PATH)],
+                [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
                 capture_output=True, text=True, cwd=ROOT,
             )
 
@@ -172,7 +172,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             if card_path.exists():
                 card_path.unlink()
             subprocess.run(
-                [sys.executable, str(SCRIPTS / "local_index.py"), "--output", str(INDEX_PATH)],
+                [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
                 capture_output=True, text=True, cwd=ROOT,
             )
 

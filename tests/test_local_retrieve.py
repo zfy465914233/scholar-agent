@@ -11,7 +11,7 @@ INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
 
 class LocalRetrieveTest(unittest.TestCase):
     def setUp(self) -> None:
-        build_command = [sys.executable, "scripts/local_index.py", "--output", str(INDEX_PATH)]
+        build_command = [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
         build_result = subprocess.run(build_command, cwd=ROOT, capture_output=True, text=True)
         if build_result.returncode != 0:
             self.fail(
@@ -47,7 +47,7 @@ class LocalRetrieveTest(unittest.TestCase):
         self.assertEqual("examples", top["topic"])
         self.assertIn("markov", top["matched_terms"])
         self.assertGreater(top["score"], 0)
-        self.assertTrue(top["path"].endswith("knowledge/examples/example-markov-chain.md"))
+        self.assertTrue(top["path"].endswith("tests/fixtures/example-markov-chain.md"))
         doc_ids = {item["doc_id"] for item in payload["results"]}
         self.assertNotIn("README", doc_ids)
 

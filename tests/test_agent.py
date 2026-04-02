@@ -28,7 +28,7 @@ class AgentStateMachineTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_index.py"), "--output", str(INDEX_PATH)],
+            [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
             capture_output=True,
             text=True,
         )
@@ -73,7 +73,7 @@ class RouterTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_index.py"), "--output", str(INDEX_PATH)],
+            [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
             capture_output=True, text=True,
         )
 
@@ -125,7 +125,7 @@ class ResearcherTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_index.py"), "--output", str(INDEX_PATH)],
+            [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
             capture_output=True, text=True,
         )
 

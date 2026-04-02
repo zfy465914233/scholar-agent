@@ -14,7 +14,7 @@ class LocalIndexTest(unittest.TestCase):
         INDEX_PATH.unlink(missing_ok=True)
 
     def test_local_index_builder_creates_json_index_from_knowledge_cards(self) -> None:
-        command = [sys.executable, "scripts/local_index.py", "--output", str(INDEX_PATH)]
+        command = [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
         result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
 
         self.assertEqual(

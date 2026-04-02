@@ -16,7 +16,7 @@ def _ensure_index() -> None:
     if INDEX_PATH.exists():
         return
     result = subprocess.run(
-        [sys.executable, str(SCRIPTS / "local_index.py"), "--output", str(INDEX_PATH)],
+        [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
         capture_output=True,
         text=True,
     )

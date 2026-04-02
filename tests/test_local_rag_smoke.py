@@ -12,7 +12,7 @@ INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
 class LocalRagSmokeTest(unittest.TestCase):
     def test_seed_cards_can_be_indexed_and_retrieved_end_to_end(self) -> None:
         index_result = subprocess.run(
-            [sys.executable, "scripts/local_index.py", "--output", str(INDEX_PATH)],
+            [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=ROOT,
             capture_output=True,
             text=True,

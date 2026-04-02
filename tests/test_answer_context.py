@@ -14,7 +14,7 @@ FAKE_HARNESS = ROOT / "tests" / "fake_research_harness.py"
 class AnswerContextTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scripts/local_index.py", "--output", str(INDEX_PATH)],
+            [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=ROOT,
             capture_output=True,
             text=True,
