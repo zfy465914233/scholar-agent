@@ -4,6 +4,8 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![MCP Ready](https://img.shields.io/badge/MCP-Ready-brightgreen.svg)
 
+> 为了解决通用模型在专业领域知识不够优/新的问题，通过在线研究补充 + 本地知识库沉淀实现知识治理，让 AI 在你的领域越用越强。通过 MCP 接入 Claude Code 与 VS Code Copilot。
+
 A **zero-dependency, drop-in knowledge agent** that gives any project local retrieval, web research, structured answer synthesis, and a self-improving knowledge loop — all accessible to Claude Code and VS Code Copilot through MCP.
 
 ## Why Lore Agent?
