@@ -160,7 +160,8 @@ lore-agent/
 │   ├── common.py              # Shared utilities (frontmatter, slug, JSON, dates)
 │   ├── cache_helper.py        # URL cache with TTL + LRU eviction
 │   └── retry.py               # Exponential backoff for external APIs
-├── knowledge/                 # Knowledge cards (templates + examples)
+├── knowledge/                 # Your project's knowledge (follows the project)
+│   └── templates/             # Card templates (optional)
 ├── indexes/                   # Generated (gitignored)
 └── tests/                     # 152 tests, ~5s
 ```
@@ -170,9 +171,7 @@ lore-agent/
 ```
 your-project/
 ├── .lore.json                 # Config: paths to knowledge and indexes
-├── knowledge/                 # Your project's knowledge (follows the project)
-│   ├── templates/             # Card templates
-│   └── examples/              # Example cards
+├── knowledge/                 # Your project's knowledge (empty at first)
 ├── indexes/                   # Generated (gitignored)
 ├── lore-agent/                # Engine only — can be gitignored
 │   ├── scripts/
@@ -193,7 +192,7 @@ The agent calls `save_research(query, answer_json)` which writes a knowledge car
 
 ### Option B: Manually
 
-Create a Markdown file in `knowledge/<domain>/` following a template from `knowledge/templates/`. Then rebuild the index:
+Create a Markdown file in `knowledge/<domain>/` following a template from `lore-agent/templates/`. Then rebuild the index:
 
 ```bash
 python scripts/local_index.py --output indexes/local/index.json
