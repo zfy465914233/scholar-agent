@@ -116,6 +116,31 @@
         "reproducibility": { "type": "number", "minimum": 0, "maximum": 5 },
         "community_activity": { "type": "number", "minimum": 0, "maximum": 5 }
       }
+    },
+    "source_images": {
+      "type": "array",
+      "default": [],
+      "description": "Images extracted from the source page. Includes charts, diagrams, figures, and other non-decorative images that may aid understanding.",
+      "items": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute URL of the image."
+          },
+          "alt_text": {
+            "type": "string",
+            "default": "",
+            "description": "Alt text from the img tag."
+          },
+          "title": {
+            "type": "string",
+            "default": "",
+            "description": "Title attribute from the img tag."
+          }
+        }
+      }
     }
   }
 }

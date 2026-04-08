@@ -93,6 +93,44 @@ def collect_source_urls(research_data: dict | None) -> list[str]:
     return urls
 
 
+# Keywords suggesting an image is a useful diagram/chart rather than a photo
+_CONTENT_IMAGE_KEYWORDS = (
+    "diagram", "chart", "graph", "figure", "plot", "flow",
+    "architecture", "pipeline", "framework", "structure", "schematic",
+    "overview", "comparison", "model", "process", "algorithm",
+    "table", "results", "performance", "heatmap", "confusion",
+    "分布", "流程", "架构", "对比", "示意图", "模型", "图",
+)
+
+
+def collect_source_images(research_data: dict | None) -> list[dict[str, str]]:
+    """Collect relevant source images from research evidence.
+
+    Filters images by alt text heuristics: keeps those whose alt text or
+    filename suggests they are diagrams, charts, or figures — not decorative.
+    Deduplicates by URL. Returns up to 6 images.
+    """
+    seen_urls: set[str] = set()
+    images: list[dict[str, str]] = []
+    if research_data is None:
+        return images
+    for item in research_data.get("evidence", []):
+        for img in item.get("source_images", []):
+            url = img.get("url", "")
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            alt = img.get("alt_text", "").lower()
+            src = url.lower()
+            # Accept if alt text or filename contains content-related keywords
+            if any(kw in alt or kw in src for kw in _CONTENT_IMAGE_KEYWORDS):
+                images.append(img)
+            elif alt and len(alt) > 5:
+                # Has meaningful alt text but no keyword match — keep as borderline
+                images.append(img)
+    return images[:6]
+
+
 def validate_answer_schema(answer_data: dict) -> list[str]:
     """Validate answer_data against schemas/answer.schema.json.
 
@@ -233,6 +271,48 @@ def build_knowledge_card(
         for s in next_steps:
             lines.append(f"- {s}")
         lines.append("")
+
+    visual_aids = answer_data.get("visual_aids", [])
+    if visual_aids:
+        lines.extend(["## Visual Aids", ""])
+        for va in visual_aids:
+            if not isinstance(va, dict):
+                continue
+            va_type = va.get("type", "")
+            content = va.get("content", "")
+            caption = va.get("caption", "")
+            alt_text = va.get("alt_text", caption)
+            if va_type == "mermaid":
+                lines.append(f"**{caption}**")
+                lines.append("```mermaid")
+                lines.append(content)
+                lines.append("```")
+            elif va_type in ("image_url", "image_path"):
+                lines.append(f"![{alt_text}]({content})")
+                lines.append(f"*{caption}*")
+            lines.append("")
+
+    # Auto-collect relevant images from research source pages
+    source_images = collect_source_images(research_data)
+    if source_images:
+        lines.extend(["## Source Images", ""])
+        for img in source_images:
+            url = img.get("url", "")
+            alt = img.get("alt_text", "") or img.get("title", "") or "Source image"
+            source_url = ""
+            # Find which evidence item this image came from
+            if research_data:
+                for item in research_data.get("evidence", []):
+                    for si in item.get("source_images", []):
+                        if si.get("url") == url:
+                            source_url = item.get("url", "")
+                            break
+            lines.append(f"![{alt}]({url})")
+            if source_url:
+                lines.append(f"*{alt} — [source]({source_url})*")
+            else:
+                lines.append(f"*{alt}*")
+            lines.append("")
 
     # Write to knowledge tree
     output_dir = knowledge_root / domain

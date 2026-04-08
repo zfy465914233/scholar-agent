@@ -72,10 +72,20 @@ class TextExtractor(HTMLParser):
         super().__init__()
         self._parts: list[str] = []
         self._skip_depth = 0
+        self.images: list[dict[str, str]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"script", "style", "noscript"}:
             self._skip_depth += 1
+        if tag == "img":
+            attr_dict = dict(attrs)
+            src = attr_dict.get("src", "")
+            if src:
+                self.images.append({
+                    "url": src,
+                    "alt_text": attr_dict.get("alt", ""),
+                    "title": attr_dict.get("title", ""),
+                })
 
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script", "style", "noscript"} and self._skip_depth > 0:
@@ -270,6 +280,11 @@ def build_evidence(user_query: str, candidate: SearchCandidate) -> dict[str, Any
         "scores": score_evidence(source_type, published_at, fetch_result["retrieval_status"]),
     }
 
+    # Include source images if found
+    images = fetch_result.get("images", [])
+    if images:
+        evidence["source_images"] = images
+
     if fetch_result.get("failure_reason"):
         evidence["summary"] = f"{summary} Retrieval note: {fetch_result['failure_reason']}"
     return evidence
@@ -300,6 +315,7 @@ def fetch_content(url: str) -> dict[str, str]:
             "content_md": "",
             "retrieval_status": "partial",
             "failure_reason": "Domain often blocks automated retrieval; kept search snippet only.",
+            "images": [],
         }
 
     cached = cache_get(url)
@@ -309,6 +325,7 @@ def fetch_content(url: str) -> dict[str, str]:
             "content_md": cached,
             "retrieval_status": "cached",
             "failure_reason": "",
+            "images": [],
         }
 
     request = Request(
@@ -327,10 +344,18 @@ def fetch_content(url: str) -> dict[str, str]:
             "content_md": "",
             "retrieval_status": "failed",
             "failure_reason": str(exc),
+            "images": [],
         }
 
     title = extract_html_title(raw)
-    text = html_to_text(raw)
+    text, images = html_to_text(raw)
+    # Resolve relative image URLs against the page URL
+    for img in images:
+        src = img.get("url", "")
+        if src and not src.startswith(("http://", "https://", "data:")):
+            img["url"] = f"{parsed.scheme}://{parsed.netloc}{src if src.startswith('/') else '/' + src}"
+    # Filter out tiny/decorative images (icons, tracking pixels, etc.)
+    images = [img for img in images if not _is_decorative_image(img)]
     content_md = f"# {title}\n\n{text[:MAX_FETCH_CHARS]}".strip() if title else text[:MAX_FETCH_CHARS]
     if content_md:
         cache_put(url, content_md)
@@ -339,7 +364,34 @@ def fetch_content(url: str) -> dict[str, str]:
         "content_md": content_md,
         "retrieval_status": "succeeded" if content_md else "partial",
         "failure_reason": "",
+        "images": images,
     }
+
+
+def _is_decorative_image(img: dict[str, str]) -> bool:
+    """Heuristic to skip icons, tracking pixels, logos, and other decorative images."""
+    src = img.get("url", "").lower()
+    alt = img.get("alt_text", "").lower()
+    decorative_keywords = [
+        "icon", "logo", "badge", "spinner", "loading", "avatar",
+        "pixel", "tracker", "spacer", "bullet", "arrow",
+    ]
+    decorative_patterns = [
+        r"/icon", r"/logo", r"/badge", r"/favicon",
+        r"/spinner", r"/loading", r"/avatar", r"/pixel",
+        r"width[=:]\s*[01]\b", r"height[=:]\s*[01]\b",
+        r"\.svg$", r"1x1", r"blank\.",
+    ]
+    if alt in ("", " "):
+        # No alt text — likely decorative, but keep if filename looks content-rich
+        if any(re.search(p, src) for p in [r"/chart", r"/diagram", r"/figure", r"/graph", r"/plot", r"/image", r"/photo", r"/screenshot"]):
+            return False
+        return True
+    if any(kw in alt for kw in decorative_keywords):
+        return True
+    if any(re.search(p, src) for p in decorative_patterns):
+        return True
+    return False
 
 
 def extract_title_from_cached(markdown: str) -> str:
@@ -356,11 +408,12 @@ def extract_html_title(html: str) -> str:
     return re.sub(r"\s+", " ", unescape(match.group(1))).strip()
 
 
-def html_to_text(html: str) -> str:
+def html_to_text(html: str) -> tuple[str, list[dict[str, str]]]:
+    """Return (text, images) from HTML. Images is a list of {url, alt_text, title}."""
     parser = TextExtractor()
     parser.feed(html)
     text = parser.text()
-    return text[:MAX_FETCH_CHARS]
+    return text[:MAX_FETCH_CHARS], parser.images
 
 
 def summarize_text(text: str, fallback: str) -> str:

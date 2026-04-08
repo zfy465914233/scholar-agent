@@ -93,8 +93,23 @@ def save_research(query: str, answer_json: str) -> str:
       "inferences": ["..."],
       "uncertainty": ["..."],
       "missing_evidence": ["..."],
-      "suggested_next_steps": ["..."]
+      "suggested_next_steps": ["..."],
+      "visual_aids": [{"type": "mermaid|image_url|image_path", "content": "...", "caption": "...", "alt_text": "..."}]
     }
+
+    When to include visual_aids (auto-judge by topic):
+    - Processes / workflows / data flow → mermaid flowchart or sequence diagram
+    - Architecture / system design → mermaid graph or class diagram
+    - Comparisons or hierarchies → mermaid diagram or table
+    - Spatial / geometric concepts → image_url or mermaid
+    - Pure definitions or simple facts → omit visual_aids
+
+    When sources contain useful images (charts, diagrams, figures):
+    - If a source page has a relevant diagram/chart with clear explanatory value, include it
+      as visual_aids with type "image_url" and the image's absolute URL
+    - Judge relevance: prefer diagrams explaining mechanisms, architecture overviews,
+      comparison charts, result plots — skip decorative screenshots or generic stock photos
+    - Always provide a descriptive caption explaining what the image shows
 
     Args:
         query: The original research question.

@@ -56,6 +56,34 @@
       "default": [],
       "description": "Actionable next steps for the user, ordered by priority. Should be concrete enough to execute.",
       "items": { "type": "string" }
+    },
+    "visual_aids": {
+      "type": "array",
+      "default": [],
+      "description": "Visual aids to improve understanding. AI should auto-generate these when the topic involves processes, architectures, comparisons, data flow, or spatial relationships. Omit for pure definitions or simple facts.",
+      "items": {
+        "type": "object",
+        "required": ["type", "content", "caption"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["mermaid", "image_url", "image_path"],
+            "description": "mermaid = inline Mermaid diagram code; image_url = remote image; image_path = local file path."
+          },
+          "content": {
+            "type": "string",
+            "description": "Mermaid code (for mermaid type) or URL/path (for image types)."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Short caption explaining what the visual shows."
+          },
+          "alt_text": {
+            "type": "string",
+            "description": "Alt text for accessibility (defaults to caption if omitted)."
+          }
+        }
+      }
     }
   }
 }
