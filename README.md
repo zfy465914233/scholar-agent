@@ -59,18 +59,18 @@ This automatically:
 - Injects MCP config into `.mcp.json` (Claude Code) and `.vscode/mcp.json` (VS Code Copilot)
 - Adds a `CLAUDE.md` snippet instructing the AI to prioritize Lore tools
 
-Knowledge lives in **your project**, not inside lore-agent. After restarting Claude Code or VS Code, the AI will automatically discover and use `query_knowledge`, `save_research`, and `list_knowledge`.
+Knowledge lives in **your project**, not inside lore-agent. After restarting Claude Code or VS Code, the AI will automatically discover and use `query_knowledge`, `save_research`, `list_knowledge`, and `capture_answer`.
 
 ## MCP Integration
 
-Lore Agent exposes 3 tools to LLM agents:
+Lore Agent exposes 4 tools to LLM agents:
 
 | Tool | Description |
 |------|-------------|
 | `query_knowledge(query, limit?)` | Search local knowledge base |
 | `save_research(query, answer_json)` | Save research results as a knowledge card. Supports `visual_aids` (Mermaid diagrams, source images) |
-| `list_knowledge(topic?)` | Browse all knowledge cards | |
 | `list_knowledge(topic?)` | Browse all knowledge cards |
+| `capture_answer(query, answer, tags?)` | Quick-capture a Q&A pair as a draft card with optional tags |
 
 ### Claude Code
 
@@ -110,7 +110,8 @@ Query → Router (local-led / web-led / mixed / context-led)
 3. **Synthesizer** produces structured answers with claims, inferences, uncertainty, and action items. Claims are validated against actual evidence IDs
 4. **Visual Aids** — the system auto-judges when visuals improve understanding: Mermaid diagrams for processes/architectures/comparisons, and source page images (charts, figures) are captured and filtered from research evidence
 5. **Knowledge Loop** saves research as Markdown cards with embedded visuals, promotes drafts, and incrementally rebuilds the index — the system accumulates knowledge over time
-5. **Retry** — if evidence is insufficient, the agent refines the query and loops back (configurable `max_retries`)
+6. **Knowledge Graph** — cards can link each other via `[[card-id]]` wiki-links; the index automatically computes backlinks, enabling graph-aware retrieval
+7. **Retry** — if evidence is insufficient, the agent refines the query and loops back (configurable `max_retries`)
 
 ## Search Boundary
 
@@ -160,13 +161,15 @@ lore-agent/
 │   ├── agent.py               # Agent state machine (Router → Researcher → Synthesizer → Curator)
 │   ├── orchestrate_research.py# Query routing and evidence orchestration
 │   ├── exceptions.py          # Unified exception hierarchy
-│   ├── common.py              # Shared utilities (frontmatter, slug, JSON, dates)
+│   ├── knowledge_governance.py # Validate, lint, scan, lifecycle CLI
+│   ├── common.py              # Shared utilities (frontmatter, slug, JSON, wiki-links)
 │   ├── cache_helper.py        # URL cache with TTL + LRU eviction
 │   └── retry.py               # Exponential backoff for external APIs
+├── changelog.md               # Auto-recorded change log
 ├── knowledge/                 # Your project's knowledge (follows the project)
 │   └── templates/             # Card templates (optional)
 ├── indexes/                   # Generated (gitignored)
-└── tests/                     # 152 tests, ~5s
+└── tests/                     # 73 tests, ~5s
 ```
 
 ### Embedded mode (after `setup_mcp.py`)
@@ -214,10 +217,24 @@ python scripts/close_knowledge_loop.py \
   --answer /tmp/answer.json
 ```
 
+## Knowledge Governance
+
+A CLI tool (`scripts/knowledge_governance.py`) for maintaining knowledge quality:
+
+```bash
+python scripts/knowledge_governance.py validate      # frontmatter schema check
+python scripts/knowledge_governance.py lint           # orphan / broken-link / stale detection
+python scripts/knowledge_governance.py duplicates     # find near-duplicate cards
+python scripts/knowledge_governance.py scan           # status / type / topic summary
+python scripts/knowledge_governance.py transition --card-id <id> --state reviewed
+```
+
+Changes to cards are auto-recorded in `changelog.md` (project root).
+
 ## Running Tests
 
 ```bash
-python -m pytest tests/ -v    # 152 tests, ~5s
+python -m pytest tests/ -v    # 73 tests, ~5s
 ```
 
 The close-loop tests use a temporary knowledge tree and temporary index output, so they do not rewrite the active project index even in embedded mode.

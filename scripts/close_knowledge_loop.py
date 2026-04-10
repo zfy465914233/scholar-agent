@@ -415,7 +415,7 @@ def append_changelog(
         card_id: The card identifier.
         detail: Optional extra context (e.g. target state for transitions).
     """
-    changelog_path = knowledge_root / "changelog.md"
+    changelog_path = knowledge_root.parent / "changelog.md"
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     entry = f"- **{now}** [{action}] {card_id}"
     if detail:

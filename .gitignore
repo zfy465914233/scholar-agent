@@ -5,8 +5,8 @@ __pycache__/
 /tmp/
 *.egg-info/
 .DS_Store
-indexes/local/index.json
-indexes/local/embeddings.json
+indexes/
+changelog.md
 .pytest_cache/
 scripts/__pycache__/
 tests/__pycache__/
