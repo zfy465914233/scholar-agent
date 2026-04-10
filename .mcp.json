@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "optimizer": {
-      "command": "uv",
-      "args": ["run", "--with", "fastmcp", "fastmcp", "run", "mcp_server.py"]
-    }
-  }
-}

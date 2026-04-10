@@ -254,6 +254,28 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
         for c in stale_cards:
             print(f"  {c.get('id', '?')} — last updated {c.get('updated_at', '?')}")
 
+    # Check for potential contradictions (cards with high textual overlap)
+    if len(cards) >= 2:
+        from common import safe_slug
+        titles = [(c.get("id", ""), c.get("title", "").lower().split()) for c in cards if c.get("title")]
+        contradictions = []
+        for i, (id_a, words_a) in enumerate(titles):
+            for j, (id_b, words_b) in enumerate(titles):
+                if j <= i:
+                    continue
+                if not words_a or not words_b:
+                    continue
+                overlap = set(words_a) & set(words_b)
+                union = set(words_a) | set(words_b)
+                jaccard = len(overlap) / len(union) if union else 0
+                if jaccard > 0.6:
+                    contradictions.append((id_a, id_b, jaccard))
+        if contradictions:
+            total_issues += len(contradictions)
+            print(f"\n[OVERLAP] {len(contradictions)} card pair(s) with high title similarity (potential duplicates/contradictions):")
+            for id_a, id_b, score in contradictions:
+                print(f"  {id_a} <-> {id_b} (Jaccard: {score:.2f})")
+
     if total_issues == 0:
         print(f"All {len(cards)} cards passed lint checks.")
     else:

@@ -573,5 +573,50 @@ def fetch_batch_concurrent(
     return results
 
 
+# --- Multi-perspective parallel research (P5) ---
+
+PERSPECTIVES = {
+    "academic": "survey OR review OR state-of-the-art",
+    "technical": "implementation OR architecture OR code",
+    "applied": "case study OR production OR deployment",
+    "contrarian": "criticism OR limitation OR failure",
+    "historical": "history OR origin OR evolution",
+}
+
+
+def run_multi_perspective(
+    query: str,
+    perspectives: list[str] | None = None,
+    limit_per_perspective: int = 3,
+    provider: SearchProvider | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Run parallel research from multiple perspectives.
+
+    Returns a dict mapping perspective name to list of evidence items.
+    Each evidence item is tagged with a 'perspective' field.
+    """
+    active = perspectives or list(PERSPECTIVES.keys())
+    prov = provider or SelfHostedProvider()
+
+    def _run_one(perspective: str) -> tuple[str, list[dict[str, Any]]]:
+        suffix = PERSPECTIVES.get(perspective, perspective)
+        variant = f"{query} {suffix}"
+        try:
+            evidence = run_discovery(variant, depth="quick", limit=limit_per_perspective, provider=prov)
+        except RuntimeError:
+            evidence = []
+        for item in evidence:
+            item["perspective"] = perspective
+        return perspective, evidence
+
+    results: dict[str, list[dict[str, Any]]] = {}
+    with ThreadPoolExecutor(max_workers=min(len(active), 4)) as executor:
+        futures = {executor.submit(_run_one, p): p for p in active}
+        for future in as_completed(futures):
+            perspective, evidence = future.result()
+            results[perspective] = evidence
+    return results
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

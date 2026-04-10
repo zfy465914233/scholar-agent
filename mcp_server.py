@@ -254,6 +254,98 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
     }, ensure_ascii=False, indent=2)
 
 
+@tool
+def ingest_source(source: str, title: str = "", tags: str = "") -> str:
+    """Ingest a URL or raw text into the knowledge base as a draft card.
+
+    For URLs: fetches the page content, extracts text, and saves as a card.
+    For text: saves the provided text directly as a card.
+
+    Use this when you want to add external documents, articles, or notes
+    to the knowledge base without requiring structured JSON.
+
+    Args:
+        source: A URL (starting with http:// or https://) or raw text/markdown.
+        title: Optional title for the card. Auto-detected from URL pages.
+        tags: Comma-separated tags for the card (optional).
+    """
+    if not source or not source.strip():
+        return json.dumps({"error": "source must not be empty"})
+
+    is_url = source.strip().startswith(("http://", "https://"))
+
+    if is_url:
+        from research_harness import fetch_content
+        result = fetch_content(source.strip())
+        if result["retrieval_status"] == "failed":
+            return json.dumps({"error": f"Failed to fetch URL: {result.get('failure_reason', 'unknown')}"})
+        content = result["content_md"]
+        auto_title = result.get("title", "") or title or source.strip()[:80]
+    else:
+        content = source.strip()
+        auto_title = title or content.split("\n")[0][:80]
+
+    if not content:
+        return json.dumps({"error": "No content extracted from source"})
+
+    answer_data = {
+        "answer": content,
+        "supporting_claims": [],
+        "inferences": [],
+        "uncertainty": ["Ingested source — not yet verified or synthesized"],
+        "missing_evidence": ["Cross-reference with other sources needed"],
+        "suggested_next_steps": ["Verify key claims", "Link to related cards"],
+    }
+
+    if tags and tags.strip():
+        answer_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+    if is_url:
+        answer_data["tags"] = answer_data.get("tags", []) + ["ingested-url"]
+
+    try:
+        card_path = build_knowledge_card(auto_title, answer_data, None, get_knowledge_dir())
+    except Exception as e:
+        return json.dumps({"error": f"Failed to write card: {e}"})
+
+    reindex_ok = _reindex(get_knowledge_dir(), get_index_path())
+
+    return json.dumps({
+        "status": "ok",
+        "card_path": str(card_path),
+        "reindexed": reindex_ok,
+        "source_type": "url" if is_url else "text",
+        "title": auto_title,
+    }, ensure_ascii=False, indent=2)
+
+
+@tool
+def build_graph() -> str:
+    """Build an interactive knowledge graph visualization.
+
+    Generates a self-contained HTML file showing all knowledge cards as nodes
+    and their wiki-links as edges. Open the output file in a browser to
+    explore the knowledge graph visually. Compatible with Obsidian vaults.
+
+    Returns the path to the generated graph.html file.
+    """
+    from build_graph import build_graph_data, generate_html
+
+    index_path = get_index_path()
+    if not index_path.exists():
+        return json.dumps({"error": "Index not found. Run local_index.py first."})
+
+    graph_data = build_graph_data(index_path)
+    output_path = ROOT / "graph.html"
+    generate_html(graph_data, output_path)
+
+    return json.dumps({
+        "status": "ok",
+        "path": str(output_path),
+        "nodes": len(graph_data["nodes"]),
+        "edges": len(graph_data["edges"]),
+    }, ensure_ascii=False, indent=2)
+
+
 if __name__ == "__main__":
     if mcp is None:
         print("Error: fastmcp not installed. Run: pip install fastmcp", file=sys.stderr)

@@ -63,7 +63,7 @@ Knowledge lives in **your project**, not inside lore-agent. After restarting Cla
 
 ## MCP Integration
 
-Lore Agent exposes 4 tools to LLM agents:
+Lore Agent exposes 6 tools to LLM agents:
 
 | Tool | Description |
 |------|-------------|
@@ -71,6 +71,8 @@ Lore Agent exposes 4 tools to LLM agents:
 | `save_research(query, answer_json)` | Save research results as a knowledge card. Supports `visual_aids` (Mermaid diagrams, source images) |
 | `list_knowledge(topic?)` | Browse all knowledge cards |
 | `capture_answer(query, answer, tags?)` | Quick-capture a Q&A pair as a draft card with optional tags |
+| `ingest_source(source, title?, tags?)` | Ingest a URL or raw text into the knowledge base |
+| `build_graph()` | Generate an interactive knowledge graph HTML visualization |
 
 ### Claude Code
 
@@ -110,8 +112,11 @@ Query → Router (local-led / web-led / mixed / context-led)
 3. **Synthesizer** produces structured answers with claims, inferences, uncertainty, and action items. Claims are validated against actual evidence IDs
 4. **Visual Aids** — the system auto-judges when visuals improve understanding: Mermaid diagrams for processes/architectures/comparisons, and source page images (charts, figures) are captured and filtered from research evidence
 5. **Knowledge Loop** saves research as Markdown cards with embedded visuals, promotes drafts, and incrementally rebuilds the index — the system accumulates knowledge over time
-6. **Knowledge Graph** — cards can link each other via `[[card-id]]` wiki-links; the index automatically computes backlinks, enabling graph-aware retrieval
-7. **Retry** — if evidence is insufficient, the agent refines the query and loops back (configurable `max_retries`)
+6. **Knowledge Graph** — cards can link each other via `[[card-id]]` wiki-links; the index automatically computes backlinks, enabling graph-aware retrieval. `build_graph` generates an interactive vis.js visualization
+7. **Entity Extraction** — auto-extracts named concepts from card text and generates wiki-link cross-references
+8. **Contradiction Detection** — when saving cards, BM25-retrieves similar existing cards and flags potential overlaps/duplicates
+9. **Multi-Perspective Research** — parallel research from academic, technical, applied, contrarian, and historical perspectives for deeper coverage
+10. **Retry** — if evidence is insufficient, the agent refines the query and loops back (configurable `max_retries`)
 
 ## Search Boundary
 
@@ -162,14 +167,15 @@ lore-agent/
 │   ├── orchestrate_research.py# Query routing and evidence orchestration
 │   ├── exceptions.py          # Unified exception hierarchy
 │   ├── knowledge_governance.py # Validate, lint, scan, lifecycle CLI
-│   ├── common.py              # Shared utilities (frontmatter, slug, JSON, wiki-links)
+│   ├── build_graph.py         # Interactive knowledge graph (vis.js)
+│   ├── common.py              # Shared utilities (frontmatter, slug, JSON, wiki-links, entity extraction)
 │   ├── cache_helper.py        # URL cache with TTL + LRU eviction
 │   └── retry.py               # Exponential backoff for external APIs
 ├── changelog.md               # Auto-recorded change log
 ├── knowledge/                 # Your project's knowledge (follows the project)
 │   └── templates/             # Card templates (optional)
 ├── indexes/                   # Generated (gitignored)
-└── tests/                     # 73 tests, ~5s
+└── tests/                     # 189 tests, ~5s
 ```
 
 ### Embedded mode (after `setup_mcp.py`)
@@ -231,10 +237,23 @@ python scripts/knowledge_governance.py transition --card-id <id> --state reviewe
 
 Changes to cards are auto-recorded in `changelog.md` (project root).
 
+## Agent Compatibility
+
+Lore Agent ships instruction files for major LLM coding agents:
+
+| Agent | File | Auto-loaded |
+|-------|------|-------------|
+| Claude Code | `CLAUDE.md` | ✅ |
+| VS Code Copilot | `.github/copilot-instructions.md` | ✅ |
+| Codex / OpenCode | `AGENTS.md` | ✅ |
+| Gemini CLI | `GEMINI.md` | ✅ |
+| Cursor | `.cursor/rules/lore-agent.mdc` | ✅ |
+| Windsurf | `.windsurf/rules/lore-agent.md` | ✅ |
+
 ## Running Tests
 
 ```bash
-python -m pytest tests/ -v    # 73 tests, ~5s
+python -m pytest tests/ -v    # 189 tests, ~5s
 ```
 
 The close-loop tests use a temporary knowledge tree and temporary index output, so they do not rewrite the active project index even in embedded mode.

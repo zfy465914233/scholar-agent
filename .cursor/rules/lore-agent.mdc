@@ -1,0 +1,16 @@
+---
+description: Lore Agent — domain knowledge retrieval and research via MCP
+globs: ["**/*.md", "**/*.py"]
+---
+
+# Lore Agent
+
+This project has Lore Agent for domain knowledge retrieval and research.
+When the user asks domain-specific questions or needs research:
+
+1. **First** use the `query_knowledge` MCP tool to check local knowledge.
+2. If local knowledge is insufficient, use `save_research` to save findings.
+3. Use `list_knowledge` to browse available knowledge cards.
+4. Use `capture_answer` to quick-save useful Q&A pairs.
+5. Use `ingest_source` to ingest URLs or raw text into the knowledge base.
+6. Use `build_graph` to generate an interactive knowledge graph visualization.

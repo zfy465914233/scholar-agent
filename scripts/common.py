@@ -176,3 +176,45 @@ def resolve_link_target(target: str, all_ids: set[str]) -> str | None:
         if target in did:
             return did
     return None
+
+
+# ── Entity extraction ─────────────────────────────────────────────
+
+_CAPITALIZED_PHRASE = re.compile(
+    r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b"
+)
+_BACKTICK_TERM = re.compile(r"`([^`]{2,40})`")
+_STOP_ENTITIES = {
+    "Research Note", "Supporting Claims", "Missing Evidence",
+    "Suggested Next Steps", "Visual Aids", "Source Images",
+    "Concrete Example", "Expected Output", "Question", "Answer",
+    "Uncertainty", "Inferences", "See Also", "Key Findings",
+    "Related Work", "Further Reading", "Open Questions",
+}
+
+
+def extract_entities(text: str) -> list[str]:
+    """Extract potential entity names from text using heuristics.
+
+    Extracts:
+    - Capitalized multi-word phrases (e.g. "Andrej Karpathy", "Monte Carlo")
+    - Backtick-enclosed technical terms (e.g. `XGBoost`, `BM25`)
+
+    Returns deduplicated list of entity strings.
+    """
+    entities: list[str] = []
+    seen: set[str] = set()
+
+    for match in _CAPITALIZED_PHRASE.findall(text):
+        normalized = match.strip()
+        if normalized not in _STOP_ENTITIES and normalized.lower() not in seen:
+            seen.add(normalized.lower())
+            entities.append(normalized)
+
+    for match in _BACKTICK_TERM.findall(text):
+        normalized = match.strip()
+        if normalized.lower() not in seen and not normalized.startswith(("/", ".", "#")):
+            seen.add(normalized.lower())
+            entities.append(normalized)
+
+    return entities

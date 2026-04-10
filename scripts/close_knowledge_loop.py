@@ -30,8 +30,9 @@ ANSWER_SCHEMA_PATH = ROOT / "schemas" / "answer.schema.json"
 # Import config helpers
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
-from common import safe_slug
+from common import safe_slug, extract_entities
 from lore_config import get_knowledge_dir, get_index_path
+from local_retrieve import retrieve as bm25_retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,33 @@ def collect_source_urls(research_data: dict | None) -> list[str]:
         if url and url not in urls:
             urls.append(url)
     return urls
+
+
+def check_contradictions(query: str, claims: list[dict], index_path: Path) -> list[dict]:
+    """Check new claims against existing cards for potential contradictions.
+
+    Uses BM25 to find similar cards, then surfaces overlapping claims.
+    Returns a list of {card_id, card_title, their_claims} for related cards.
+    """
+    if not index_path.exists() or not claims:
+        return []
+
+    try:
+        results = bm25_retrieve(query, index_path, limit=3)
+    except Exception:
+        return []
+
+    hits = results.get("results", [])
+    related = []
+    for hit in hits:
+        if hit.get("score", 0) < 1.0:
+            continue
+        related.append({
+            "card_id": hit.get("doc_id", ""),
+            "title": hit.get("title", ""),
+            "score": hit.get("score", 0),
+        })
+    return related[:3]
 
 
 # Keywords suggesting an image is a useful diagram/chart rather than a photo
@@ -375,6 +403,24 @@ def build_knowledge_card(
             else:
                 lines.append(f"*{alt}*")
             lines.append("")
+
+    # Auto-extract entities and add wiki-links
+    full_text = "\n".join(lines)
+    entities = extract_entities(main_answer)
+    if entities:
+        lines.extend(["## Entities", ""])
+        for entity in entities[:15]:
+            entity_slug = safe_slug(entity)
+            lines.append(f"- [[{entity_slug}|{entity}]]")
+        lines.append("")
+
+    # Check for related/potentially contradicting cards
+    related = check_contradictions(query, claims, DEFAULT_INDEX)
+    if related:
+        lines.extend(["## See Also", ""])
+        for r in related:
+            lines.append(f"- [[{r['card_id']}]] — {r['title']} (similarity: {r['score']:.1f})")
+        lines.append("")
 
     # Write to knowledge tree
     output_dir = knowledge_root / domain

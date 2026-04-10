@@ -12,7 +12,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from common import extract_wiki_links, load_json, normalize_date, now_iso, parse_frontmatter, resolve_link_target, safe_slug, slugify, write_json
+from common import extract_entities, extract_wiki_links, load_json, normalize_date, now_iso, parse_frontmatter, resolve_link_target, safe_slug, slugify, write_json
 
 
 class ParseFrontmatterTest(unittest.TestCase):
@@ -198,6 +198,33 @@ class ResolveLinkTargetTest(unittest.TestCase):
 
     def test_empty_ids(self) -> None:
         self.assertIsNone(resolve_link_target("anything", set()))
+
+
+class ExtractEntitiesTest(unittest.TestCase):
+    def test_capitalized_phrases(self) -> None:
+        text = "The Transformer Architecture changed Natural Language Processing."
+        entities = extract_entities(text)
+        self.assertIn("The Transformer Architecture", entities)
+        self.assertIn("Natural Language Processing", entities)
+
+    def test_backtick_terms(self) -> None:
+        text = "Use `torch.nn.Module` for layers and `Adam` optimizer."
+        entities = extract_entities(text)
+        self.assertIn("torch.nn.Module", entities)
+
+    def test_dedup(self) -> None:
+        text = "Monte Carlo is great. Monte Carlo is probabilistic."
+        entities = extract_entities(text)
+        self.assertEqual(entities.count("Monte Carlo"), 1)
+
+    def test_stop_entities_filtered(self) -> None:
+        text = "See Also more about Key Findings in the report."
+        entities = extract_entities(text)
+        self.assertNotIn("See Also", entities)
+        self.assertNotIn("Key Findings", entities)
+
+    def test_empty_text(self) -> None:
+        self.assertEqual([], extract_entities(""))
 
 
 if __name__ == "__main__":
