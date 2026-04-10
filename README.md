@@ -16,7 +16,7 @@ Lore Agent 给它加了一个**知识飞轮**：
 你的提问
     │
     ▼
-在线研究（SearXNG + 学术 API，多视角并行检索）
+在线研究（AI agent 搜索 + SearXNG + 学术 API）
     │
     ▼
 结构化合成（带引用来源、置信度、不确定性标注）
@@ -34,6 +34,32 @@ Lore Agent 给它加了一个**知识飞轮**：
 每一轮使用都在积累。第一次问某个领域的问题需要在线研究，第二次问相关问题时，AI 直接从你的本地知识库里拿，又快又准。
 
 知识卡片有完整的生命周期管理：**draft → reviewed → trusted → stale → deprecated**。过时的知识会被标记，新研究会覆盖旧结论。
+
+## 与同类项目对比
+
+| | Lore Agent | Prompt-based Wiki (e.g. llm-wiki-agent) |
+|---|---|---|
+| **研究能力** | AI agent 搜索 + SearXNG 元搜索 + OpenAlex / Semantic Scholar 学术 API + 本地 BM25 / embedding，证据归一化合并 | 依赖 LLM 自身能力，无独立搜索管线 |
+| **知识生命周期** | draft → reviewed → trusted → stale → deprecated | 无——文件就是文件 |
+| **知识飞轮** | 研究 → 沉淀 → 复用 → 越用越强 | 单向：LLM 写，人读 |
+| **答案质量** | 结构化 JSON：claims + 证据 ID + 不确定性 | 原始文本 |
+| **图谱与互联** | `[[wiki-links]]`、反向链接、vis.js 图谱 | 基于文件夹，无交叉引用 |
+
+## 特色能力
+
+在核心飞轮之外，Lore Agent 还有一些区别于其他项目的能力：
+
+**多源研究管线** — 融合 AI agent 自身搜索、SearXNG 元搜索、OpenAlex / Semantic Scholar 学术 API 与本地 BM25 + embedding 检索，证据统一归一化后合并排序。各 provider 独立容错，外网不可用时仅用本地检索。
+
+**结构化答案** — 不是返回原始文本。每个答案都有 claims（带证据 ID）、inferences、uncertainty、missing evidence、visual aids，按 JSON schema 校验。
+
+**知识图谱** — 卡片之间通过 `[[wiki-links]]` 互联，自动计算反向链接。`build_graph` 生成可交互的 vis.js 可视化。保存卡片时自动提取实体并检测与已有卡片的潜在矛盾。支持用 Obsidian 等工具浏览和管理。
+
+**多视角研究** — 可从学术、技术、应用、对立、历史五个视角并行研究同一问题，避免单一信息来源的偏差。
+
+**知识治理 CLI** — 校验 frontmatter、检测孤立卡片和断链、发现重复、管理卡片状态流转：
+
+
 
 ## Quick Start
 
@@ -76,38 +102,6 @@ AI agent 通过 6 个 MCP 工具与知识库交互：
 | `capture_answer` | 快速捕获问答为草稿卡片 |
 | `ingest_source` | 摄入 URL 或文本到知识库 |
 | `build_graph` | 生成交互式知识图谱（vis.js） |
-
-## 特色能力
-
-在核心飞轮之外，Lore Agent 还有一些区别于其他项目的能力：
-
-**自有检索引擎** — 不依赖 LLM 读文件，自建 BM25 索引 + 可选语义 embedding 混合检索，离线可用。
-
-**结构化答案** — 不是返回原始文本。每个答案都有 claims（带证据 ID）、inferences、uncertainty、missing evidence、visual aids，按 JSON schema 校验。
-
-**知识图谱** — 卡片之间通过 `[[wiki-links]]` 互联，自动计算反向链接。`build_graph` 生成可交互的 vis.js 可视化。保存卡片时自动提取实体并检测与已有卡片的潜在矛盾。
-
-**多视角研究** — 可从学术、技术、应用、对立、历史五个视角并行研究同一问题，避免单一信息来源的偏差。
-
-**知识治理 CLI** — 校验 frontmatter、检测孤立卡片和断链、发现重复、管理卡片状态流转：
-
-```bash
-python scripts/knowledge_governance.py lint        # 孤立/断链/过期检测
-python scripts/knowledge_governance.py duplicates  # 重复卡片检测
-python scripts/knowledge_governance.py transition --card-id <id> --state reviewed
-```
-
-**搜索扩展** — 除自有 provider（SearXNG、OpenAlex、Semantic Scholar），还支持通过 `ExternalCandidateBatch` 注入宿主侧搜索结果（如 Claude Code WebSearch），合并进统一的证据管线。
-
-## 与同类项目对比
-
-| | Lore Agent | Prompt-based Wiki (e.g. llm-wiki-agent) |
-|---|---|---|
-| **检索** | 自有 BM25 + embedding，离线可用 | 依赖 LLM `grep`/读文件，无索引 |
-| **知识生命周期** | draft → reviewed → trusted → stale → deprecated | 无——文件就是文件 |
-| **知识飞轮** | 研究 → 沉淀 → 复用 → 越用越强 | 单向：LLM 写，人读 |
-| **答案质量** | 结构化 JSON：claims + 证据 ID + 不确定性 | 原始文本 |
-| **图谱与互联** | `[[wiki-links]]`、反向链接、vis.js 图谱 | 基于文件夹，无交叉引用 |
 
 ## 项目结构
 
