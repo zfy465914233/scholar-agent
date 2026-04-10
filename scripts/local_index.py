@@ -12,7 +12,7 @@ import json
 import logging
 from pathlib import Path
 
-from common import extract_wiki_links, parse_frontmatter
+from common import extract_wiki_links, parse_frontmatter, resolve_link_target
 
 logger = logging.getLogger(__name__)
 
@@ -133,16 +133,7 @@ def build_backlinks(documents: list[dict]) -> dict[str, list[str]]:
     for doc in documents:
         source_id = doc["doc_id"]
         for target in doc.get("links", []):
-            # Resolve link target to an actual doc_id
-            resolved = None
-            if target in doc_ids:
-                resolved = target
-            else:
-                # Partial match: target could be a slug fragment
-                for did in doc_ids:
-                    if target in did:
-                        resolved = did
-                        break
+            resolved = resolve_link_target(target, doc_ids)
             if resolved and resolved != source_id:
                 backlinks.setdefault(resolved, []).append(source_id)
 

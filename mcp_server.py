@@ -231,6 +231,9 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
         "suggested_next_steps": ["Verify against authoritative sources", "Add supporting evidence"],
     }
 
+    if tags and tags.strip():
+        answer_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+
     # Build the card
     card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir())
 

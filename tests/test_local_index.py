@@ -6,7 +6,13 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = ROOT / "scripts"
 INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
+
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+from local_index import build_backlinks
 
 
 class LocalIndexTest(unittest.TestCase):
@@ -35,6 +41,53 @@ class LocalIndexTest(unittest.TestCase):
         definition_doc = next(doc for doc in payload["documents"] if doc["doc_id"] == "example-markov-chain-definition")
         self.assertEqual("knowledge", definition_doc["type"])
         self.assertIn("Markov", definition_doc["search_text"])
+
+
+class BuildBacklinksTest(unittest.TestCase):
+    def test_exact_match(self) -> None:
+        docs = [
+            {"doc_id": "a", "links": ["b"]},
+            {"doc_id": "b", "links": []},
+        ]
+        bl = build_backlinks(docs)
+        self.assertEqual({"b": ["a"]}, bl)
+
+    def test_partial_match(self) -> None:
+        docs = [
+            {"doc_id": "a", "links": ["chain"]},
+            {"doc_id": "markov-chain", "links": []},
+        ]
+        bl = build_backlinks(docs)
+        self.assertEqual({"markov-chain": ["a"]}, bl)
+
+    def test_no_self_link(self) -> None:
+        docs = [{"doc_id": "a", "links": ["a"]}]
+        bl = build_backlinks(docs)
+        self.assertEqual({}, bl)
+
+    def test_empty(self) -> None:
+        bl = build_backlinks([])
+        self.assertEqual({}, bl)
+
+    def test_bidirectional(self) -> None:
+        docs = [
+            {"doc_id": "a", "links": ["b"]},
+            {"doc_id": "b", "links": ["a"]},
+        ]
+        bl = build_backlinks(docs)
+        self.assertEqual({"b": ["a"], "a": ["b"]}, bl)
+
+    def test_index_includes_backlinks(self) -> None:
+        """Integration: full index build should populate backlinks."""
+        command = [
+            sys.executable, "scripts/local_index.py",
+            "--knowledge-root", "tests/fixtures",
+            "--output", str(INDEX_PATH),
+        ]
+        subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        payload = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
+        for doc in payload["documents"]:
+            self.assertIn("backlinks", doc)
 
 
 if __name__ == "__main__":

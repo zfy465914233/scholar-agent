@@ -162,3 +162,17 @@ def extract_wiki_links(text: str) -> list[str]:
     Returns a deduplicated list of link targets (card IDs or slugs).
     """
     return list(dict.fromkeys(_WIKI_LINK_RE.findall(text)))
+
+
+def resolve_link_target(target: str, all_ids: set[str]) -> str | None:
+    """Resolve a wiki-link target to a doc_id.
+
+    Tries exact match first, then partial match (target is a substring
+    of a doc_id). Returns None if no match is found.
+    """
+    if target in all_ids:
+        return target
+    for did in all_ids:
+        if target in did:
+            return did
+    return None

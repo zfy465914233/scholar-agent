@@ -249,6 +249,11 @@ def build_knowledge_card(
         if keyword in query_lower and tag not in base_tags:
             base_tags.append(tag)
 
+    # Merge user-supplied tags from answer_data (e.g. from capture_answer)
+    for extra_tag in answer_data.get("tags", []):
+        if extra_tag and extra_tag not in base_tags:
+            base_tags.append(extra_tag)
+
     # Index visual aids by their target section for inline placement
     visual_aids = answer_data.get("visual_aids", [])
     _SECTION_ORDER = [

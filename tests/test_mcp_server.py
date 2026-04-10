@@ -14,7 +14,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import lore_config
-from mcp_server import query_knowledge, save_research, list_knowledge
+from mcp_server import query_knowledge, save_research, list_knowledge, capture_answer
 
 # Force config to always resolve to lore-agent's own directories
 # regardless of cwd, so tests don't leak files into parent projects.
@@ -122,6 +122,41 @@ class ListKnowledgeTest(unittest.TestCase):
     def test_list_nonexistent_topic_returns_empty(self) -> None:
         result = json.loads(list_knowledge(topic="nonexistent_xyz"))
         self.assertEqual(0, result["total"])
+
+
+class CaptureAnswerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        _build_index()
+
+    def test_empty_query_rejected(self) -> None:
+        result = json.loads(capture_answer("", "some answer"))
+        self.assertIn("error", result)
+
+    def test_empty_answer_rejected(self) -> None:
+        result = json.loads(capture_answer("what is BM25", ""))
+        self.assertIn("error", result)
+
+    def test_path_traversal_rejected(self) -> None:
+        result = json.loads(capture_answer("../../etc/passwd", "answer"))
+        self.assertIn("error", result)
+
+    def test_success_creates_card(self) -> None:
+        result = json.loads(capture_answer("test capture query", "BM25 is a ranking function used in information retrieval."))
+        self.assertEqual("ok", result["status"])
+        self.assertIn("card_path", result)
+        _cleanup_card(result["card_path"])
+
+    def test_tags_passthrough(self) -> None:
+        result = json.loads(capture_answer("test tags capture", "Some answer text.", tags="ml, search"))
+        self.assertEqual("ok", result["status"])
+        # Verify tags appear in the card content
+        card_path = Path(result["card_path"])
+        if card_path.exists():
+            content = card_path.read_text(encoding="utf-8")
+            self.assertIn("ml", content)
+            self.assertIn("search", content)
+        _cleanup_card(result["card_path"])
 
 
 if __name__ == "__main__":

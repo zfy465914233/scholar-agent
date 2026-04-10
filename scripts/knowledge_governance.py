@@ -24,6 +24,7 @@ from knowledge_lifecycle import (
     validate_card,
     VALID_TRANSITIONS,
 )
+from common import resolve_link_target
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_KNOWLEDGE_ROOT = ROOT / "knowledge"
@@ -173,7 +174,7 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
       - Broken wiki-links (links pointing to non-existent cards)
       - Schema drift (frontmatter missing required fields)
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
     import re
 
     cards = scan_knowledge_dir(knowledge_root)
@@ -197,15 +198,17 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
         targets = set(link_re.findall(body))
         outgoing[cid] = targets
         for t in targets:
-            incoming.setdefault(t, set()).add(cid)
+            # Resolve target to actual card id for accurate incoming tracking
+            resolved = resolve_link_target(t, card_ids)
+            if resolved:
+                incoming.setdefault(resolved, set()).add(cid)
 
     # Check orphans (no outgoing links AND no incoming backlinks)
     orphans = []
     for card in cards:
         cid = card.get("id", "")
         has_out = bool(outgoing.get(cid))
-        # Check if any other card links TO this card (resolve partial matches)
-        has_in = any(cid in targets for targets in incoming.values())
+        has_in = cid in incoming
         if not has_out and not has_in:
             orphans.append(card)
 
@@ -220,8 +223,7 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
     for card in cards:
         cid = card.get("id", "")
         for target in outgoing.get(cid, set()):
-            # Check if target matches any card id (exact or partial)
-            if target not in card_ids and not any(target in cid2 for cid2 in card_ids):
+            if resolve_link_target(target, card_ids) is None:
                 broken.append((cid, target))
     if broken:
         total_issues += len(broken)
@@ -230,14 +232,14 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
             print(f"  {cid} → [[{target}]]")
 
     # Check staleness
-    stale_threshold = datetime.now(timezone.utc)
-    from datetime import timedelta
-    stale_cutoff = stale_threshold - timedelta(days=stale_days)
+    stale_cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
     stale_cards = []
     for card in cards:
         updated = card.get("updated_at", "")
         if not updated:
-            stale_cards.append(card)
+            # Don't mark drafts as stale — they may be newly captured
+            if card.get("confidence") != "draft" and card.get("review_status") != "draft":
+                stale_cards.append(card)
             continue
         try:
             updated_dt = datetime.strptime(str(updated)[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)

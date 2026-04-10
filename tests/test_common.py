@@ -12,7 +12,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from common import extract_wiki_links, load_json, normalize_date, now_iso, parse_frontmatter, safe_slug, slugify, write_json
+from common import extract_wiki_links, load_json, normalize_date, now_iso, parse_frontmatter, resolve_link_target, safe_slug, slugify, write_json
 
 
 class ParseFrontmatterTest(unittest.TestCase):
@@ -181,6 +181,23 @@ class ExtractWikiLinksTest(unittest.TestCase):
     def test_preserves_order(self) -> None:
         result = extract_wiki_links("[[z]] [[a]] [[m]]")
         self.assertEqual(["z", "a", "m"], result)
+
+
+class ResolveLinkTargetTest(unittest.TestCase):
+    def test_exact_match(self) -> None:
+        self.assertEqual("markov-chain", resolve_link_target("markov-chain", {"markov-chain", "other"}))
+
+    def test_partial_match(self) -> None:
+        self.assertEqual("markov-chain", resolve_link_target("chain", {"markov-chain", "other"}))
+
+    def test_no_match(self) -> None:
+        self.assertIsNone(resolve_link_target("quantum", {"markov-chain", "other"}))
+
+    def test_exact_preferred_over_partial(self) -> None:
+        self.assertEqual("chain", resolve_link_target("chain", {"chain", "markov-chain"}))
+
+    def test_empty_ids(self) -> None:
+        self.assertIsNone(resolve_link_target("anything", set()))
 
 
 if __name__ == "__main__":
