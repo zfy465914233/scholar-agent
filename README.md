@@ -45,19 +45,12 @@ Lore Agent 给它加了一个**知识飞轮**：
 | **答案质量** | 结构化 JSON：claims + 证据 ID + 不确定性 | 原始文本 |
 | **图谱与互联** | `[[wiki-links]]`、反向链接、vis.js 图谱 | 基于文件夹，无交叉引用 |
 
-## 特色能力
+## 更多特色
 
-在核心飞轮之外，Lore Agent 还有一些区别于其他项目的能力：
-
-**多源研究管线** — 融合 AI agent 自身搜索、SearXNG 元搜索、OpenAlex / Semantic Scholar 学术 API 与本地 BM25 + embedding 检索，证据统一归一化后合并排序。各 provider 独立容错，外网不可用时仅用本地检索。
-
-**结构化答案** — 不是返回原始文本。每个答案都有 claims（带证据 ID）、inferences、uncertainty、missing evidence、visual aids，按 JSON schema 校验。
-
-**知识图谱** — 卡片之间通过 `[[wiki-links]]` 互联，自动计算反向链接。`build_graph` 生成可交互的 vis.js 可视化。保存卡片时自动提取实体并检测与已有卡片的潜在矛盾。支持用 Obsidian 等工具浏览和管理。
-
-**多视角研究** — 可从学术、技术、应用、对立、历史五个视角并行研究同一问题，避免单一信息来源的偏差。
-
-**知识治理 CLI** — 校验 frontmatter、检测孤立卡片和断链、发现重复、管理卡片状态流转：
+- **多视角研究** — 可从学术、技术、应用、对立、历史五个视角并行研究同一问题，避免单一来源偏差
+- **Obsidian 兼容** — 知识卡片是标准 Markdown + YAML frontmatter + `[[wiki-links]]`，可直接用 Obsidian 浏览管理
+- **知识治理 CLI** — 校验 frontmatter、检测孤立卡片和断链、发现重复、管理卡片状态流转
+- **Provider 容错** — 各搜索源独立容错，外网不可用时仅用本地检索
 
 
 
