@@ -114,6 +114,11 @@ def build_chat_request(prompt_bundle: dict[str, Any], model: str) -> dict[str, A
 
 def call_llm(request_payload: dict[str, Any]) -> dict[str, Any]:
     """Call an OpenAI-compatible chat completions endpoint."""
+    if not LLM_API_KEY:
+        raise RuntimeError(
+            "LLM_API_KEY environment variable is not set. "
+            "Export it or use --local-answer to skip LLM calls."
+        )
     url = LLM_API_URL.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
     if LLM_API_KEY:

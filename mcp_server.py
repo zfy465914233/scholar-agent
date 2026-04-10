@@ -145,7 +145,10 @@ def save_research(query: str, answer_json: str) -> str:
     warnings = validate_answer_schema(answer_data)
 
     # Build knowledge card
-    card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir())
+    try:
+        card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir())
+    except Exception as e:
+        return json.dumps({"error": f"Failed to write card: {e}"})
 
     # Rebuild index
     reindex_ok = _reindex(get_knowledge_dir(), get_index_path())
@@ -235,7 +238,10 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
         answer_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
 
     # Build the card
-    card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir())
+    try:
+        card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir())
+    except Exception as e:
+        return json.dumps({"error": f"Failed to write card: {e}"})
 
     # Rebuild index
     reindex_ok = _reindex(get_knowledge_dir(), get_index_path())

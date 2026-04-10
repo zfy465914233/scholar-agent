@@ -13,7 +13,10 @@ Config file format (.lore.json):
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Lore Agent's own directory (where this file lives)
 LORE_ROOT = Path(__file__).resolve().parents[1]
@@ -68,8 +71,8 @@ def load_config() -> dict:
                         if not p.is_absolute():
                             p = config_base / p
                         config[key] = str(p.resolve())
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to parse %s: %s — using defaults", config_file, exc)
 
     _config_cache = config
     return config

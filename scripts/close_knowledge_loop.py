@@ -391,8 +391,13 @@ def build_knowledge_card(
 def reindex(knowledge_root: Path, index_output: Path) -> bool:
     """Rebuild the local index."""
     import subprocess
+    index_script = SCRIPTS / "local_index.py"
+    if not index_script.is_file():
+        import logging
+        logging.getLogger(__name__).warning("local_index.py not found at %s — skipping reindex", index_script)
+        return False
     result = subprocess.run(
-        [sys.executable, str(SCRIPTS / "local_index.py"),
+        [sys.executable, str(index_script),
          "--knowledge-root", str(knowledge_root),
          "--output", str(index_output)],
         capture_output=True,
