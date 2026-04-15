@@ -69,7 +69,7 @@ class PromoteDraftTest(unittest.TestCase):
             answer_context_path = temp_root / "answer-context.json"
             draft_path = temp_root / "distilled-markov-note.md"
             promoted_root = temp_root / "knowledge"
-            # Create matching folder for dynamic routing
+            # markov-chain is a major domain in the routing policy
             (promoted_root / "markov-chain").mkdir(parents=True)
 
             answer_result = subprocess.run(
@@ -135,14 +135,15 @@ class PromoteDraftTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_root = Path(temp_dir)
             knowledge_root = temp_root / "knowledge"
-            (knowledge_root / "linear-programming").mkdir(parents=True)
+            # Create major domain folders matching the routing policy
+            (knowledge_root / "operations-research" / "linear-programming").mkdir(parents=True)
             (knowledge_root / "qpe").mkdir(parents=True)
             (knowledge_root / "model-quantization").mkdir(parents=True)
 
             cases = [
-                ("lp duality theorem", "linear-programming"),
+                ("lp duality theorem", "operations-research/linear-programming"),
                 ("compare qpe and iterative qpe", "qpe"),
-                ("decision on quantization deployment", "model-quantization"),
+                ("quantization compression deployment", "model-quantization"),
             ]
 
             for query, expected_folder in cases:

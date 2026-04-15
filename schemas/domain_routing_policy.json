@@ -2,17 +2,80 @@
   "major_domains": {
     "operations-research": {
       "label": "运筹学",
-      "description": "Operations research, supply chain optimization, inventory control, planning, scheduling, and quantitative decision methods.",
+      "description": "Operations research, optimization, and quantitative decision methods.",
       "aliases": ["operations research", "or", "运筹学", "优化", "optimization"],
       "allow_new_subdomains": true,
       "default_subdomain": "",
       "subdomains": {
+        "linear-programming": {
+          "label": "线性规划",
+          "aliases": ["linear programming", "lp", "线性规划", "simplex", "duality"]
+        },
+        "integer-programming": {
+          "label": "整数规划",
+          "aliases": ["integer programming", "ip", "整数规划", "branch and bound", "cutting plane"]
+        },
+        "dynamic-programming": {
+          "label": "动态规划",
+          "aliases": ["dynamic programming", "dp", "动态规划", "bellman"]
+        },
+        "graph-theory": {
+          "label": "图论",
+          "aliases": ["graph theory", "图论", "graph", "network", "网络", "最短路", "最小生成树", "最大流", "shortest path"]
+        },
+        "nonlinear-programming": {
+          "label": "非线性规划",
+          "aliases": ["nonlinear programming", "nlp", "非线性规划", "kkt", "convex"]
+        },
+        "game-theory": {
+          "label": "博弈论",
+          "aliases": ["game theory", "博弈论", "game", "纳什", "nash"]
+        },
+        "decision-theory": {
+          "label": "决策论",
+          "aliases": ["decision theory", "决策论", "decision"]
+        },
+        "queueing-theory": {
+          "label": "排队论",
+          "aliases": ["queueing theory", "排队论", "queue", "排队"]
+        },
+        "inventory-theory": {
+          "label": "库存论",
+          "aliases": ["inventory theory", "库存论", "inventory", "库存"]
+        },
         "inventory-planning": {
           "label": "库存规划",
-          "description": "Inventory planning and control, including safety stock, reorder point, EOQ, service level, spare parts, and replenishment policies.",
-          "aliases": ["inventory planning", "inventory", "库存规划", "库存", "安全库存", "再订货点", "rop", "eoq", "service level", "备件", "spare parts"]
+          "aliases": ["inventory planning", "库存规划", "安全库存", "再订货点", "rop", "eoq", "service level", "备件", "spare parts"]
+        },
+        "scheduling": {
+          "label": "排序与调度",
+          "aliases": ["scheduling", "排程", "tsp", "traveling salesman", "旅行商", "cpm", "pert", "关键路径"]
+        },
+        "transportation": {
+          "label": "运输问题",
+          "aliases": ["transportation", "运输问题", "运输", "assignment", "指派"]
+        },
+        "metaheuristics": {
+          "label": "元启发式算法",
+          "aliases": ["metaheuristics", "启发式", "heuristic", "遗传算法", "genetic", "模拟退火", "simulated annealing", "禁忌搜索", "tabu"]
+        },
+        "applications": {
+          "label": "应用案例",
+          "aliases": ["applications", "应用", "application"]
+        },
+        "interdisciplinary": {
+          "label": "交叉学科",
+          "aliases": ["interdisciplinary", "交叉学科"]
         }
       }
+    },
+    "probability-statistics": {
+      "label": "概率统计",
+      "description": "Probability theory, mathematical statistics, random processes, and statistical inference.",
+      "aliases": ["probability", "statistics", "概率", "统计", "概统", "随机", "贝叶斯", "bayes"],
+      "allow_new_subdomains": false,
+      "default_subdomain": "",
+      "subdomains": {}
     },
     "llm": {
       "label": "LLM",
@@ -23,10 +86,33 @@
       "subdomains": {
         "mixture-of-experts": {
           "label": "Mixture of Experts",
-          "description": "Sparse expert models, routing, load balancing, expert parallelism, and MoE engineering tradeoffs.",
-          "aliases": ["moe", "mixture of experts", "专家混合", "专家模型", "routing", "路由", "load balancing", "负载均衡", "switch transformer", "gshard", "deepseekmoe", "mixtral"]
+          "aliases": ["moe", "mixture of experts", "专家混合", "routing", "load balancing", "switch transformer", "gshard", "deepseekmoe", "mixtral"]
         }
       }
+    },
+    "markov-chain": {
+      "label": "马尔可夫链",
+      "description": "Markov chains, stochastic processes, stationary distributions, and transition matrices.",
+      "aliases": ["markov", "马尔可夫", "马尔科夫", "stochastic", "stationary distribution"],
+      "allow_new_subdomains": false,
+      "default_subdomain": "",
+      "subdomains": {}
+    },
+    "qpe": {
+      "label": "定量降水估计",
+      "description": "Quantitative precipitation estimation, radar rainfall, XGBoost-based QPE.",
+      "aliases": ["qpe", "xgboost", "radar", "rainfall", "precipitation", "quantitative", "降水", "雷达", "定量"],
+      "allow_new_subdomains": false,
+      "default_subdomain": "",
+      "subdomains": {}
+    },
+    "model-quantization": {
+      "label": "模型量化",
+      "description": "Model quantization, compression, and deployment optimization.",
+      "aliases": ["quantization", "qat", "量化", "compression", "deployment"],
+      "allow_new_subdomains": false,
+      "default_subdomain": "",
+      "subdomains": {}
     },
     "general": {
       "label": "通用",
