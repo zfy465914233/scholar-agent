@@ -1,50 +1,130 @@
 ---
+# ── Frontmatter ──────────────────────────────────────────────
 id: method-example
 title: Example Method Title
 type: method
-topic: example_topic
+domain: example_domain        # 大领域
+topic: example_topic          # 子话题
 tags:
   - example
 source_refs:
   - local:author-or-source
-confidence: draft
+confidence: draft             # draft | reviewed | verified
 updated_at: 2026-04-01
-origin: local_seed
+origin: local_seed            # local_seed | web_research | research_synthesis
+review_status: draft          # draft | reviewed | verified
 ---
 
-## Goal
+<!--
+═══════════════════════════════════════════════════════════════════
+  lore-agent 方法卡片模板 — 使用指南
 
-Describe what problem this method solves and when to use it.
+  本模板定义方法卡片的标准结构。方法卡片描述一个可执行的
+  过程/算法/方法论，而不是单纯的知识陈述。
 
-## Inputs
+  ── 数学深度规则（同知识卡片） ──────────────────────────────
 
-List the required assumptions, data, dependencies, or prerequisites.
-Include specific data types, formats, and version constraints.
+  Mode A — Heavy Math
+    触发：算法涉及优化求解、统计推断、收敛性证明等
+    在"步骤"中包含完整推导，在"公式速查表"中汇总
 
-## Procedure
+  Mode B — Light Math
+    触发：方法涉及度量/阈值但核心是流程而非推导
+    给出关键公式 + 直觉，跳过证明
 
-Describe the method step by step. Include specific parameters,
-configurations, and code-level details where applicable.
+  Mode C — No Math
+    触发：纯定性方法（SWOT分析、头脑风暴、设计思维等）
+    零公式，用流程图/检查表/对比框架组织
 
-## Expected Output
+  ── 自动检测 ───────────────────────────────────────────────
+    查询含方程/优化/收敛 → A
+    含度量/阈值但无方程 → B
+    其他 → C
 
-Describe what a successful result looks like — output format,
-shape, key metrics, or acceptance criteria. If sources do not
-provide this, synthesize it from the Procedure and Inputs above.
+═══════════════════════════════════════════════════════════════════
+-->
 
-## Concrete Example
+# 方法标题
 
-Provide a minimal worked example: sample input → processing steps →
-expected output. If sources do not contain one, construct a synthetic
-example based on the Procedure. If insufficient information exists
-to construct an example, write:
-`[insufficient data — needs supplementation]`
+> **方法卡片** | lore-agent
+>
+> 主要参考：Author (Year), Author2 (Year)
 
-## Failure Modes
+---
 
-Explain where the method can go wrong, common pitfalls,
-and how to diagnose problems.
+## 目录
 
-## Related Concepts
+1. [目标与适用场景](#目标与适用场景)
+2. [输入与前提](#输入与前提)
+3. [步骤](#步骤)
+4. [预期输出](#预期输出)
+5. [具体示例](#具体示例)
+6. [失败模式与注意事项](#失败模式与注意事项)
+7. [参考文献](#参考文献)
 
-- Cross-reference to supporting knowledge cards or related methods by ID.
+---
+
+## 目标与适用场景
+
+[描述该方法解决什么问题、何时使用、与其他方法的选择标准。]
+
+## 输入与前提
+
+[列出所需的假设、数据、依赖项或前置条件。
+Mode A：在此定义所有数学符号。
+Mode B/C：列出关键输入即可。]
+
+## 步骤
+
+[逐步描述方法流程。
+
+Mode A：包含完整推导链（假设→目标函数→一阶条件→最优解→二阶条件验证），
+        用 $\boxed{...}$ 标记最终结果。
+Mode B：给出关键公式 + 直觉解释，跳过完整推导。
+Mode C：纯流程描述，用编号步骤、流程图或检查表。]
+
+### 步骤 1：...
+
+### 步骤 2：...
+
+## 预期输出
+
+[描述成功结果的特征：输出格式、关键指标、验收标准。]
+
+## 具体示例
+
+[提供一个最小工作示例：输入 → 处理步骤 → 预期输出。
+若来源不包含示例，基于步骤构造合成示例。
+若信息不足以构造，写：`[insufficient data — needs supplementation]`]
+
+## 失败模式与注意事项
+
+[解释方法可能出错的地方、常见陷阱、如何诊断问题。]
+
+---
+
+## 公式速查表
+
+[仅 Mode A。汇总本方法涉及的所有关键公式。]
+
+| 步骤/组件 | 核心公式 | 条件/备注 |
+|:--|:--|:--|
+| ... | ... | ... |
+
+---
+
+## 参考文献
+
+1. **Author, A.** (Year). *Title*. Journal/Publisher.
+2. **Author, B.** (Year). *Title*. Journal/Publisher.
+
+---
+
+## See Also
+
+- [[card-id]] — 简要说明关联原因
+
+---
+
+*文档生成时间：YYYY年MM月DD日*
+*版本：v1.0 | lore-agent 方法卡片*

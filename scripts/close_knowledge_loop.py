@@ -336,6 +336,7 @@ def build_knowledge_card(
         lines.append("source_refs:")
         for url in source_urls[:10]:
             lines.append(f"  - {url}")
+    card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
     lines.extend([
         "confidence: draft",
         f"updated_at: {now}",
@@ -343,11 +344,72 @@ def build_knowledge_card(
         "review_status: draft",
         "---",
         "",
-        "## Question",
+        f"# {note_label} — {query}",
+        "",
+        f"> **{card_label}** | lore-agent",
+        ">",
+    ])
+    # Primary references from source URLs
+    if source_urls:
+        lines.append(f"> 主要参考：{', '.join(source_urls[:5])}")
+    lines.extend([
+        ">",
+        "---",
+        "",
+    ])
+
+    # --- Build TOC (目录) ---
+    toc_entries = []
+    toc_entries.append("1. [问题](#问题)")
+    toc_entries.append("2. [回答](#回答)")
+    section_idx = 3
+    if claims:
+        toc_entries.append(f"{section_idx}. [支撑论据](#支撑论据)")
+        section_idx += 1
+    if inferences:
+        toc_entries.append(f"{section_idx}. [推论](#推论)")
+        section_idx += 1
+    if uncertainties:
+        toc_entries.append(f"{section_idx}. [不确定性](#不确定性)")
+        section_idx += 1
+    if missing:
+        toc_entries.append(f"{section_idx}. [缺失证据](#缺失证据)")
+        section_idx += 1
+    if next_steps:
+        toc_entries.append(f"{section_idx}. [建议后续步骤](#建议后续步骤)")
+        section_idx += 1
+    if card_type == "method":
+        if expected_output:
+            toc_entries.append(f"{section_idx}. [预期输出](#预期输出)")
+            section_idx += 1
+        if example:
+            toc_entries.append(f"{section_idx}. [具体示例](#具体示例)")
+            section_idx += 1
+    unplaced = va_by_section.get(None, [])
+    if unplaced:
+        toc_entries.append(f"{section_idx}. [可视化辅助](#可视化辅助)")
+        section_idx += 1
+    source_images = collect_source_images(research_data)
+    if source_images:
+        toc_entries.append(f"{section_idx}. [来源图片](#来源图片)")
+        section_idx += 1
+    toc_entries.append(f"{section_idx}. [参考文献](#参考文献)")
+    section_idx += 1
+    toc_entries.append(f"{section_idx}. [See Also](#see-also)")
+
+    lines.append("## 目录")
+    lines.append("")
+    for entry in toc_entries:
+        lines.append(entry)
+    lines.extend(["", "---", ""])
+
+    # --- Body sections ---
+    lines.extend([
+        "## 问题",
         "",
         query,
         "",
-        "## Answer",
+        "## 回答",
         "",
         main_answer,
         "",
@@ -355,7 +417,7 @@ def build_knowledge_card(
     _append_visual_aids(lines, va_by_section.get("answer", []))
 
     if claims:
-        lines.extend(["## Supporting Claims", ""])
+        lines.extend(["## 支撑论据", ""])
         for c in claims:
             if isinstance(c, dict):
                 claim_text = c.get("claim", "")
@@ -368,28 +430,28 @@ def build_knowledge_card(
     _append_visual_aids(lines, va_by_section.get("supporting_claims", []))
 
     if inferences:
-        lines.extend(["## Inferences", ""])
+        lines.extend(["## 推论", ""])
         for inf in inferences:
             lines.append(f"- {inf}")
         lines.append("")
     _append_visual_aids(lines, va_by_section.get("inferences", []))
 
     if uncertainties:
-        lines.extend(["## Uncertainty", ""])
+        lines.extend(["## 不确定性", ""])
         for u in uncertainties:
             lines.append(f"- {u}")
         lines.append("")
     _append_visual_aids(lines, va_by_section.get("uncertainty", []))
 
     if missing:
-        lines.extend(["## Missing Evidence", ""])
+        lines.extend(["## 缺失证据", ""])
         for m in missing:
             lines.append(f"- {m}")
         lines.append("")
     _append_visual_aids(lines, va_by_section.get("missing_evidence", []))
 
     if next_steps:
-        lines.extend(["## Suggested Next Steps", ""])
+        lines.extend(["## 建议后续步骤", ""])
         for s in next_steps:
             lines.append(f"- {s}")
         lines.append("")
@@ -398,20 +460,18 @@ def build_knowledge_card(
     # Method-specific sections: Expected Output and Concrete Example
     if card_type == "method":
         if expected_output:
-            lines.extend(["## Expected Output", "", expected_output, ""])
+            lines.extend(["## 预期输出", "", expected_output, ""])
         if example:
-            lines.extend(["## Concrete Example", "", example, ""])
+            lines.extend(["## 具体示例", "", example, ""])
 
     # Visual aids without a section go at the end
-    unplaced = va_by_section.get(None, [])
     if unplaced:
-        lines.extend(["## Visual Aids", ""])
+        lines.extend(["## 可视化辅助", ""])
         _append_visual_aids(lines, unplaced)
 
     # Auto-collect relevant images from research source pages
-    source_images = collect_source_images(research_data)
     if source_images:
-        lines.extend(["## Source Images", ""])
+        lines.extend(["## 来源图片", ""])
         for img in source_images:
             url = img.get("url", "")
             alt = img.get("alt_text", "") or img.get("title", "") or "Source image"
@@ -440,14 +500,30 @@ def build_knowledge_card(
             lines.append(f"- [[{entity_slug}|{entity}]]")
         lines.append("")
 
-    # Check for related/potentially contradicting cards
+    # --- 参考文献 ---
+    if source_urls:
+        lines.extend(["## 参考文献", ""])
+        for i, url in enumerate(source_urls, 1):
+            lines.append(f"{i}. {url}")
+        lines.extend(["", "---", ""])
+
+    # --- See Also (always present) ---
+    lines.extend(["## See Also", ""])
     _idx = index_path if index_path is not None else DEFAULT_INDEX
     related = check_contradictions(query, claims, _idx)
     if related:
-        lines.extend(["## See Also", ""])
         for r in related:
             lines.append(f"- [[{r['card_id']}]] — {r['title']} (similarity: {r['score']:.1f})")
-        lines.append("")
+    else:
+        lines.append("<!-- TODO: 添加相关卡片链接 -->")
+    lines.extend(["", "---", ""])
+
+    # --- Footer ---
+    lines.extend([
+        f"*文档生成时间：{now}*",
+        f"*版本：v1.0 | lore-agent {card_label}*",
+        "",
+    ])
 
     # Write to knowledge tree
     output_dir.mkdir(parents=True, exist_ok=True)

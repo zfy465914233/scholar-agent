@@ -126,7 +126,17 @@ def clear_folder_cache() -> None:
 
 
 def _parse_frontmatter_title_tags(text: str) -> tuple[str, list[str]]:
-    """Extract title and tags from markdown frontmatter."""
+    """Extract title and tags from markdown frontmatter.
+
+    Handles multiple YAML formats:
+    - title: Single Line
+    - title: >
+      Multi-line folded
+    - tags: [tag1, tag2]        (inline list)
+    - tags:                     (block list)
+        - tag1
+        - tag2
+    """
     title = ""
     tags: list[str] = []
     if not text.startswith("---"):
@@ -135,20 +145,34 @@ def _parse_frontmatter_title_tags(text: str) -> tuple[str, list[str]]:
     if end < 0:
         return title, tags
     fm = text[3:end]
-    current_list_key: str | None = None
-    for line in fm.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("title:"):
-            title = stripped[len("title:"):].strip().strip('"').strip("'")
-            current_list_key = None
-        elif stripped.startswith("tags:"):
-            current_list_key = "tags"
-        elif stripped.startswith("- ") and current_list_key == "tags":
-            tag = stripped[2:].strip()
-            if tag:
-                tags.append(tag)
-        elif stripped and not stripped.startswith("-") and ":" in stripped:
-            current_list_key = None
+
+    # Extract title: handle quoted, multi-line folded (>) and literal (|)
+    title_match = re.search(
+        r"^title:\s*(?:'([^']*)'|\"([^\"]*)\"|>(.*?)$|\|(.*)$|(.*))$",
+        fm, re.MULTILINE,
+    )
+    if title_match:
+        # Groups: 1=single-quoted, 2=double-quoted, 3=folded, 4=literal, 5=plain
+        for group_val in title_match.groups():
+            if group_val is not None:
+                title = group_val.strip()
+                break
+
+    # Extract tags: handle both inline [a, b] and block - item formats
+    tags_match = re.search(r"^tags:\s*\[(.+?)\]", fm, re.MULTILINE)
+    if tags_match:
+        # Inline list: tags: [tag1, tag2, tag3]
+        tags = [t.strip().strip("'\"") for t in tags_match.group(1).split(",") if t.strip()]
+    else:
+        # Block list: tags:\n  - tag1\n  - tag2
+        tags_section = re.search(r"^tags:\s*$((?:\n\s+-\s+.+$)*)", fm, re.MULTILINE)
+        if tags_section:
+            tags = [
+                line.strip().lstrip("-").strip().strip("'\"")
+                for line in tags_section.group(1).strip().splitlines()
+                if line.strip()
+            ]
+
     return title, tags
 
 
@@ -498,6 +522,14 @@ def _propose_new_major_domain(query: str) -> str:
     return "general"
 
 
+def _ensure_dir(path: Path) -> bool:
+    """Create directory if it doesn't exist. Returns True if a new dir was created."""
+    if path.is_dir():
+        return False
+    path.mkdir(parents=True, exist_ok=True)
+    return True
+
+
 def _build_route(knowledge_root: Path, major_domain: str, subdomain: str | None) -> tuple[str, Path, str]:
     """Return the route slug, output path, and normalized subdomain string."""
     normalized_subdomain = (subdomain or "").strip()
@@ -542,8 +574,8 @@ def infer_domain_decision(
             route_slug, output_path, normalized_subdomain = _build_route(
                 knowledge_root, major_domain, subdomain,
             )
-            output_path.mkdir(parents=True, exist_ok=True)
-            clear_folder_cache()
+            if _ensure_dir(output_path):
+                clear_folder_cache()
             return {
                 "major_domain": major_domain,
                 "subdomain": normalized_subdomain,
@@ -560,8 +592,8 @@ def infer_domain_decision(
         route_slug, output_path, normalized_subdomain = _build_route(
             knowledge_root, major_domain, subdomain,
         )
-        output_path.mkdir(parents=True, exist_ok=True)
-        clear_folder_cache()
+        if _ensure_dir(output_path):
+            clear_folder_cache()
         return {
             "major_domain": major_domain,
             "subdomain": normalized_subdomain,
@@ -577,8 +609,8 @@ def infer_domain_decision(
         route_slug, output_path, normalized_subdomain = _build_route(
             knowledge_root, new_major_domain, None,
         )
-        output_path.mkdir(parents=True, exist_ok=True)
-        clear_folder_cache()
+        if _ensure_dir(output_path):
+            clear_folder_cache()
         return {
             "major_domain": new_major_domain,
             "subdomain": normalized_subdomain,
@@ -591,8 +623,8 @@ def infer_domain_decision(
     route_slug, output_path, normalized_subdomain = _build_route(
         knowledge_root, "general", None,
     )
-    output_path.mkdir(parents=True, exist_ok=True)
-    clear_folder_cache()
+    if _ensure_dir(output_path):
+        clear_folder_cache()
     return {
         "major_domain": "general",
         "subdomain": normalized_subdomain,

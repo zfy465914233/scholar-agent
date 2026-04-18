@@ -64,7 +64,7 @@ class GenerateHtmlTest(unittest.TestCase):
         }
         generate_html(graph_data, output)
         self.assertTrue(output.exists())
-        content = output.read_text()
+        content = output.read_text(encoding="utf-8")
         self.assertIn("vis-network", content)
         self.assertIn('"id": "a"', content)
 

@@ -111,7 +111,7 @@ class OutputFileTest(unittest.TestCase):
             ])
             self.assertEqual(0, result.returncode, msg=result.stderr)
             self.assertTrue(output_path.exists())
-            payload = json.loads(output_path.read_text())
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertTrue(payload.get("dry_run"))
         Path(bundle_path).unlink(missing_ok=True)
 

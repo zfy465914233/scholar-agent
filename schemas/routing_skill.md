@@ -55,9 +55,14 @@ You will receive a JSON object with:
 Return exactly one JSON object, no other text:
 
 ```json
-{"major_domain":"<slug>","subdomain":"<slug-or-empty>","reason":"<brief explanation>"}
+{"major_domain":"operations-research","subdomain":"linear-programming","reason":"Topic is about LP duality and simplex methods, which belongs under linear programming."}
 ```
 
-- `major_domain`: kebab-case slug (e.g., "operations-research", "quantum-computing")
-- `subdomain`: kebab-case slug or empty string "" for major-domain root
-- `reason`: one sentence explaining why this route is the best fit
+```json
+{"major_domain":"quantum-computing","subdomain":"","reason":"Quantum entanglement is a new subject area with no existing folder; proposed as a reusable major domain."}
+```
+
+Rules for each field:
+- `major_domain`: kebab-case slug (e.g., "operations-research", "quantum-computing"). Must be lowercase, hyphens only.
+- `subdomain`: kebab-case slug, or empty string `""` for major-domain root.
+- `reason`: one sentence explaining why this route is the best fit.

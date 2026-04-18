@@ -162,9 +162,9 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             content = card_path.read_text(encoding="utf-8")
 
             for section in [
-                "## Question", "## Answer", "## Supporting Claims",
-                "## Inferences", "## Uncertainty", "## Missing Evidence",
-                "## Suggested Next Steps",
+                "## 问题", "## 回答", "## 支撑论据",
+                "## 推论", "## 不确定性", "## 缺失证据",
+                "## 建议后续步骤",
             ]:
                 self.assertIn(section, content, f"Missing section: {section}")
 
@@ -236,9 +236,8 @@ class AnswerSchemaTest(unittest.TestCase):
         self.assertTrue(RESEARCH_NOTE_TEMPLATE.exists(), "knowledge.md template must exist")
         content = RESEARCH_NOTE_TEMPLATE.read_text(encoding="utf-8")
         for section in [
-            "## Core Statement", "## Formal Detail", "## Supporting Evidence",
-            "## Inferences", "## Uncertainty", "## Missing Evidence",
-            "## Related Concepts",
+            "## 目录", "## 第一节", "## 第二节",
+            "## 公式速查表", "## 参考文献", "## See Also",
         ]:
             self.assertIn(section, content, f"Template missing section: {section}")
 
