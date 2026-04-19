@@ -1,0 +1,18 @@
+{
+  "knowledge_dir": "./knowledge",
+  "index_path": "./indexes/local/index.json",
+  "lore_dir": "./scholar-agent",
+  "academic": {
+    "paper_notes_dir": "./paper-notes",
+    "research_interests": {
+      "research_domains": {
+        "大模型": {
+          "keywords": ["pre-training", "foundation model", "LLM", "large language model", "transformer", "GPT", "MoE", "mixture of experts"],
+          "arxiv_categories": ["cs.AI", "cs.LG", "cs.CL"],
+          "priority": 5
+        }
+      },
+      "excluded_keywords": ["survey", "workshop"]
+    }
+  }
+}
