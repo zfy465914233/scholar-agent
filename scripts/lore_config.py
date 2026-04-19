@@ -6,7 +6,7 @@ Config file format (.lore.json):
 {
   "knowledge_dir": "./knowledge",       // path to knowledge cards
   "index_path": "./indexes/local/index.json",  // path to BM25 index
-  "lore_dir": "./lore-agent"            // only needed when embedded as subdirectory
+  "lore_dir": "./scholar-agent"            // only needed when embedded as subdirectory
 }
 """
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Lore Agent's own directory (where this file lives)
 LORE_ROOT = Path(__file__).resolve().parents[1]
 
-# Defaults: always resolve relative to cwd, not lore-agent directory
+# Defaults: always resolve relative to cwd, not scholar-agent directory
 _DEFAULTS = {
     "knowledge_dir": str(Path.cwd() / "knowledge"),
     "index_path": str(Path.cwd() / "indexes" / "local" / "index.json"),
@@ -42,7 +42,7 @@ def _find_config_file() -> Path | None:
         if parent == current:
             break
         current = parent
-    # Fallback: lore-agent's own directory (embedded mode where config lives inside lore-agent/)
+    # Fallback: scholar-agent's own directory (embedded mode where config lives inside scholar-agent/)
     lore_config = LORE_ROOT / ".lore.json"
     if lore_config.exists():
         return lore_config
@@ -71,6 +71,10 @@ def load_config() -> dict:
                         if not p.is_absolute():
                             p = config_base / p
                         config[key] = str(p.resolve())
+            # Preserve all other config keys (e.g. academic settings)
+            for key, val in overrides.items():
+                if key not in ("knowledge_dir", "index_path", "lore_dir"):
+                    config[key] = val
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("Failed to parse %s: %s — using defaults", config_file, exc)
 
@@ -94,3 +98,19 @@ def clear_cache() -> None:
     """Clear cached config (useful after setup_mcp.py writes new config)."""
     global _config_cache
     _config_cache = None
+
+
+def get_research_interests() -> dict:
+    """Return research_interests from .lore.json academic config.
+
+    Returns a dict with 'research_domains' and 'excluded_keywords'.
+    Falls back to empty domains if not configured.
+    """
+    config = load_config()
+    academic = config.get("academic", {})
+    interests = academic.get("research_interests", {})
+    if isinstance(interests, list) and not interests:
+        return {"research_domains": {}, "excluded_keywords": []}
+    if not isinstance(interests, dict):
+        return {"research_domains": {}, "excluded_keywords": []}
+    return interests

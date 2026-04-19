@@ -16,7 +16,7 @@ if str(SCRIPTS) not in sys.path:
 import lore_config
 from mcp_server import query_knowledge, save_research, list_knowledge, capture_answer
 
-# Force config to always resolve to lore-agent's own directories
+# Force config to always resolve to scholar-agent's own directories
 # regardless of cwd, so tests don't leak files into parent projects.
 _TEST_INDEX = ROOT / "indexes" / "local" / "index.json"
 _TEST_KNOWLEDGE = ROOT / "tests" / "fixtures"

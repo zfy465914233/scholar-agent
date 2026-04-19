@@ -1,4 +1,4 @@
-# Lore Agent
+# Scholar Agent
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
@@ -6,15 +6,9 @@
 
 [中文](README.zh-CN.md)
 
-> 通用大模型在专业领域常常不够准、也不够新。Lore Agent 通过“在线研究补充 + 本地知识沉淀”形成可持续的知识飞轮，让 AI 在你的领域越用越强，也为你提供、维护人类学习的知识库。通过 MCP 无缝接入 Claude Code 与 VS Code Copilot。
+> General-purpose LLMs are often inaccurate and outdated in specialized domains. Scholar Agent combines **online research + local knowledge accumulation** into a sustainable knowledge flywheel, making your AI smarter in your domain over time. It also builds a human-readable knowledge base for quick learning. Integrates seamlessly with Claude Code and VS Code Copilot via MCP.
 
-> General-purpose LLMs are often not accurate enough and not up-to-date enough in specialized domains. Lore Agent combines **online research augmentation + local knowledge accumulation** into a sustainable knowledge flywheel, so your AI gets stronger in your domain over time while also building and maintaining a human-readable knowledge base for learning. It integrates seamlessly with Claude Code and VS Code Copilot via MCP.
-
-## Core Mechanism: Research → Accumulate → Get Smarter
-
-LLM training data is static. When you need answers about specialized domains or recent developments, it can only guess from general knowledge.
-
-Lore Agent adds a **knowledge flywheel**:
+## What It Does
 
 ```
 Your question
@@ -35,37 +29,28 @@ Next question: AI checks local first ── hit? ──► use directly, fast & 
 Research again → accumulate → reindex ──► knowledge base keeps growing
 ```
 
-Each round compounds. For questions AI cannot answer well, it researches online and then stores the result locally. This provides reusable guidance for future design and coding tasks while also forming a human-readable knowledge base you can learn from quickly.
+Each round compounds. Knowledge cards have full lifecycle management: **draft → reviewed → trusted → stale → deprecated**.
 
-Knowledge cards have full lifecycle management: **draft → reviewed → trusted → stale → deprecated**. Outdated knowledge gets flagged, new research overwrites old conclusions.
+## Academic Research Pipeline
 
-## Comparison
+Scholar Agent includes a comprehensive academic paper research pipeline:
 
-| | Lore Agent | Prompt-based Wiki (e.g. llm-wiki-agent) |
-|---|---|---|
-| **Research** | AI agent search + SearXNG meta-search + OpenAlex / Semantic Scholar APIs + local BM25 / embedding, evidence normalized & merged | Relies on LLM's own ability, no independent search pipeline |
-| **Knowledge lifecycle** | draft → reviewed → trusted → stale → deprecated | None — files are files |
-| **Knowledge flywheel** | Research → accumulate → reuse → gets smarter | One-way: LLM writes, human reads |
-| **Answer quality** | Structured JSON: claims + evidence IDs + uncertainty | Raw text |
-| **Graph & linking** | `[[wiki-links]]`, backlinks, interactive vis.js graph | Folder-based, no cross-references |
-
-## More Features
-
-- **Multi-perspective research** — Parallel research from 5 perspectives (academic, technical, applied, contrarian, historical) to avoid single-source bias
-- **Obsidian compatible** — Cards are standard Markdown + YAML frontmatter + `[[wiki-links]]`, browse directly in Obsidian
-- **Knowledge governance CLI** — Validate frontmatter, detect orphaned cards and broken links, find duplicates, manage card state transitions
-- **Provider fault tolerance** — Each search source fails independently; falls back to local retrieval when offline
+- **Paper Search** — Search papers from arXiv, DBLP, and Semantic Scholar. Filter by top conferences (CVPR, ICCV, ECCV, ICLR, AAAI, NeurIPS, ICML, ACL, EMNLP, MICCAI)
+- **Smart Scoring** — Four-dimensional scoring engine (relevance, recency, popularity, quality) ranks papers by your research interests
+- **Deep Analysis Notes** — Auto-generate 20+ section Obsidian-style markdown notes with `<!-- LLM: -->` placeholders for AI-assisted completion
+- **Figure Extraction** — Extract images from arXiv source archives and PDFs (via PyMuPDF)
+- **Daily Recommendations** — Automated daily paper search, scoring, deduplication, and recommendation note generation
+- **Paper → Knowledge Card** — Convert paper analyses into knowledge cards that feed back into the knowledge flywheel
+- **Keyword Auto-Linking** — Scan notes for technical terms and create `[[wiki-links]]` automatically
 
 ## Quick Start
 
-Choose one of the two setup paths below depending on how you want to use Lore Agent.
-
-### Use Lore Agent as a standalone project
+### Use as a standalone project
 
 ```bash
 # Clone and install
-git clone https://github.com/zfy465914233/lore-agent.git
-cd lore-agent
+git clone https://github.com/zfy465914233/scholar-agent.git
+cd scholar-agent
 pip install -r requirements.txt
 
 # Build the knowledge index
@@ -75,62 +60,111 @@ python scripts/local_index.py --output indexes/local/index.json
 docker compose up -d
 ```
 
-MCP configs are pre-configured for both Claude Code and VS Code Copilot:
+MCP configs are pre-configured:
 
 - **Claude Code**: `.mcp.json` is ready. `cd` into the project and start Claude Code.
 - **VS Code Copilot**: `.vscode/mcp.json` is ready. Open the project, enable agent mode.
 
-If you use this repository directly, you do not need to run `setup_mcp.py`. The setup script is only needed for the embed path below.
-
-### Embed Lore Agent into an existing project
+### Embed into an existing project
 
 ```bash
-cp -r lore-agent/ your-project/lore-agent/
-cd your-project && python lore-agent/setup_mcp.py
+cp -r scholar-agent/ your-project/scholar-agent/
+cd your-project && python scholar-agent/setup_mcp.py
 ```
 
-Auto-generates config. Knowledge lives in **your project**, not inside lore-agent.
+Auto-generates config. Knowledge lives in **your project**, not inside scholar-agent.
 
 ## MCP Tools
 
-AI agents interact with the knowledge base through 6 MCP tools:
+### Core Tools (always available)
 
 | Tool | Description |
 |------|-------------|
 | `query_knowledge` | Search local knowledge base |
-| `save_research` | Save research results as a knowledge card (supports Mermaid diagrams, source images) |
+| `save_research` | Save structured research results as a knowledge card |
 | `list_knowledge` | Browse all knowledge cards |
 | `capture_answer` | Quick-capture a Q&A pair as a draft card |
 | `ingest_source` | Ingest a URL or raw text into the knowledge base |
 | `build_graph` | Generate an interactive knowledge graph (vis.js) |
 
+### Academic Tools (set `LORE_ACADEMIC=1` to enable)
+
+| Tool | Description |
+|------|-------------|
+| `search_papers` | Search arXiv + Semantic Scholar with 4-dim scoring |
+| `search_conf_papers` | Search conference papers via DBLP + S2 enrichment |
+| `analyze_paper` | Generate deep-analysis markdown notes (20+ sections) |
+| `extract_paper_images` | Extract figures from arXiv source / PDF |
+| `paper_to_card` | Convert paper analysis into a knowledge card |
+| `daily_recommend` | Daily paper recommendation workflow |
+| `link_paper_keywords` | Auto-link keywords as `[[wikilinks]]` in notes |
+
+## Configuration
+
+### .lore.json
+
+The `.lore.json` file configures knowledge paths and academic research settings. See [`.lore.example.json`](.lore.example.json) for a full example with comments.
+
+Key sections:
+- `knowledge_dir` — Path to knowledge cards directory
+- `index_path` — Path to BM25 search index
+- `academic.research_interests` — Your research domains, keywords, and arXiv categories
+- `academic.scoring` — Paper scoring weights and dimensions
+
+### Environment Variables
+
+Copy `.env.example` to `.env` and configure:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `LORE_ACADEMIC` | No | Set to `1` to enable academic tools |
+| `S2_API_KEY` | No | Semantic Scholar API key ([get one free](https://api.semanticscholar.org/)) |
+| `LLM_API_KEY` | No | LLM API key for advanced synthesis pipeline |
+| `SEARXNG_BASE_URL` | No | SearXNG URL for web research (default: `http://localhost:8080`) |
+
 ## Project Structure
 
 ```
-lore-agent/
-├── mcp_server.py              # MCP server (6 tools)
+scholar-agent/
+├── mcp_server.py              # MCP server (13 tools)
 ├── setup_mcp.py               # Embed into existing projects
+├── pyproject.toml             # Package configuration
 ├── docker-compose.yml         # SearXNG
-├── requirements.txt
+├── .lore.json                 # Project & academic configuration
 ├── schemas/                   # Answer + evidence JSON schemas
-├── scripts/                   # Retrieval, research, synthesis, governance, graph
-├── knowledge/                 # Knowledge cards (Markdown + YAML frontmatter)
-├── indexes/                   # Generated (gitignored)
-└── tests/                     # 192 tests, ~5s
+├── scripts/
+│   ├── academic/              # Academic research modules
+│   │   ├── arxiv_search.py    # arXiv + Semantic Scholar search
+│   │   ├── conf_search.py     # Conference paper search (DBLP)
+│   │   ├── paper_analyzer.py  # Deep-analysis note generation
+│   │   ├── scoring.py         # 4-dim paper scoring engine
+│   │   ├── image_extractor.py # Figure extraction from PDFs
+│   │   ├── note_linker.py     # Wiki-link discovery + keyword linking
+│   │   └── daily_workflow.py  # Daily recommendation pipeline
+│   ├── lore_config.py         # Configuration reader
+│   ├── local_index.py         # BM25 index builder
+│   ├── local_retrieve.py      # Knowledge retrieval
+│   ├── close_knowledge_loop.py # Knowledge card builder
+│   └── ...                    # Research, synthesis, governance, graph
+├── knowledge/                 # Knowledge cards (gitignored, user-generated)
+├── indexes/                   # Generated indexes (gitignored)
+└── tests/                     # 247 tests
 ```
 
-## Benchmark
+## More Features
+
+- **Multi-perspective research** — Parallel research from 5 perspectives (academic, technical, applied, contrarian, historical)
+- **Obsidian compatible** — Standard Markdown + YAML frontmatter + `[[wiki-links]]`
+- **Knowledge governance CLI** — Validate frontmatter, detect orphaned cards, find duplicates, manage lifecycle
+- **Provider fault tolerance** — Each search source fails independently; falls back to local retrieval when offline
+
+## Testing
 
 ```bash
-python scripts/run_eval.py --dry-run
+python -m pytest tests/ -v
 ```
 
-| Metric | Score |
-|---|---|
-| Route accuracy | 100% (8/8) |
-| Retrieval hit rate | 100% (8/8) |
-| Min citations met | 100% (8/8) |
-| Errors | 0 |
+247 tests, ~13s. No external services needed.
 
 ## License
 

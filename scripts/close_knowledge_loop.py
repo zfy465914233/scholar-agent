@@ -346,7 +346,7 @@ def build_knowledge_card(
         "",
         f"# {note_label} — {query}",
         "",
-        f"> **{card_label}** | lore-agent",
+        f"> **{card_label}** | scholar-agent",
         ">",
     ])
     # Primary references from source URLs
@@ -533,7 +533,7 @@ def build_knowledge_card(
     # --- Footer ---
     lines.extend([
         f"*文档生成时间：{now}*",
-        f"*版本：v1.0 | lore-agent {card_label}*",
+        f"*版本：v1.0 | scholar-agent {card_label}*",
         "",
     ])
 

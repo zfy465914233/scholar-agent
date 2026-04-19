@@ -8,5 +8,24 @@ __pycache__/
 indexes/
 changelog.md
 .pytest_cache/
-scripts/__pycache__/
-tests/__pycache__/
+
+# Generated content
+knowledge/
+paper-notes/
+daily-notes/
+graph.html
+
+# Build artifacts
+dist/
+build/
+
+# Environment and secrets
+.env
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log

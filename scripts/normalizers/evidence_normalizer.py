@@ -127,7 +127,7 @@ def _fallback_candidate_uri(candidate: Any) -> str:
         ]
     )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    return f"urn:lore-agent:candidate:{digest}"
+    return f"urn:scholar-agent:candidate:{digest}"
 
 
 def _infer_source_type(candidate: Any, url: str | None) -> str:

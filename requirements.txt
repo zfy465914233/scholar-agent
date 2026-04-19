@@ -2,5 +2,10 @@
 jsonschema>=4.23,<5
 fastmcp>=2.0
 
+# Academic research dependencies (optional: pip install scholar-agent[academic])
+PyYAML>=6.0
+PyMuPDF>=1.24.0
+
 # Optional: Semantic retrieval with local embedding model
+# pip install scholar-agent[embedding]
 # sentence-transformers>=3.0

@@ -17,7 +17,7 @@ review_status: draft          # draft | reviewed | verified
 
 <!--
 ═══════════════════════════════════════════════════════════════════
-  lore-agent 方法卡片模板 — 使用指南
+  scholar-agent 方法卡片模板 — 使用指南
 
   本模板定义方法卡片的标准结构。方法卡片描述一个可执行的
   过程/算法/方法论，而不是单纯的知识陈述。
@@ -46,7 +46,7 @@ review_status: draft          # draft | reviewed | verified
 
 # 方法标题
 
-> **方法卡片** | lore-agent
+> **方法卡片** | scholar-agent
 >
 > 主要参考：Author (Year), Author2 (Year)
 
@@ -127,4 +127,4 @@ Mode C：纯流程描述，用编号步骤、流程图或检查表。]
 ---
 
 *文档生成时间：YYYY年MM月DD日*
-*版本：v1.0 | lore-agent 方法卡片*
+*版本：v1.0 | scholar-agent 方法卡片*

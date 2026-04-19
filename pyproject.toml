@@ -1,0 +1,48 @@
+[project]
+name = "scholar-agent"
+version = "0.1.0"
+description = "Knowledge flywheel MCP server + academic paper research pipeline for Claude Code and VS Code Copilot"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [{name = "zfy465914233"}]
+keywords = ["mcp", "knowledge-management", "arxiv", "academic-research", "obsidian"]
+
+dependencies = [
+    "jsonschema>=4.23,<5",
+    "fastmcp>=2.0",
+]
+
+[project.optional-dependencies]
+academic = [
+    "PyYAML>=6.0",
+    "PyMuPDF>=1.24.0",
+]
+embedding = [
+    "sentence-transformers>=3.0",
+]
+all = [
+    "scholar-agent[academic,embedding]",
+]
+
+[project.scripts]
+scholar-agent = "mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/zfy465914233/scholar-agent"
+Repository = "https://github.com/zfy465914233/scholar-agent"
+Issues = "https://github.com/zfy465914233/scholar-agent/issues"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["mcp_server", "setup_mcp"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

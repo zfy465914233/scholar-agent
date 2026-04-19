@@ -1,9 +1,21 @@
-"""MCP server exposing optimizer knowledge tools to Claude Code and Copilot.
+"""Scholar Agent — MCP server exposing knowledge tools to Claude Code and Copilot.
 
 Tools:
   - query_knowledge: Search the local knowledge base
   - save_research: Persist structured research results as a knowledge card
   - list_knowledge: Browse all knowledge cards, optionally filtered by topic
+  - capture_answer: Capture a Q&A answer as a draft knowledge card
+  - ingest_source: Ingest a URL or raw text into the knowledge base
+  - build_graph: Build an interactive knowledge graph visualization
+
+Academic tools (set LORE_ACADEMIC=1 to enable):
+  - search_papers: Search arXiv + Semantic Scholar with scoring
+  - search_conf_papers: Search conference papers via DBLP + S2 enrichment
+  - analyze_paper: Generate structured markdown notes for a paper
+  - extract_paper_images: Extract figures from arXiv source/PDF
+  - paper_to_card: Convert paper analysis into a knowledge card
+  - daily_recommend: Full daily recommendation workflow
+  - link_paper_keywords: Auto-link keywords as [[wikilinks]]
 
 Usage:
   # Direct run (for testing):
@@ -18,7 +30,7 @@ Usage:
 Configuration — add to .mcp.json in the project root:
   {
     "mcpServers": {
-      "optimizer": {
+      "scholar-agent": {
         "command": "uv",
         "args": ["run", "--with", "fastmcp", "fastmcp", "run", "mcp_server.py"]
       }
@@ -47,14 +59,17 @@ from close_knowledge_loop import (
     validate_answer_schema,
 )
 from close_knowledge_loop import reindex as _reindex
-from lore_config import get_knowledge_dir, get_index_path
+from lore_config import get_knowledge_dir, get_index_path, get_research_interests
 from local_retrieve import retrieve
 
 logger = logging.getLogger(__name__)
 
+# Academic tools module toggle (set LORE_ACADEMIC=1 to enable)
+LORE_ACADEMIC = os.environ.get("LORE_ACADEMIC", "").strip() in ("1", "true", "yes")
+
 try:
     from fastmcp import FastMCP
-    mcp = FastMCP("lore")
+    mcp = FastMCP("scholar-agent")
     tool = mcp.tool
 except ImportError:
     # Allow running without fastmcp — decorators become no-ops
@@ -444,8 +459,566 @@ def build_graph() -> str:
     }, ensure_ascii=False, indent=2)
 
 
-if __name__ == "__main__":
+# ---------------------------------------------------------------------------
+# Academic tools (controlled by LORE_ACADEMIC env var)
+# ---------------------------------------------------------------------------
+
+if LORE_ACADEMIC:
+
+    @tool
+    def search_papers(
+        query: str = "",
+        categories: str = "cs.AI,cs.LG,cs.CL,cs.CV",
+        max_results: int = 200,
+        top_n: int = 10,
+        skip_hot: bool = False,
+        config_path: str = "",
+    ) -> str:
+        """Search academic papers via arXiv + Semantic Scholar with scoring.
+
+        Performs a combined search across arXiv (recent 30 days) and
+        Semantic Scholar (high-influence papers from the past year), scores
+        and deduplicates results using a four-dimensional scoring engine
+        (relevance, recency, popularity, quality).
+
+        Args:
+            query: Natural language search query for Semantic Scholar hot-papers.
+                If empty, uses default category-based keywords.
+            categories: Comma-separated arXiv categories (default: cs.AI,cs.LG,cs.CL,cs.CV).
+            max_results: Maximum arXiv results to fetch (default 200).
+            top_n: Number of top-scored papers to return (default 10).
+            skip_hot: If true, skip the Semantic Scholar hot-papers pass.
+            config_path: Optional path to a YAML config file for research interests
+                and scoring weights.
+        """
+        from academic.arxiv_search import search_and_score, _load_config
+
+        # Clamp parameters to safe ranges
+        max_results = max(1, min(max_results, 500))
+        top_n = max(1, min(top_n, 50))
+
+        cats = [c.strip() for c in categories.split(",") if c.strip()]
+        if not cats:
+            cats = ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
+
+        config = {}
+        if config_path:
+            config = _load_config(config_path)
+        if not config:
+            # Try research interests from .lore.json
+            interests = get_research_interests()
+            if interests.get("research_domains"):
+                config = {
+                    "research_domains": interests["research_domains"],
+                    "excluded_keywords": interests.get("excluded_keywords", []),
+                }
+        if not config:
+            # Reasonable default research domains
+            config = {
+                "research_domains": {
+                    "大模型": {
+                        "keywords": ["pre-training", "foundation model", "LLM", "large language model", "transformer", "GPT"],
+                        "arxiv_categories": ["cs.AI", "cs.LG", "cs.CL"],
+                        "priority": 5,
+                    },
+                },
+                "excluded_keywords": ["survey", "workshop"],
+            }
+
+        try:
+            result = search_and_score(
+                config=config,
+                categories=cats,
+                max_results=max_results,
+                top_n=top_n,
+                skip_hot=skip_hot,
+            )
+        except Exception as e:
+            logger.exception("search_papers failed")
+            return json.dumps({"error": str(e), "papers": [], "total_found": 0})
+
+        # Trim large fields for readability
+        for p in result.get("papers", []):
+            summary = p.get("summary") or p.get("abstract") or ""
+            if len(summary) > 500:
+                p["_summary_truncated"] = True
+                p["summary"] = summary[:500] + "…"
+
+        return json.dumps(result, ensure_ascii=False, indent=2, default=str)
+
+    @tool
+    def search_conf_papers(
+        venues: str = "CVPR,ICLR,NeurIPS,ICML",
+        year: int = 0,
+        keywords: str = "",
+        excluded_keywords: str = "",
+        top_n: int = 10,
+        config_path: str = "",
+    ) -> str:
+        """Search conference papers via DBLP + Semantic Scholar enrichment.
+
+        Searches DBLP for papers from specified conferences, enriches with
+        Semantic Scholar data (abstracts, citations, arXiv IDs), scores
+        and ranks them.
+
+        Supported venues: CVPR, ICCV, ECCV, ICLR, AAAI, NeurIPS, ICML,
+        MICCAI, ACL, EMNLP.
+
+        Args:
+            venues: Comma-separated venue names (default: CVPR,ICLR,NeurIPS,ICML).
+            year: Conference year. 0 means current year.
+            keywords: Comma-separated keywords to filter papers (optional).
+            excluded_keywords: Comma-separated keywords to exclude (optional).
+            top_n: Number of top-scored papers to return (default 10).
+            config_path: Optional path to a YAML config file for scoring weights.
+        """
+        from academic.conf_search import search_and_score_conferences, DBLP_VENUES
+        from academic.arxiv_search import _load_config
+
+        if year <= 0:
+            from datetime import datetime
+            year = datetime.now().year
+
+        venue_list = [v.strip().upper() for v in venues.split(",") if v.strip()]
+        # Validate venue names
+        invalid = [v for v in venue_list if v not in DBLP_VENUES]
+        if invalid:
+            return json.dumps({
+                "error": f"Unknown venues: {invalid}. Supported: {list(DBLP_VENUES.keys())}",
+                "papers": [],
+                "total_found": 0,
+            })
+
+        kws = [k.strip() for k in keywords.split(",") if k.strip()] if keywords else None
+        ex_kws = [k.strip() for k in excluded_keywords.split(",") if k.strip()] if excluded_keywords else None
+
+        config = {}
+        if config_path:
+            config = _load_config(config_path)
+        if not config:
+            interests = get_research_interests()
+            if interests.get("research_domains"):
+                config = {
+                    "research_domains": interests["research_domains"],
+                    "excluded_keywords": interests.get("excluded_keywords", []),
+                }
+        if not config:
+            config = {"research_domains": {}, "excluded_keywords": []}
+
+        try:
+            result = search_and_score_conferences(
+                config=config,
+                year=year,
+                venues=venue_list,
+                keywords=kws,
+                excluded_keywords=ex_kws,
+                top_n=top_n,
+            )
+        except Exception as e:
+            logger.exception("search_conf_papers failed")
+            return json.dumps({"error": str(e), "papers": [], "total_found": 0, "year": year})
+
+        # Trim abstracts for readability
+        for p in result.get("papers", []):
+            abstract = p.get("abstract") or ""
+            if abstract and len(abstract) > 500:
+                p["_abstract_truncated"] = True
+                p["abstract"] = abstract[:500] + "…"
+
+        return json.dumps(result, ensure_ascii=False, indent=2, default=str)
+
+    @tool
+    def analyze_paper(
+        paper_json: str,
+        output_dir: str = "",
+        language: str = "zh",
+        all_papers_json: str = "",
+        images_json: str = "",
+    ) -> str:
+        """Analyze a paper and generate a structured deep-analysis markdown note.
+
+        Creates an Obsidian-compatible markdown note with frontmatter metadata,
+        20+ structured sections (core info, abstract translation, background,
+        research questions, methods, experiments, deep analysis, comparisons,
+        roadmap, future work, comprehensive evaluation), and optional wiki-links
+        to related papers.
+
+        The paper_json should contain at minimum: title, authors, arxiv_id.
+        Optional fields: summary/abstract, scores, affiliations, conference,
+        pdf_url, related_papers, matched_domain.
+
+        Args:
+            paper_json: JSON string with paper metadata.
+            output_dir: Directory for output notes. Defaults to
+                knowledge_dir/paper-notes under the configured lore root.
+            language: Note language — \"zh\" (Chinese, default) or \"en\" (English).
+            all_papers_json: Optional JSON array of other paper dicts for
+                finding related papers via wiki-links.
+            images_json: Optional JSON array of image dicts (from extract_paper_images)
+                with 'filename', 'section' keys. Section values: 'framework', 'results'.
+        """
+        from academic.paper_analyzer import generate_note
+        from academic.note_linker import find_related_papers
+
+        try:
+            paper = json.loads(paper_json)
+        except json.JSONDecodeError as e:
+            return json.dumps({"error": f"Invalid paper_json: {e}"})
+
+        if not paper.get("title"):
+            return json.dumps({"error": "paper_json must contain at least a 'title' field"})
+
+        # Resolve output directory
+        if not output_dir or not output_dir.strip():
+            output_dir = str(get_knowledge_dir().parent / "paper-notes")
+        out_path = Path(output_dir)
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        # Find related papers if provided
+        other_papers = []
+        if all_papers_json:
+            try:
+                other_papers = json.loads(all_papers_json)
+                if not isinstance(other_papers, list):
+                    other_papers = []
+            except json.JSONDecodeError:
+                other_papers = []
+
+        if other_papers and not paper.get("related_papers"):
+            related = find_related_papers(paper, other_papers, max_links=5)
+            if related:
+                paper["related_papers"] = related
+
+        # Validate language
+        if language not in ("zh", "en"):
+            language = "zh"
+
+        # Parse images
+        images = None
+        if images_json and images_json.strip():
+            try:
+                images = json.loads(images_json)
+                if not isinstance(images, list):
+                    images = None
+            except json.JSONDecodeError:
+                images = None
+
+        try:
+            note_path = generate_note(paper, str(out_path), language=language, images=images)
+        except Exception as e:
+            logger.exception("analyze_paper failed")
+            return json.dumps({"error": f"Failed to generate note: {e}"})
+
+        return json.dumps({
+            "status": "ok",
+            "note_path": note_path,
+            "title": paper.get("title", ""),
+            "language": language,
+            "has_related_links": bool(paper.get("related_papers")),
+        }, ensure_ascii=False, indent=2)
+
+    @tool
+    def extract_paper_images(
+        paper_id: str,
+        output_dir: str = "",
+        pdf_path: str = "",
+    ) -> str:
+        """Extract figures from an arXiv paper (source archive + PDF fallback).
+
+        Downloads the arXiv source package, looks for figures in standard
+        directories (pics/, figures/, fig/, images/), and falls back to
+        PyMuPDF PDF image extraction if needed.
+
+        Args:
+            paper_id: arXiv ID (e.g. "2401.12345").
+            output_dir: Directory for extracted images. Defaults to
+                paper-notes/{paper_id}/images/ under the knowledge root.
+            pdf_path: Optional local PDF file path for extraction fallback.
+        """
+        from academic.image_extractor import extract_paper_images as _extract
+
+        if not paper_id or not paper_id.strip():
+            return json.dumps({"error": "paper_id must not be empty"})
+
+        paper_id = paper_id.strip()
+
+        if not output_dir or not output_dir.strip():
+            output_dir = str(get_knowledge_dir().parent / "paper-notes" / paper_id / "images")
+
+        try:
+            images = _extract(paper_id, output_dir, pdf_path or None)
+        except Exception as e:
+            logger.exception("extract_paper_images failed")
+            return json.dumps({"error": str(e), "images": [], "count": 0})
+
+        return json.dumps({
+            "status": "ok",
+            "images": images,
+            "count": len(images),
+            "output_dir": output_dir,
+        }, ensure_ascii=False, indent=2)
+
+    @tool
+    def paper_to_card(
+        paper_json: str,
+        note_path: str = "",
+    ) -> str:
+        """Convert a paper analysis into a knowledge card in the knowledge base.
+
+        Takes paper metadata (and optionally a completed note) and creates a
+        structured knowledge card that participates in the knowledge graph.
+
+        Args:
+            paper_json: JSON string with paper metadata (title, abstract/summary,
+                scores, matched_keywords, matched_domain, arxiv_id).
+            note_path: Optional path to an existing paper note file. If provided
+                and the file exists, its content is used as the card answer
+                for richer context.
+        """
+        try:
+            paper = json.loads(paper_json)
+        except json.JSONDecodeError as e:
+            return json.dumps({"error": f"Invalid paper_json: {e}"})
+
+        title = paper.get("title", "")
+        if not title:
+            return json.dumps({"error": "paper_json must contain a 'title' field"})
+
+        # Build answer content
+        answer_text = ""
+        if note_path and note_path.strip():
+            np = Path(note_path.strip())
+            if np.exists():
+                try:
+                    answer_text = np.read_text(encoding="utf-8")
+                except OSError:
+                    pass
+
+        if not answer_text:
+            abstract = paper.get("summary") or paper.get("abstract") or ""
+            answer_text = f"# {title}\n\n{abstract}" if abstract else f"# {title}"
+
+        # Build supporting claims from scores
+        claims = []
+        scores = paper.get("scores", {})
+        domain = paper.get("matched_domain", "")
+        keywords = paper.get("matched_keywords", [])
+
+        if scores:
+            rec = scores.get("recommendation", 0)
+            claims.append({
+                "claim": f"Recommendation score: {rec:.1f}",
+                "evidence_ids": [],
+                "confidence": "high" if rec >= 7 else "medium",
+            })
+        if domain:
+            claims.append({
+                "claim": f"Matched research domain: {domain}",
+                "evidence_ids": [],
+                "confidence": "high",
+            })
+
+        answer_data = {
+            "answer": answer_text,
+            "supporting_claims": claims,
+            "inferences": [f"Keywords: {', '.join(keywords[:10])}"] if keywords else [],
+            "uncertainty": ["Auto-generated from paper metadata"],
+            "missing_evidence": [],
+            "suggested_next_steps": ["Read full paper for deeper analysis"],
+        }
+
+        arxiv_id = paper.get("arxiv_id", "")
+        if arxiv_id:
+            answer_data["tags"] = ["paper", f"arxiv:{arxiv_id}"]
+        else:
+            answer_data["tags"] = ["paper"]
+
+        try:
+            card_path = build_knowledge_card(
+                title, answer_data, None,
+                get_knowledge_dir(), index_path=get_index_path(),
+            )
+        except Exception as e:
+            return json.dumps({"error": f"Failed to write card: {e}"})
+
+        _mark_index_stale(get_index_path())
+
+        return json.dumps({
+            "status": "ok",
+            "card_path": str(card_path),
+            "paper_title": title,
+            "index_pending_refresh": True,
+        }, ensure_ascii=False, indent=2)
+
+    @tool
+    def daily_recommend(
+        top_n: int = 10,
+        language: str = "zh",
+        skip_existing: bool = True,
+        config_path: str = "",
+    ) -> str:
+        """Generate daily paper recommendations: search, score, dedup, build note.
+
+        Runs the full daily workflow: searches arXiv + Semantic Scholar,
+        scores papers against research interests, deduplicates against
+        existing notes, and generates a daily recommendation markdown file.
+
+        Args:
+            top_n: Number of top papers to recommend (default 10).
+            language: Note language — "zh" (Chinese) or "en" (English).
+            skip_existing: Whether to skip already-analyzed papers (default true).
+            config_path: Optional YAML config path for research interests.
+        """
+        from academic.daily_workflow import generate_daily_recommendations, build_daily_note
+        from academic.arxiv_search import _load_config
+
+        top_n = max(1, min(top_n, 50))
+        if language not in ("zh", "en"):
+            language = "zh"
+
+        # Load config
+        config = {}
+        if config_path:
+            config = _load_config(config_path)
+        if not config:
+            interests = get_research_interests()
+            if interests.get("research_domains"):
+                config = {
+                    "research_domains": interests["research_domains"],
+                    "excluded_keywords": interests.get("excluded_keywords", []),
+                }
+        if not config:
+            config = {"research_domains": {}, "excluded_keywords": []}
+
+        paper_notes_dir = str(get_knowledge_dir().parent / "paper-notes")
+
+        try:
+            result = generate_daily_recommendations(
+                config=config,
+                paper_notes_dir=paper_notes_dir,
+                top_n=top_n,
+                skip_existing=skip_existing,
+            )
+        except Exception as e:
+            logger.exception("daily_recommend search failed")
+            return json.dumps({"error": str(e), "papers": []})
+
+        papers = result.get("papers", [])
+        date_str = result.get("date", "")
+        skipped = result.get("skipped", 0)
+
+        # Build daily note
+        output_dir = str(get_knowledge_dir().parent / "daily-notes")
+        try:
+            note_path = build_daily_note(date_str, papers, output_dir, language=language)
+        except Exception as e:
+            logger.exception("daily_recommend note generation failed")
+            return json.dumps({"error": f"Note generation failed: {e}", "papers": papers})
+
+        # Identify top 3 for deep analysis
+        top3 = []
+        for p in papers[:3]:
+            top3.append({
+                "title": p.get("title", ""),
+                "arxiv_id": p.get("arxiv_id", ""),
+                "score": p.get("scores", {}).get("recommendation", 0),
+            })
+
+        return json.dumps({
+            "status": "ok",
+            "daily_note_path": note_path,
+            "date": date_str,
+            "total_found": result.get("total_found", 0),
+            "recommended": len(papers),
+            "skipped": skipped,
+            "top3_for_analysis": top3,
+            "papers": [
+                {
+                    "title": p.get("title", ""),
+                    "arxiv_id": p.get("arxiv_id", ""),
+                    "score": p.get("scores", {}).get("recommendation", 0),
+                    "domain": p.get("matched_domain", ""),
+                }
+                for p in papers
+            ],
+        }, ensure_ascii=False, indent=2)
+
+    @tool
+    def link_paper_keywords(
+        note_path: str = "",
+        notes_dir: str = "",
+    ) -> str:
+        """Scan notes and add [[wikilinks]] for known keywords.
+
+        Builds a keyword index from existing notes (extracting acronyms,
+        technical terms from titles and tags), then replaces keyword
+        occurrences in note text with [[wikilinks]].
+
+        Args:
+            note_path: Path to a specific note to linkify. If empty,
+                processes all notes in notes_dir.
+            notes_dir: Directory of paper notes. Defaults to paper-notes/
+                under the knowledge root.
+        """
+        from academic.note_linker import scan_notes_for_keywords, linkify_keywords
+
+        if not notes_dir or not notes_dir.strip():
+            notes_dir = str(get_knowledge_dir().parent / "paper-notes")
+
+        notes_path = Path(notes_dir)
+        if not notes_path.exists():
+            return json.dumps({"error": f"Notes directory not found: {notes_dir}"})
+
+        # Build keyword index
+        try:
+            keyword_index = scan_notes_for_keywords(notes_dir)
+        except Exception as e:
+            return json.dumps({"error": f"Failed to scan keywords: {e}"})
+
+        if not keyword_index:
+            return json.dumps({
+                "status": "ok",
+                "notes_processed": 0,
+                "links_added": 0,
+                "message": "No linkable keywords found in existing notes.",
+            })
+
+        total_processed = 0
+        total_links = 0
+
+        if note_path and note_path.strip():
+            # Linkify a single note
+            np = Path(note_path.strip())
+            if not np.exists():
+                return json.dumps({"error": f"Note not found: {note_path}"})
+            modified, links = linkify_keywords(str(np), keyword_index)
+            total_processed = 1
+            total_links = links
+        else:
+            # Linkify all notes
+            for md_file in notes_path.rglob("*.md"):
+                modified, links = linkify_keywords(str(md_file), keyword_index)
+                if modified:
+                    total_processed += 1
+                    total_links += links
+
+        return json.dumps({
+            "status": "ok",
+            "notes_processed": total_processed,
+            "links_added": total_links,
+            "keywords_indexed": len(keyword_index),
+        }, ensure_ascii=False, indent=2)
+
+    logger.info("Academic tools enabled (LORE_ACADEMIC=%s)", LORE_ACADEMIC)
+
+
+def main():
+    """Entry point for the MCP server."""
     if mcp is None:
         print("Error: fastmcp not installed. Run: pip install fastmcp", file=sys.stderr)
         sys.exit(1)
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

@@ -17,7 +17,7 @@ review_status: draft          # draft | reviewed | verified
 
 <!--
 ═══════════════════════════════════════════════════════════════════
-  lore-agent 知识卡片模板 — 使用指南
+  scholar-agent 知识卡片模板 — 使用指南
 
   本模板定义知识卡片的标准结构。根据主题特性选择合适的
   "数学深度模式"，不要强行填充不适用的内容。
@@ -60,7 +60,7 @@ review_status: draft          # draft | reviewed | verified
 
 # 卡片标题
 
-> **知识卡片** | lore-agent
+> **知识卡片** | scholar-agent
 >
 > 主要参考：Author (Year), Author2 (Year)
 
@@ -130,4 +130,4 @@ review_status: draft          # draft | reviewed | verified
 ---
 
 *文档生成时间：YYYY年MM月DD日*
-*版本：v1.0 | lore-agent 知识卡片*
+*版本：v1.0 | scholar-agent 知识卡片*

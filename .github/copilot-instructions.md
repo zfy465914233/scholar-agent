@@ -2,7 +2,7 @@
 
 ## Project Context
 
-This is a domain knowledge agent for algorithm research, experiment design, and LLM tooling exploration.
+This is Scholar Agent — a knowledge flywheel MCP server with an academic paper research pipeline. It combines domain knowledge retrieval, structured research synthesis, and academic paper analysis (arXiv/Semantic Scholar/DBLP).
 
 ## Core Constraints
 

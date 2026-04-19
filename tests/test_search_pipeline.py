@@ -99,7 +99,7 @@ class SelfHostedProviderTest(unittest.TestCase):
         self.assertEqual(2, len(payload["evidence"]))
         merged_urls = {item["url"] for item in payload["merged_candidates"]}
         self.assertIn("https://example.com/a", merged_urls)
-        self.assertTrue(any(url.startswith("urn:lore-agent:candidate:") for url in merged_urls))
+        self.assertTrue(any(url.startswith("urn:scholar-agent:candidate:") for url in merged_urls))
         evidence_urls = {item["url"] for item in payload["evidence"]}
         self.assertEqual(merged_urls, evidence_urls)
 
@@ -274,7 +274,7 @@ class SelfHostedProviderTest(unittest.TestCase):
         with patch("normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
             evidence = normalize_candidate(candidate, fetched_text="")
 
-        self.assertTrue(evidence["url"].startswith("urn:lore-agent:candidate:"))
+        self.assertTrue(evidence["url"].startswith("urn:scholar-agent:candidate:"))
         self.assertEqual("Intro", evidence["title"])
         self.assertEqual("A short summary.", evidence["summary"])
         self.assertEqual("other", evidence["source_type"])
@@ -308,8 +308,8 @@ class SelfHostedProviderTest(unittest.TestCase):
             first_evidence = normalize_candidate(first, fetched_text="")
             second_evidence = normalize_candidate(second, fetched_text="")
 
-        self.assertTrue(first_evidence["url"].startswith("urn:lore-agent:candidate:"))
-        self.assertTrue(second_evidence["url"].startswith("urn:lore-agent:candidate:"))
+        self.assertTrue(first_evidence["url"].startswith("urn:scholar-agent:candidate:"))
+        self.assertTrue(second_evidence["url"].startswith("urn:scholar-agent:candidate:"))
         self.assertNotEqual(first_evidence["url"], second_evidence["url"])
         self.assertIsNone(first_evidence["provenance"]["url"])
         self.assertIsNone(second_evidence["provenance"]["url"])

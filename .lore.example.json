@@ -1,6 +1,9 @@
 {
+  "_comment": "Example configuration for Scholar Agent. Copy to .lore.json and customize.",
+
   "knowledge_dir": "../knowledge",
   "index_path": "./indexes/local/index.json",
+
   "academic": {
     "search": {
       "sources": ["arxiv", "dblp", "semantic_scholar"],
@@ -36,8 +39,19 @@
       "min_shared_keywords": 1
     },
     "research_interests": {
-      "research_domains": {},
-      "excluded_keywords": []
+      "research_domains": {
+        "Machine Learning": {
+          "keywords": ["deep learning", "neural network", "transformer", "pre-training", "fine-tuning", "representation learning"],
+          "arxiv_categories": ["cs.LG", "cs.AI", "stat.ML"],
+          "priority": 5
+        },
+        "Natural Language Processing": {
+          "keywords": ["large language model", "LLM", "NLP", "text generation", "language understanding", "question answering", "RAG"],
+          "arxiv_categories": ["cs.CL", "cs.AI"],
+          "priority": 5
+        }
+      },
+      "excluded_keywords": ["workshop", "survey"]
     }
   }
 }

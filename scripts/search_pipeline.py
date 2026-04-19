@@ -217,4 +217,4 @@ def _fallback_candidate_uri(candidate: dict[str, Any]) -> str:
         ]
     )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    return f"urn:lore-agent:candidate:{digest}"
+    return f"urn:scholar-agent:candidate:{digest}"

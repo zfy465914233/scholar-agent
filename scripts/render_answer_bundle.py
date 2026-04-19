@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 
-SYSTEM_PROMPT = """You are a knowledge synthesis engine for lore-agent. Produce structured answers from evidence.
+SYSTEM_PROMPT = """You are a knowledge synthesis engine for scholar-agent. Produce structured answers from evidence.
 
 Core principles:
 1. Separate directly supported claims from inference.

@@ -1,6 +1,6 @@
 {
   "servers": {
-    "optimizer": {
+    "scholar-agent": {
       "type": "stdio",
       "command": "uv",
       "args": ["run", "--with", "fastmcp", "fastmcp", "run", "mcp_server.py"]
