@@ -53,9 +53,9 @@ def _format_image_refs(images: list[dict[str, Any]] | None, section: str) -> str
         fname = img.get("filename", "")
         caption = img.get("caption", "")
         if fname:
-            lines.append(f"![[images/{fname}]]")
+            lines.append(f"![[images/{fname}|800]]")
             if caption:
-                lines.append(f"*{caption}*")
+                lines.append(f"> {caption}")
             lines.append("")
     return "\n".join(lines)
 
@@ -519,6 +519,7 @@ def _generate_zh_note(
     pdf_url: str = "",
     related_papers: list[str] | None = None,
     images: list[dict[str, Any]] | None = None,
+    local_pdf_rel: str = "",
 ) -> str:
     """Generate Chinese deep-analysis markdown note."""
     # --- Tags ---
@@ -538,7 +539,10 @@ def _generate_zh_note(
 
     # --- Links ---
     links = f"[arXiv](https://arxiv.org/abs/{arxiv_id})" if arxiv_id else ""
-    if pdf_url:
+    # Prefer local PDF link over online URL
+    if local_pdf_rel:
+        links += f" | [PDF]({local_pdf_rel})" if links else f"[PDF]({local_pdf_rel})"
+    elif pdf_url:
         links += f" | [PDF]({pdf_url})" if links else f"[PDF]({pdf_url})"
     elif arxiv_id:
         links += f" | [PDF](https://arxiv.org/pdf/{arxiv_id})"
@@ -624,6 +628,9 @@ status: skeleton
     ext_lines = "\n## 外部资源\n\n"
     if arxiv_id:
         ext_lines += f"- [arXiv](https://arxiv.org/abs/{arxiv_id})\n"
+    if local_pdf_rel:
+        ext_lines += f"- [本地PDF]({local_pdf_rel})\n"
+    elif arxiv_id:
         ext_lines += f"- [PDF](https://arxiv.org/pdf/{arxiv_id})\n"
     ext_lines += "<!-- LLM: 补充代码仓库、数据集、项目主页等链接 -->\n"
     parts.append(ext_lines)
@@ -645,6 +652,7 @@ def _generate_en_note(
     pdf_url: str = "",
     related_papers: list[str] | None = None,
     images: list[dict[str, Any]] | None = None,
+    local_pdf_rel: str = "",
 ) -> str:
     """Generate English deep-analysis markdown note."""
     # --- Tags ---
@@ -663,7 +671,10 @@ def _generate_en_note(
 
     # --- Links ---
     links = f"[arXiv](https://arxiv.org/abs/{arxiv_id})" if arxiv_id else ""
-    if pdf_url:
+    # Prefer local PDF link over online URL
+    if local_pdf_rel:
+        links += f" | [PDF]({local_pdf_rel})" if links else f"[PDF]({local_pdf_rel})"
+    elif pdf_url:
         links += f" | [PDF]({pdf_url})" if links else f"[PDF]({pdf_url})"
     elif arxiv_id:
         links += f" | [PDF](https://arxiv.org/pdf/{arxiv_id})"
@@ -749,6 +760,9 @@ status: skeleton
     ext_lines = "\n## External Resources\n\n"
     if arxiv_id:
         ext_lines += f"- [arXiv](https://arxiv.org/abs/{arxiv_id})\n"
+    if local_pdf_rel:
+        ext_lines += f"- [Local PDF]({local_pdf_rel})\n"
+    elif arxiv_id:
         ext_lines += f"- [PDF](https://arxiv.org/pdf/{arxiv_id})\n"
     ext_lines += "<!-- LLM: Add code repo, dataset, project page links -->\n"
     parts.append(ext_lines)
@@ -765,6 +779,7 @@ def generate_note(
     output_dir: str,
     language: str = "zh",
     images: list[dict[str, Any]] | None = None,
+    local_pdf_path: str = "",
 ) -> str:
     """Generate a deep-analysis markdown note file for a paper.
 
@@ -774,6 +789,8 @@ def generate_note(
         language: "zh" or "en".
         images: Optional list of extracted images, each dict with
             'filename', 'caption', 'section' keys.
+        local_pdf_path: Path to local PDF file. If provided, PDF link
+            in the note will point to this local file.
 
     Returns:
         Path to the generated note file.
@@ -794,15 +811,29 @@ def generate_note(
     pdf_url = paper.get("pdf_url", "")
     related = paper.get("related_papers")
 
+    # Compute relative path from note file to local PDF
+    local_pdf_rel = ""
+    if local_pdf_path and os.path.isfile(local_pdf_path):
+        # Note will be at output_dir/domain/filename.md
+        filename = title_to_filename(title)
+        safe_domain = domain.strip("/\\").replace("..", "") or "Other"
+        note_path_abs = os.path.join(output_dir, safe_domain, f"{filename}.md")
+        try:
+            local_pdf_rel = os.path.relpath(local_pdf_path, os.path.dirname(note_path_abs))
+        except ValueError:
+            local_pdf_rel = local_pdf_path  # fallback to absolute on cross-drive
+
     if language == "zh":
         content = _generate_zh_note(
             paper_id, title, authors, domain, date, scores, abstract,
             arxiv_id, affiliations, conference, pdf_url, related, images,
+            local_pdf_rel=local_pdf_rel,
         )
     else:
         content = _generate_en_note(
             paper_id, title, authors, domain, date, scores, abstract,
             arxiv_id, affiliations, conference, pdf_url, related, images,
+            local_pdf_rel=local_pdf_rel,
         )
 
     filename = title_to_filename(title)

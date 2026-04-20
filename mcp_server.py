@@ -766,7 +766,10 @@ if SCHOLAR_ACADEMIC:
                 images = None
 
         try:
-            note_path = generate_note(paper, str(out_path), language=language, images=images)
+            note_path = generate_note(
+                paper, str(out_path), language=language, images=images,
+                local_pdf_path=detected_pdf or "",
+            )
         except Exception as e:
             logger.exception("analyze_paper failed")
             return json.dumps({"error": f"Failed to generate note: {e}"})
@@ -788,6 +791,17 @@ if SCHOLAR_ACADEMIC:
         except Exception:
             pass
 
+        # Build instructions for the caller about filling placeholders
+        placeholder_count = quality_check.get("placeholder_count", 0)
+        instructions = None
+        if placeholder_count > 0 and pdf_text:
+            instructions = (
+                "MUST fill all <!-- LLM: --> placeholders using pdf_text before showing to user. "
+                f"Note has {placeholder_count} placeholders. "
+                "Use Write tool to replace the skeleton note with fully filled content. "
+                "See SKILL.md '内容填充规则' section for detailed rules."
+            )
+
         return json.dumps({
             "status": "ok",
             "note_path": note_path,
@@ -798,6 +812,7 @@ if SCHOLAR_ACADEMIC:
             "has_full_text": bool(pdf_text),
             "pdf_text": pdf_text,
             "quality_check": quality_check,
+            "instructions": instructions,
         }, ensure_ascii=False, indent=2)
 
     @tool
