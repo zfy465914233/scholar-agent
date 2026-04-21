@@ -21,6 +21,7 @@ build/
 
 # Environment and secrets
 .env
+.scholar.json
 
 # IDE
 .idea/
