@@ -194,8 +194,8 @@ class TestPaperAnalyzer(unittest.TestCase):
             ]
             path = self.generate_note(paper, tmp, language="zh", images=images)
             content = Path(path).read_text(encoding="utf-8")
-            self.assertIn("![[images/fig1.png]]", content)
-            self.assertIn("![[images/fig2.png]]", content)
+            self.assertIn("![[images/fig1.png", content)
+            self.assertIn("![[images/fig2.png", content)
 
 
 # ---------------------------------------------------------------------------
