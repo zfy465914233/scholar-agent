@@ -343,3 +343,70 @@ def search_and_score_conferences(
         "year": year,
         "total_found": len(scored),
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-year conference search (for daily_recommend dual-track)
+# ---------------------------------------------------------------------------
+
+def search_conferences_multi_year(
+    config: dict[str, Any],
+    years: list[int] | None = None,
+    venues: list[str] | None = None,
+    max_enrich: int = 100,
+) -> list[dict[str, Any]]:
+    """Search top conferences across multiple years, enrich, and relevance-filter.
+
+    Returns papers ranked by impact: influentialCitationCount / (years_since + 1).
+    """
+    from academic.scoring import calculate_relevance_score
+
+    now_year = __import__("datetime").datetime.now().year
+    if years is None:
+        years = list(range(2020, now_year + 1))
+    if venues is None:
+        venues = ["NeurIPS", "ICML", "ICLR", "CVPR", "ACL"]
+
+    # 1. DBLP search per year
+    all_papers: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
+    for year in years:
+        batch = search_all_conferences(year, venues, max_per_venue=200)
+        for p in batch:
+            tn = re.sub(r"[^a-z0-9\s]", "", p["title"].lower()).strip()
+            if tn and tn not in seen_titles:
+                seen_titles.add(tn)
+                all_papers.append(p)
+
+    if not all_papers:
+        return []
+
+    logger.info("[ConfMultiYear] DBLP total: %d papers across %d years", len(all_papers), len(years))
+
+    # 2. S2 enrichment (cap to keep runtime low)
+    enriched = enrich_with_semantic_scholar(all_papers[:max_enrich])
+
+    # 3. Relevance filter — drop papers with 0 relevance
+    domains = config.get("research_domains", {})
+    excluded = config.get("excluded_keywords", [])
+    relevant: list[dict[str, Any]] = []
+    for p in enriched:
+        score, domain, keywords = calculate_relevance_score(p, domains, excluded)
+        if score > 0:
+            p["_relevance_score"] = score
+            p["matched_domain"] = domain
+            p["matched_keywords"] = keywords
+            relevant.append(p)
+
+    if not relevant:
+        return []
+
+    # 4. Impact ranking: influentialCitationCount / (years_since + 1)
+    for p in relevant:
+        inf = p.get("influentialCitationCount") or 0
+        pub_year = p.get("year", now_year)
+        years_since = max(now_year - int(pub_year), 0)
+        p["_impact_score"] = inf / (years_since + 1)
+
+    relevant.sort(key=lambda x: x.get("_impact_score", 0), reverse=True)
+    return relevant

@@ -1042,18 +1042,20 @@ if SCHOLAR_ACADEMIC:
         language: str = "zh",
         skip_existing: bool = True,
         config_path: str = "",
+        dual_track: bool = True,
     ) -> str:
         """Generate daily paper recommendations: search, score, dedup, build note.
 
-        Runs the full daily workflow: searches arXiv + Semantic Scholar,
-        scores papers against research interests, deduplicates against
-        existing notes, and generates a daily recommendation markdown file.
+        When dual_track=True (default): recommends 2 top-conference papers
+        (impact-ranked) + 2 arXiv innovation papers (heuristic + LLM scored).
+        When dual_track=False: uses the original single-track pipeline.
 
         Args:
-            top_n: Number of top papers to recommend (default 10).
+            top_n: Number of top papers (single-track mode only, default 10).
             language: Note language — "zh" (Chinese) or "en" (English).
             skip_existing: Whether to skip already-analyzed papers (default true).
             config_path: Optional YAML config path for research interests.
+            dual_track: Use dual-track mode: 2 conference + 2 arXiv (default true).
         """
         from academic.daily_workflow import generate_daily_recommendations, build_daily_note
         from academic.arxiv_search import _load_config
@@ -1076,6 +1078,11 @@ if SCHOLAR_ACADEMIC:
         if not config:
             config = {"research_domains": {}, "excluded_keywords": []}
 
+        # Load dual-track settings from .scholar.json
+        daily_config = {}
+        full_config = load_config()
+        daily_config = full_config.get("academic", {}).get("daily_recommend", {})
+
         paper_notes_dir = str(get_knowledge_dir().parent / "paper-notes")
 
         try:
@@ -1084,6 +1091,8 @@ if SCHOLAR_ACADEMIC:
                 paper_notes_dir=paper_notes_dir,
                 top_n=top_n,
                 skip_existing=skip_existing,
+                dual_track=dual_track,
+                daily_config=daily_config,
             )
         except Exception as e:
             logger.exception("daily_recommend search failed")
@@ -1092,23 +1101,47 @@ if SCHOLAR_ACADEMIC:
         papers = result.get("papers", [])
         date_str = result.get("date", "")
         skipped = result.get("skipped", 0)
+        tracks = result.get("tracks")
 
         # Build daily note
         output_dir = str(get_knowledge_dir().parent / "daily-notes")
         try:
-            note_path = build_daily_note(date_str, papers, output_dir, language=language)
+            note_path = build_daily_note(
+                date_str, papers, output_dir,
+                language=language,
+                tracks=tracks,
+            )
         except Exception as e:
             logger.exception("daily_recommend note generation failed")
             return json.dumps({"error": f"Note generation failed: {e}", "papers": papers})
 
-        # Identify top 3 for deep analysis
-        top3 = []
-        for p in papers[:3]:
-            top3.append({
+        # Identify papers for deep analysis
+        top_for_analysis = []
+        for p in papers[:4]:
+            top_for_analysis.append({
                 "title": p.get("title", ""),
                 "arxiv_id": p.get("arxiv_id", ""),
-                "score": p.get("scores", {}).get("recommendation", 0),
+                "track": p.get("track", ""),
+                "impact_score": round(p.get("_impact_score", 0), 2),
+                "innovation_score": round(p.get("_innovation_final_score", 0), 3),
+                "recommendation_score": p.get("scores", {}).get("recommendation", 0),
             })
+
+        paper_summaries = []
+        for p in papers:
+            entry = {
+                "title": p.get("title", ""),
+                "arxiv_id": p.get("arxiv_id", ""),
+                "track": p.get("track", ""),
+                "domain": p.get("matched_domain", ""),
+            }
+            if p.get("_impact_score") is not None:
+                entry["impact_score"] = round(p["_impact_score"], 2)
+            if p.get("_innovation_final_score") is not None:
+                entry["innovation_score"] = round(p["_innovation_final_score"], 3)
+            if p.get("scores", {}).get("recommendation"):
+                entry["recommendation_score"] = p["scores"]["recommendation"]
+            paper_summaries.append(entry)
 
         return json.dumps({
             "status": "ok",
@@ -1117,16 +1150,13 @@ if SCHOLAR_ACADEMIC:
             "total_found": result.get("total_found", 0),
             "recommended": len(papers),
             "skipped": skipped,
-            "top3_for_analysis": top3,
-            "papers": [
-                {
-                    "title": p.get("title", ""),
-                    "arxiv_id": p.get("arxiv_id", ""),
-                    "score": p.get("scores", {}).get("recommendation", 0),
-                    "domain": p.get("matched_domain", ""),
-                }
-                for p in papers
-            ],
+            "dual_track": result.get("dual_track", False),
+            "tracks": {
+                k: {"count": v.get("count", 0)}
+                for k, v in (tracks or {}).items()
+            },
+            "top_for_analysis": top_for_analysis,
+            "papers": paper_summaries,
         }, ensure_ascii=False, indent=2)
 
     @tool

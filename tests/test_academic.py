@@ -395,7 +395,7 @@ class TestDailyWorkflow(unittest.TestCase):
             self.assertIn("---", content)
             self.assertIn("论文推荐", content)
             self.assertIn("Paper A", content)
-            self.assertIn("TOP3", content)
+            self.assertIn("TOP", content)
 
     def test_build_daily_note_en(self):
         from academic.daily_workflow import build_daily_note
