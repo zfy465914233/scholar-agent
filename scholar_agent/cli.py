@@ -6,6 +6,7 @@ import argparse
 import importlib.util
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Callable, Sequence
@@ -336,15 +337,67 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _doctor_payload() -> dict[str, object]:
     config_file = scholar_config.get_config_file_path()
+    knowledge_dir = Path(scholar_config.get_knowledge_dir())
+    index_path = Path(scholar_config.get_index_path())
+    user_home = get_user_home()
+
+    checks: list[dict[str, object]] = []
+
+    # Directories
+    for label, p in [("knowledge_dir", knowledge_dir), ("index_dir", index_path.parent)]:
+        exists = p.exists()
+        writable = os.access(p if exists else p.parent, os.W_OK) if exists else False
+        checks.append({"check": label, "path": str(p), "exists": exists, "writable": writable})
+
+    # Index validity
+    index_exists = index_path.exists()
+    index_valid = False
+    if index_exists:
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+            index_valid = bool(data.get("documents"))
+        except Exception:
+            pass
+    checks.append({"check": "index", "path": str(index_path), "exists": index_exists, "valid": index_valid})
+
+    # Knowledge cards count
+    card_count = 0
+    if knowledge_dir.exists():
+        card_count = sum(1 for _ in knowledge_dir.rglob("*.md"))
+
+    # MCP registration (Claude)
+    claude_registered = False
+    if shutil.which("claude"):
+        try:
+            result = claude_installer.get_install_status()
+            claude_registered = result.get("installed", False)
+        except Exception:
+            pass
+
+    # poppler
+    poppler_installed = shutil.which("pdftotext") is not None
+
+    # fastmcp
+    fastmcp_available = importlib.util.find_spec("fastmcp") is not None
+
     return {
+        "status": "ok",
         "mode": scholar_config.detect_runtime_mode(),
         "config_file": str(config_file) if config_file is not None else None,
-        "user_home": str(get_user_home()),
+        "user_home": str(user_home),
         "user_config_path": str(get_user_config_path()),
-        "knowledge_dir": str(scholar_config.get_knowledge_dir()),
-        "index_path": str(scholar_config.get_index_path()),
+        "knowledge_dir": str(knowledge_dir),
+        "index_path": str(index_path),
+        "knowledge_cards": card_count,
         "scholar_dir": str(scholar_config.get_scholar_dir()),
-        "fastmcp_available": importlib.util.find_spec("fastmcp") is not None,
+        "checks": checks,
+        "dependencies": {
+            "fastmcp": fastmcp_available,
+            "poppler": poppler_installed,
+        },
+        "mcp": {
+            "claude_registered": claude_registered,
+        },
         "environment": {
             "SCHOLAR_HOME": os.environ.get("SCHOLAR_HOME"),
             "SCHOLAR_PROFILE": os.environ.get("SCHOLAR_PROFILE"),
@@ -355,25 +408,100 @@ def _doctor_payload() -> dict[str, object]:
 
 
 def _format_doctor_text(payload: dict[str, object]) -> str:
-    lines = [
-        f"mode: {payload['mode']}",
-        f"config_file: {payload['config_file']}",
-        f"knowledge_dir: {payload['knowledge_dir']}",
-        f"index_path: {payload['index_path']}",
-        f"scholar_dir: {payload['scholar_dir']}",
-        f"fastmcp_available: {payload['fastmcp_available']}",
-    ]
-    environment = payload["environment"]
+    lines: list[str] = []
+    problems: list[str] = []
+
+    lines.append(f"mode:            {payload['mode']}")
+    lines.append(f"config_file:     {payload['config_file']}")
+    lines.append(f"data directory:  {payload['user_home']}")
+    lines.append(f"knowledge cards: {payload['knowledge_cards']}")
+    lines.append("")
+
+    # Dependencies
+    deps = payload.get("dependencies", {})
+    if isinstance(deps, dict):
+        lines.append("Dependencies:")
+        for name, ok in deps.items():
+            icon = "ok" if ok else "MISSING"
+            lines.append(f"  {name}: {icon}")
+            if not ok and name == "poppler":
+                problems.append("poppler not found — PDF text extraction will not work. Install with: brew install poppler")
+            if not ok and name == "fastmcp":
+                problems.append("fastmcp not found — MCP server will not start. Install with: pip install -e .")
+
+    # MCP registration
+    mcp = payload.get("mcp", {})
+    if isinstance(mcp, dict):
+        lines.append("")
+        lines.append("MCP Registration:")
+        claude_ok = mcp.get("claude_registered", False)
+        icon = "registered" if claude_ok else "NOT registered"
+        lines.append(f"  claude: {icon}")
+        if not claude_ok:
+            problems.append("Claude Code MCP not registered. Run: scholar-agent init")
+
+    # Directory checks
+    checks = payload.get("checks", [])
+    if isinstance(checks, list) and checks:
+        lines.append("")
+        lines.append("Directories:")
+        for c in checks:
+            if not isinstance(c, dict):
+                continue
+            name = c.get("check", "")
+            exists = c.get("exists", False)
+            if name == "index":
+                valid = c.get("valid", False)
+                if not exists:
+                    lines.append(f"  index: not found (will build on first query)")
+                elif not valid:
+                    lines.append(f"  index: empty (will rebuild on first query)")
+                else:
+                    lines.append(f"  index: ok")
+            else:
+                writable = c.get("writable", False)
+                icon = "ok" if exists and writable else "MISSING" if not exists else "NOT WRITABLE"
+                lines.append(f"  {name}: {icon}")
+                if not exists:
+                    problems.append(f"{name} does not exist: {c.get('path', '?')}")
+                elif not writable:
+                    problems.append(f"{name} is not writable: {c.get('path', '?')}")
+
+    # Environment
+    environment = payload.get("environment", {})
     if isinstance(environment, dict):
-        for key, value in environment.items():
-            lines.append(f"{key}: {value}")
+        env_set = {k: v for k, v in environment.items() if v is not None}
+        if env_set:
+            lines.append("")
+            lines.append("Environment:")
+            for key, value in env_set.items():
+                lines.append(f"  {key}: {value}")
+
+    # Problems summary
+    if problems:
+        lines.append("")
+        lines.append(f"Problems ({len(problems)}):")
+        for p in problems:
+            lines.append(f"  - {p}")
+    else:
+        lines.append("")
+        lines.append("All checks passed.")
+
     return "\n".join(lines)
 
 
 def _run_doctor(output_format: str) -> int:
     payload = _doctor_payload()
     _print_payload(payload, output_format, text_formatter=_format_doctor_text)
-    return 0
+    checks = payload.get("checks", [])
+    has_problem = any(
+        not isinstance(c, dict) or not c.get("exists", True)
+        for c in checks
+    )
+    deps = payload.get("dependencies", {})
+    if isinstance(deps, dict) and not all(deps.values()):
+        has_problem = True
+    return 1 if has_problem else 0
 
 
 def _config_show_payload() -> dict[str, object]:
@@ -589,8 +717,8 @@ def _run_init(
     if not skip_register:
         # Detect project-local mode: SCHOLAR_HOME is set and differs from default
         scholar_home_env = os.environ.get("SCHOLAR_HOME", "").strip()
-        default_home = str(Path.home() / "scholar-agent")
-        is_project_local = bool(scholar_home_env) and scholar_home_env != default_home
+        default_home = str(get_user_home())
+        is_project_local = bool(scholar_home_env) and Path(scholar_home_env).resolve() != Path(default_home).resolve()
         scope = "project" if is_project_local else "user"
 
         hosts = ["claude", "vscode", "opencode"] if host == "all" else [host]
