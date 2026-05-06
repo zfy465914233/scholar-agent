@@ -626,7 +626,7 @@ def build_knowledge_card(
         for r in related:
             lines.append(f"- [[{r['card_id']}]] — {r['title']} (similarity: {r['score']:.1f})")
     else:
-        lines.append("<!-- TODO: 添加相关卡片链接 -->")
+        lines.append("<!-- No related cards yet — links appear automatically as the knowledge base grows -->")
     lines.extend(["", "---", ""])
 
     # --- Footer ---

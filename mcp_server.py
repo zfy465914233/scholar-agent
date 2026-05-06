@@ -81,6 +81,13 @@ except ImportError:
         return fn
 
 
+def _optional_dep_warnings() -> list[str]:
+    warnings: list[str] = []
+    if importlib.util.find_spec("fitz") is None:
+        warnings.append("PyMuPDF not installed — PDF text and image extraction will not work. Install with: pip install PyMuPDF")
+    return warnings
+
+
 def _stale_marker_path(index_path: Path) -> Path:
     return index_path.with_suffix(index_path.suffix + ".stale")
 
@@ -864,7 +871,7 @@ if SCHOLAR_ACADEMIC:
                 "See SKILL.md '内容填充规则' section for detailed rules."
             )
 
-        return json.dumps({
+        result_payload: dict[str, object] = {
             "status": "ok",
             "note_path": note_path,
             "title": paper.get("title", ""),
@@ -875,7 +882,11 @@ if SCHOLAR_ACADEMIC:
             "pdf_text": pdf_text,
             "quality_check": quality_check,
             "instructions": instructions,
-        }, ensure_ascii=False, indent=2)
+        }
+        dep_warnings = _optional_dep_warnings()
+        if dep_warnings:
+            result_payload["warnings"] = dep_warnings
+        return json.dumps(result_payload, ensure_ascii=False, indent=2)
 
     @tool
     def download_paper(
@@ -999,12 +1010,16 @@ if SCHOLAR_ACADEMIC:
             logger.exception("extract_paper_images failed")
             return json.dumps({"error": str(e), "images": [], "count": 0})
 
-        return json.dumps({
+        result: dict[str, object] = {
             "status": "ok",
             "images": images,
             "count": len(images),
             "output_dir": output_dir,
-        }, ensure_ascii=False, indent=2)
+        }
+        dep_warnings = _optional_dep_warnings()
+        if dep_warnings:
+            result["warnings"] = dep_warnings
+        return json.dumps(result, ensure_ascii=False, indent=2)
 
     @tool
     def paper_to_card(

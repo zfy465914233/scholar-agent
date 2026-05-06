@@ -105,9 +105,12 @@ python -m pytest tests/ -v
 | `scholar-agent doctor` | 查看环境与配置诊断信息 |
 | `scholar-agent config show` | 显示解析后的配置 |
 | `scholar-agent config init` | 创建用户级数据目录和配置 |
+| `scholar-agent config migrate --to user-home` | 从旧目录布局迁移数据 |
 | `scholar-agent install claude --write` | 注册 MCP 到 Claude Code |
 | `scholar-agent install vscode --write` | 注册 MCP 到 VS Code Copilot |
 | `scholar-agent install opencode --write` | 注册 MCP 到 OpenCode |
+| `scholar-agent install claude --status` | 检查 Claude Code 是否已注册 MCP |
+| `scholar-agent install claude --uninstall` | 从 Claude Code 移除 MCP 注册 |
 
 ## 数据目录
 
@@ -166,6 +169,7 @@ init 后的目录结构：
 |------|------|
 | `search_papers` | 搜索 arXiv + Semantic Scholar，四维评分 |
 | `search_conf_papers` | 搜索顶会论文（DBLP + S2 增强） |
+| `download_paper` | 下载论文 PDF 到本地 |
 | `analyze_paper` | 生成深度分析笔记（20+ 章节） |
 | `extract_paper_images` | 从 arXiv 源包 / PDF 提取图表 |
 | `paper_to_card` | 将论文分析转化为知识卡片 |

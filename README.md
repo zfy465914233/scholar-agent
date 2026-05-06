@@ -101,9 +101,12 @@ python -m pytest tests/ -v
 | `scholar-agent doctor` | Show environment and config diagnostics |
 | `scholar-agent config show` | Show resolved configuration |
 | `scholar-agent config init` | Create user-level data dirs and config |
+| `scholar-agent config migrate --to user-home` | Migrate data from old directory layout |
 | `scholar-agent install claude --write` | Register MCP with Claude Code |
 | `scholar-agent install vscode --write` | Register MCP with VS Code Copilot |
 | `scholar-agent install opencode --write` | Register MCP with OpenCode |
+| `scholar-agent install claude --status` | Check if MCP is registered with Claude Code |
+| `scholar-agent install claude --uninstall` | Remove MCP registration from Claude Code |
 
 ## Data Directory
 
@@ -162,6 +165,7 @@ For best analysis quality, follow this order:
 |------|-------------|
 | `search_papers` | Search arXiv + Semantic Scholar with 4-dim scoring |
 | `search_conf_papers` | Search conference papers via DBLP + S2 enrichment |
+| `download_paper` | Download a paper PDF to local storage |
 | `analyze_paper` | Generate deep-analysis markdown notes (20+ sections) |
 | `extract_paper_images` | Extract figures from arXiv source / PDF |
 | `paper_to_card` | Convert paper analysis into a knowledge card |
