@@ -1,241 +1,267 @@
-"""Four-dimensional paper scoring engine for academic research.
+"""Paper scoring engine — class-based multi-dimensional ranking.
 
-Dimensions:
-  - Relevance: keyword matching against research interests
-  - Recency: time-based freshness scoring
-  - Popularity: citation-based influence metrics
-  - Quality: heuristic quality from abstract text
-
-Adapted from evil-read-arxiv/start-my-day/scripts/search_arxiv.py
+Evaluates academic papers across four dimensions (fit, freshness, impact,
+rigor), combines them into a weighted recommendation score, and filters
+out papers that match exclusion rules.
 """
 
 from __future__ import annotations
 
 import logging
-import re
+import math
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Sequence
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Scoring constants — edit here to tune weights
+# Tuning knobs
 # ---------------------------------------------------------------------------
 
-SCORE_MAX = 3.0
+_CAP = 3.0  # per-dimension ceiling
 
-# Relevance
-RELEVANCE_TITLE_KEYWORD_BOOST = 0.5
-RELEVANCE_SUMMARY_KEYWORD_BOOST = 0.3
-RELEVANCE_CATEGORY_MATCH_BOOST = 1.0
+# Dimension weight profiles (keys must match _DIM_NAMES order)
+_WEIGHTS_DEFAULT: dict[str, float] = {
+    "fit": 0.40,
+    "freshness": 0.20,
+    "impact": 0.30,
+    "rigor": 0.10,
+}
+_WEIGHTS_TRENDING: dict[str, float] = {
+    "fit": 0.35,
+    "freshness": 0.10,
+    "impact": 0.45,
+    "rigor": 0.10,
+}
+WEIGHTS_CONF: dict[str, float] = {
+    "fit": 0.40,
+    "impact": 0.40,
+    "rigor": 0.20,
+}
 
-# Recency thresholds (days → score)
-RECENCY_THRESHOLDS: list[tuple[int, float]] = [
+# Relevance tuning
+_TITLE_HIT = 0.5
+_ABSTRACT_HIT = 0.3
+_CATEGORY_HIT = 1.0
+
+# Recency bands (max_age_days → score)
+_FRESH_BANDS: list[tuple[int, float]] = [
     (30, 3.0),
     (90, 2.0),
     (180, 1.0),
 ]
-RECENCY_DEFAULT = 0.0
 
-# Popularity: influential citations needed for full score
-POPULARITY_INFLUENTIAL_CITATION_FULL_SCORE = 100
-
-# Weight profiles
-WEIGHTS_NORMAL: dict[str, float] = {
-    "relevance": 0.40,
-    "recency": 0.20,
-    "popularity": 0.30,
-    "quality": 0.10,
-}
-WEIGHTS_HOT: dict[str, float] = {
-    "relevance": 0.35,
-    "recency": 0.10,
-    "popularity": 0.45,
-    "quality": 0.10,
-}
-WEIGHTS_CONF: dict[str, float] = {
-    "relevance": 0.40,
-    "popularity": 0.40,
-    "quality": 0.20,
-}
+# Quality signal patterns (lowercased)
+_STRONG_CLAIMS = [
+    "state-of-the-art", "sota", "breakthrough", "first",
+    "surpass", "outperform", "pioneering",
+]
+_MODERATE_CLAIMS = [
+    "novel", "propose", "introduce", "new approach",
+    "new method", "innovative",
+]
+_METHOD_SIGNALS = [
+    "framework", "architecture", "algorithm", "mechanism",
+    "pipeline", "end-to-end",
+]
+_QUANT_SIGNALS = [
+    "outperforms", "improves by", "achieves", "accuracy",
+    "f1", "bleu", "rouge", "beats", "surpasses",
+]
+_EVAL_SIGNALS = [
+    "experiment", "evaluation", "benchmark", "ablation",
+    "baseline", "comparison",
+]
 
 
 # ---------------------------------------------------------------------------
-# Individual dimension scorers
+# Scorer
 # ---------------------------------------------------------------------------
 
-def calculate_relevance_score(
-    paper: dict[str, Any],
-    domains: dict[str, Any],
-    excluded_keywords: list[str],
-) -> tuple[float, str | None, list[str]]:
-    """Score relevance against user research interests.
+class PaperScorer:
+    """Stateless scorer — instantiate once, call ``rank()`` many times."""
 
-    Returns (score, best_matching_domain, matched_keywords).
-    """
-    title = paper.get("title", "").lower()
-    summary = (
-        paper.get("summary", "") or paper.get("abstract", "")
-    ).lower()
-    categories = set(paper.get("categories", []))
+    def __init__(
+        self,
+        domains: dict[str, Any],
+        excluded: Sequence[str] = (),
+    ) -> None:
+        self.domains = domains
+        self.excluded = [kw.lower() for kw in excluded]
 
-    for kw in excluded_keywords:
-        kw_lower = kw.lower()
-        if kw_lower in title or kw_lower in summary:
-            return 0.0, None, []
+    # -- public API ----------------------------------------------------------
 
-    best_score = 0.0
-    best_domain: str | None = None
-    best_keywords: list[str] = []
+    def rank(
+        self,
+        papers: list[dict[str, Any]],
+        *,
+        trending: bool = False,
+        conference: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Filter, score, and sort papers.  Returns a new list."""
+        results: list[dict[str, Any]] = []
+        for p in papers:
+            dims = self._evaluate(p, trending=trending, conference=conference)
+            if dims is None:
+                continue
+            p["scores"] = dims
+            results.append(p)
+        results.sort(key=lambda x: x["scores"]["recommendation"], reverse=True)
+        return results
 
-    for domain_name, domain_cfg in domains.items():
-        score = 0.0
-        matched: list[str] = []
+    # -- dimension evaluators ------------------------------------------------
 
-        for keyword in domain_cfg.get("keywords", []):
-            kw_lower = keyword.lower()
-            if kw_lower in title:
-                score += RELEVANCE_TITLE_KEYWORD_BOOST
-                matched.append(keyword)
-            elif kw_lower in summary:
-                score += RELEVANCE_SUMMARY_KEYWORD_BOOST
-                matched.append(keyword)
+    def _evaluate(
+        self,
+        paper: dict[str, Any],
+        *,
+        trending: bool,
+        conference: bool,
+    ) -> dict[str, Any] | None:
+        fit_score, domain, kw = self._fit(paper)
+        if fit_score <= 0:
+            return None
 
-        for cat in domain_cfg.get("arxiv_categories", []):
-            if cat in categories:
-                score += RELEVANCE_CATEGORY_MATCH_BOOST
-                matched.append(cat)
+        pub_dt = self._parse_date(paper)
+        fresh = self._freshness(pub_dt)
 
-        if score > best_score:
-            best_score = score
-            best_domain = domain_name
-            best_keywords = matched
+        citations = paper.get("influentialCitationCount") or 0
+        impact = self._impact(citations, pub_dt, trending=trending)
 
-    return min(best_score, SCORE_MAX), best_domain, best_keywords
+        abstract = paper.get("summary", "") or paper.get("abstract", "")
+        rigor = self._rigor(abstract)
 
-
-def calculate_recency_score(published_date: datetime | None) -> float:
-    """Score based on publication freshness."""
-    if published_date is None:
-        return 0.0
-    now = (
-        datetime.now(published_date.tzinfo)
-        if published_date.tzinfo
-        else datetime.now()
-    )
-    days_diff = (now - published_date).days
-    for max_days, score in RECENCY_THRESHOLDS:
-        if days_diff <= max_days:
-            return score
-    return RECENCY_DEFAULT
-
-
-def calculate_popularity_score(
-    influential_citations: int,
-    published_date: datetime | None,
-    is_hot: bool = False,
-) -> float:
-    """Score based on citation influence."""
-    if is_hot:
-        return min(
-            influential_citations / (POPULARITY_INFLUENTIAL_CITATION_FULL_SCORE / SCORE_MAX),
-            SCORE_MAX,
+        weights = _WEIGHTS_CONF if conference else (
+            _WEIGHTS_TRENDING if trending else _WEIGHTS_DEFAULT
         )
-    # For non-hot papers, estimate from recency
-    if published_date is not None:
-        now = (
-            datetime.now(published_date.tzinfo)
-            if published_date.tzinfo
-            else datetime.now()
+
+        rec_val = 0.0 if conference else fresh
+        dims_raw = {"fit": fit_score, "freshness": rec_val, "impact": impact, "rigor": rigor}
+        rec = round(
+            sum((dims_raw[k] / _CAP) * 10 * weights.get(k, 0) for k in weights),
+            2,
         )
-        days_old = (now - published_date).days
-        if days_old <= 7:
-            return 2.0
-        if days_old <= 14:
-            return 1.5
-        if days_old <= 30:
-            return 1.0
-    return 0.5
 
+        paper["matched_domain"] = domain
+        paper["matched_keywords"] = kw
+        paper["is_hot_paper"] = trending
 
-def calculate_quality_score(summary: str) -> float:
-    """Heuristic quality score from abstract text."""
-    if not summary:
+        return {
+            "relevance": round(fit_score, 2),
+            "recency": round(rec_val, 2),
+            "popularity": round(impact, 2),
+            "quality": round(rigor, 2),
+            "recommendation": rec,
+        }
+
+    def _fit(
+        self, paper: dict[str, Any],
+    ) -> tuple[float, str | None, list[str]]:
+        """Keyword / category relevance."""
+        title = paper.get("title", "").lower()
+        abstract = (paper.get("summary", "") or paper.get("abstract", "")).lower()
+        cats = set(paper.get("categories", []))
+
+        # exclusion gate
+        for ex in self.excluded:
+            if ex in title or ex in abstract:
+                return 0.0, None, []
+
+        best = 0.0
+        best_domain: str | None = None
+        best_kw: list[str] = []
+
+        for name, cfg in self.domains.items():
+            pts = 0.0
+            matched: list[str] = []
+            for kw in cfg.get("keywords", []):
+                lk = kw.lower()
+                if lk in title:
+                    pts += _TITLE_HIT
+                    matched.append(kw)
+                elif lk in abstract:
+                    pts += _ABSTRACT_HIT
+                    matched.append(kw)
+            for cat in cfg.get("arxiv_categories", []):
+                if cat in cats:
+                    pts += _CATEGORY_HIT
+                    matched.append(cat)
+            if pts > best:
+                best = pts
+                best_domain = name
+                best_kw = matched
+
+        return min(best, _CAP), best_domain, best_kw
+
+    @staticmethod
+    def _freshness(pub_dt: datetime | None) -> float:
+        if pub_dt is None:
+            return 0.0
+        ref = datetime.now(pub_dt.tzinfo) if pub_dt.tzinfo else datetime.now()
+        age = (ref - pub_dt).days
+        for ceiling, score in _FRESH_BANDS:
+            if age <= ceiling:
+                return score
         return 0.0
-    score = 0.0
-    text = summary.lower()
 
-    strong_innovation = [
-        "state-of-the-art", "sota", "breakthrough", "first",
-        "surpass", "outperform", "pioneering",
-    ]
-    weak_innovation = [
-        "novel", "propose", "introduce", "new approach",
-        "new method", "innovative",
-    ]
-    method_indicators = [
-        "framework", "architecture", "algorithm", "mechanism",
-        "pipeline", "end-to-end",
-    ]
-    quantitative = [
-        "outperforms", "improves by", "achieves", "accuracy",
-        "f1", "bleu", "rouge", "beats", "surpasses",
-    ]
-    experiment = [
-        "experiment", "evaluation", "benchmark", "ablation",
-        "baseline", "comparison",
-    ]
+    @staticmethod
+    def _impact(citations: int, pub_dt: datetime | None, *, trending: bool) -> float:
+        if trending:
+            return min(citations / (_CAP * 33.3), _CAP)
+        if pub_dt is not None:
+            ref = datetime.now(pub_dt.tzinfo) if pub_dt.tzinfo else datetime.now()
+            days = (ref - pub_dt).days
+            if days <= 7:
+                return 2.0
+            if days <= 14:
+                return 1.5
+            if days <= 30:
+                return 1.0
+        return 0.5
 
-    strong_count = sum(1 for w in strong_innovation if w in text)
-    if strong_count >= 2:
-        score += 1.0
-    elif strong_count == 1:
-        score += 0.7
-    elif any(w in text for w in weak_innovation):
-        score += 0.3
+    @staticmethod
+    def _rigor(text: str) -> float:
+        if not text:
+            return 0.0
+        low = text.lower()
+        pts = 0.0
+        strong = sum(1 for s in _STRONG_CLAIMS if s in low)
+        if strong >= 2:
+            pts += 1.0
+        elif strong == 1:
+            pts += 0.7
+        elif any(s in low for s in _MODERATE_CLAIMS):
+            pts += 0.3
+        if any(s in low for s in _METHOD_SIGNALS):
+            pts += 0.5
+        if any(s in low for s in _QUANT_SIGNALS):
+            pts += 0.8
+        elif any(s in low for s in _EVAL_SIGNALS):
+            pts += 0.4
+        return min(pts, _CAP)
 
-    if any(w in text for w in method_indicators):
-        score += 0.5
-
-    if any(w in text for w in quantitative):
-        score += 0.8
-    elif any(w in text for w in experiment):
-        score += 0.4
-
-    return min(score, SCORE_MAX)
+    @staticmethod
+    def _parse_date(paper: dict[str, Any]) -> datetime | None:
+        if paper.get("published_date"):
+            return paper["published_date"]
+        raw = paper.get("publicationDate")
+        if not raw:
+            return None
+        for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except (ValueError, TypeError):
+                continue
+        return None
 
 
 # ---------------------------------------------------------------------------
-# Composite scoring
+# Module-level convenience (backward compatible)
 # ---------------------------------------------------------------------------
 
-def calculate_recommendation_score(
-    relevance: float,
-    recency: float,
-    popularity: float,
-    quality: float,
-    *,
-    is_hot: bool = False,
-    is_conf: bool = False,
-) -> float:
-    """Weighted composite score (0–10 scale)."""
-    dims = {
-        "relevance": relevance,
-        "recency": recency,
-        "popularity": popularity,
-        "quality": quality,
-    }
-    if is_conf:
-        weights = WEIGHTS_CONF
-        # Conference papers: recency is not meaningful (year is user-specified)
-        dims["recency"] = 0.0
-    elif is_hot:
-        weights = WEIGHTS_HOT
-    else:
-        weights = WEIGHTS_NORMAL
-
-    normalized = {k: (v / SCORE_MAX) * 10 for k, v in dims.items()}
-    return round(sum(normalized[k] * weights.get(k, 0) for k in weights), 2)
+# Keep the old names as thin wrappers so existing callers keep working.
+_WEIGHTS_NORMAL = _WEIGHTS_DEFAULT
+_WEIGHTS_HOT = _WEIGHTS_TRENDING
 
 
 def score_papers(
@@ -244,62 +270,12 @@ def score_papers(
     *,
     is_hot_batch: bool = False,
     is_conf_batch: bool = False,
+    is_conf: bool = False,
 ) -> list[dict[str, Any]]:
-    """Filter and score a batch of papers.
-
-    Papers scoring 0 relevance are dropped. Surviving papers receive a
-    ``scores`` dict and are sorted by recommendation score descending.
-    """
-    domains = config.get("research_domains", {})
-    excluded = config.get("excluded_keywords", [])
-
-    scored: list[dict[str, Any]] = []
-    for paper in papers:
-        relevance, matched_domain, matched_kw = calculate_relevance_score(
-            paper, domains, excluded,
-        )
-        if relevance == 0:
-            continue
-
-        # Parse publication date
-        pub_date: datetime | None = None
-        if "published_date" in paper and paper["published_date"]:
-            pub_date = paper["published_date"]
-        else:
-            pub_str = paper.get("publicationDate")
-            if pub_str:
-                for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
-                    try:
-                        pub_date = datetime.strptime(pub_str, fmt)
-                        break
-                    except (ValueError, TypeError):
-                        continue
-
-        recency = calculate_recency_score(pub_date)
-
-        inf_cit = paper.get("influentialCitationCount") or 0
-        popularity = calculate_popularity_score(inf_cit, pub_date, is_hot=is_hot_batch)
-
-        summary = paper.get("summary", "") or paper.get("abstract", "")
-        quality = calculate_quality_score(summary)
-
-        recommendation = calculate_recommendation_score(
-            relevance, recency, popularity, quality,
-            is_hot=is_hot_batch, is_conf=is_conf_batch,
-        )
-
-        paper["scores"] = {
-            "relevance": round(relevance, 2),
-            "recency": round(recency, 2),
-            "popularity": round(popularity, 2),
-            "quality": round(quality, 2),
-            "recommendation": recommendation,
-        }
-        paper["matched_domain"] = matched_domain
-        paper["matched_keywords"] = matched_kw
-        paper["is_hot_paper"] = is_hot_batch
-
-        scored.append(paper)
-
-    scored.sort(key=lambda p: p["scores"]["recommendation"], reverse=True)
-    return scored
+    """Filter and score a batch of papers."""
+    conference = is_conf_batch or is_conf
+    scorer = PaperScorer(
+        domains=config.get("research_domains", {}),
+        excluded=config.get("excluded_keywords", []),
+    )
+    return scorer.rank(papers, trending=is_hot_batch, conference=conference)

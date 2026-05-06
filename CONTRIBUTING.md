@@ -22,7 +22,7 @@ scholar-agent/
 │   └── adapters/         # bridge to legacy mcp_server.py
 ├── scripts/              # core logic (BM25 index, arXiv search, scoring, etc.)
 ├── mcp_server.py         # MCP server exposing tools to Claude Code / VS Code
-├── skills/               # Claude Code skill definitions
+├── skills/               # (removed — functionality in scripts/academic/)
 ├── templates/            # config templates for project-local setup
 ├── schemas/              # JSON schemas (answer.schema.json)
 └── tests/                # test suite

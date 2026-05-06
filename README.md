@@ -206,7 +206,7 @@ scholar-agent/
 ├── .scholar.example.json      # Example config with comments
 ├── schemas/                   # Answer + evidence JSON schemas
 ├── templates/                 # Config & MCP templates for setup
-├── skills/                    # Claude Code slash-command skills
+├── skills/                    # (removed — functionality in scripts/academic/)
 ├── scholar_agent/             # Python package (CLI, installers, config)
 │   ├── cli.py                 # CLI entry points
 │   ├── installers/            # MCP registration for Claude/VSCode/OpenCode

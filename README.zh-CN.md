@@ -210,7 +210,7 @@ scholar-agent/
 ├── .scholar.example.json      # 带注释的配置示例
 ├── schemas/                   # 答案 + 证据 JSON schema
 ├── templates/                 # 配置与 MCP 注册模板
-├── skills/                    # Claude Code 斜杠命令技能
+├── skills/                    # （已移除 — 功能在 scripts/academic/ 中）
 ├── scholar_agent/             # Python 包（CLI、安装器、配置）
 │   ├── cli.py                 # CLI 入口
 │   ├── installers/            # Claude/VSCode/OpenCode 的 MCP 注册

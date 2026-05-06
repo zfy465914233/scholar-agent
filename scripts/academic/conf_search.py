@@ -1,8 +1,6 @@
 """Conference paper search via DBLP + Semantic Scholar enrichment.
 
 Supports CVPR/ICCV/ECCV/ICLR/AAAI/NeurIPS/ICML/ACL/EMNLP/MICCAI.
-
-Adapted from evil-read-arxiv/conf-papers/scripts/search_conf_papers.py
 """
 
 from __future__ import annotations

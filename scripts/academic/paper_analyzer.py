@@ -3,8 +3,6 @@
 Generates structured markdown notes with frontmatter for research papers,
 supporting both Chinese and English deep-analysis templates with
 ``<!-- LLM: ... -->`` placeholders for LLM-assisted completion.
-
-Adapted from evil-read-arxiv/paper-analyze/scripts/generate_note.py
 """
 
 from __future__ import annotations

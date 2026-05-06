@@ -1,11 +1,10 @@
-"""arXiv + Semantic Scholar hybrid paper search.
+"""Hybrid academic paper search across arXiv and Semantic Scholar.
 
-Provides:
-  - search_arxiv: date-range search via arXiv Atom API
-  - search_hot_papers: high-influence papers via Semantic Scholar
-  - search_and_score: combined pipeline with scoring
-
-Adapted from evil-read-arxiv/start-my-day/scripts/search_arxiv.py
+Architecture:
+  - ``query_arxiv``       — date-range search via the arXiv Atom API
+  - ``query_semantic_scholar`` — keyword search over the S2 graph
+  - ``collect_hot_papers`` — category-aware hot-paper sweep
+  - ``search_and_score``   — combined pipeline → scoring → dedup
 """
 
 from __future__ import annotations
@@ -15,38 +14,39 @@ import logging
 import os
 import re
 import time
+import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any, Optional
-from urllib import request as urllib_request
+from typing import Any
+from urllib import request as _url_lib
 
 from academic.scoring import score_papers
 
 logger = logging.getLogger(__name__)
 
 try:
-    import requests as _requests
-    HAS_REQUESTS = True
+    import requests as _http
+    _HAS_REQUESTS = True
 except ImportError:
-    HAS_REQUESTS = False
+    _HAS_REQUESTS = False
 
 # ---------------------------------------------------------------------------
-# API config
+# API endpoints and field specs
 # ---------------------------------------------------------------------------
 
-ARXIV_NS = {
-    "atom": "http://www.w3.org/2005/Atom",
-    "arxiv": "http://arxiv.org/schemas/atom",
-}
-
-SEMANTIC_SCHOLAR_API_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
-SEMANTIC_SCHOLAR_FIELDS = (
+_S2_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
+_S2_FIELDS = (
     "title,abstract,publicationDate,citationCount,influentialCitationCount,"
     "url,authors,authors.affiliations,externalIds"
 )
 
-ARXIV_CATEGORY_KEYWORDS: dict[str, str] = {
+_ATOM_NS = {
+    "a": "http://www.w3.org/2005/Atom",
+    "arxiv": "http://arxiv.org/schemas/atom",
+}
+
+# Mapping arXiv categories to descriptive query phrases for S2
+_CATEGORY_PHRASES: dict[str, str] = {
     "cs.AI": "artificial intelligence",
     "cs.LG": "machine learning",
     "cs.CL": "computational linguistics natural language processing",
@@ -56,207 +56,205 @@ ARXIV_CATEGORY_KEYWORDS: dict[str, str] = {
     "cs.RO": "robotics",
 }
 
-S2_RATE_LIMIT_WAIT = 30
-S2_CATEGORY_REQUEST_INTERVAL = 3
+_S2_BACKOFF = 30  # seconds to wait on 429
+_S2_INTER_QUERY_GAP = 3  # polite delay between category queries
+_S2_KEY = os.environ.get("S2_API_KEY", "")
 
-# API key can be set via env var or config
-S2_API_KEY = os.environ.get("S2_API_KEY", "")
 
+# ---------------------------------------------------------------------------
+# Config loader
+# ---------------------------------------------------------------------------
 
 def _load_config(config_path: str) -> dict[str, Any]:
-    """Load research interests YAML config."""
+    """Read a YAML research-interests file and return a config dict."""
     try:
         import yaml
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-        global S2_API_KEY
-        key = config.get("semantic_scholar", {}).get("api_key", "")
+        with open(config_path, encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        global _S2_KEY
+        key = cfg.get("semantic_scholar", {}).get("api_key", "")
         if key:
-            S2_API_KEY = key
-        return config
-    except Exception as e:
-        logger.error("Error loading config: %s", e)
+            _S2_KEY = key
+        return cfg
+    except Exception as exc:
+        logger.error("Config load error: %s", exc)
         return {
             "research_domains": {
                 "大模型": {
                     "keywords": ["pre-training", "foundation model", "LLM", "transformer"],
                     "arxiv_categories": ["cs.AI", "cs.LG", "cs.CL"],
                     "priority": 5,
-                }
+                },
             },
             "excluded_keywords": ["3D", "review", "workshop", "survey"],
         }
 
 
 # ---------------------------------------------------------------------------
-# Date windows
+# Date helpers
 # ---------------------------------------------------------------------------
 
-def calculate_date_windows(
-    target_date: datetime | None = None,
+def _time_windows(
+    anchor: datetime | None = None,
 ) -> tuple[datetime, datetime, datetime, datetime]:
-    """Return (start_30d, end_30d, start_1y, end_1y)."""
-    if target_date is None:
-        target_date = datetime.now()
-    start_30d = target_date - timedelta(days=30)
-    end_30d = target_date
-    start_1y = target_date - timedelta(days=365)
-    end_1y = target_date - timedelta(days=31)
-    return start_30d, end_30d, start_1y, end_1y
+    """(recent_start, now, past_year_start, past_year_end)."""
+    ref = anchor or datetime.now()
+    recent_start = ref - timedelta(days=30)
+    past_year_start = ref - timedelta(days=365)
+    past_year_end = ref - timedelta(days=31)
+    return recent_start, ref, past_year_start, past_year_end
 
 
 # ---------------------------------------------------------------------------
 # arXiv search
 # ---------------------------------------------------------------------------
 
-def search_arxiv(
+def query_arxiv(
     categories: list[str],
-    start_date: datetime,
-    end_date: datetime,
-    max_results: int = 200,
-    max_retries: int = 3,
+    from_dt: datetime,
+    to_dt: datetime,
+    limit: int = 200,
+    retries: int = 3,
 ) -> list[dict[str, Any]]:
-    """Search arXiv by date range and categories."""
-    cat_query = "+OR+".join(f"cat:{c}" for c in categories)
-    date_query = (
-        f"submittedDate:[{start_date.strftime('%Y%m%d')}0000"
-        f"+TO+{end_date.strftime('%Y%m%d')}2359]"
+    """Fetch recent papers from arXiv Atom API."""
+    cat_part = "+OR+".join(f"cat:{c}" for c in categories)
+    date_part = (
+        f"submittedDate:[{from_dt.strftime('%Y%m%d')}0000"
+        f"+TO+{to_dt.strftime('%Y%m%d')}2359]"
     )
     url = (
         f"https://export.arxiv.org/api/query?"
-        f"search_query=({cat_query})+AND+{date_query}&"
-        f"max_results={max_results}&sortBy=submittedDate&sortOrder=descending"
+        f"search_query=({cat_part})+AND+{date_part}&"
+        f"max_results={limit}&sortBy=submittedDate&sortOrder=descending"
     )
-    logger.info("[arXiv] Searching %s — %s", start_date.date(), end_date.date())
+    logger.info("[arXiv] %s → %s", from_dt.date(), to_dt.date())
 
-    for attempt in range(max_retries):
+    for attempt in range(retries):
         try:
-            with urllib_request.urlopen(url, timeout=60) as resp:
-                xml_content = resp.read().decode("utf-8")
-                return _parse_arxiv_xml(xml_content)
-        except Exception as e:
-            logger.warning("[arXiv] Error (attempt %d/%d): %s", attempt + 1, max_retries, e)
-            if attempt < max_retries - 1:
-                time.sleep((2 ** attempt) * 2)
-            else:
-                logger.error("[arXiv] Failed after %d attempts", max_retries)
+            with _url_lib.urlopen(url, timeout=60) as resp:
+                body = resp.read().decode("utf-8")
+                return _atom_to_papers(body)
+        except Exception as exc:
+            logger.warning("[arXiv] attempt %d failed: %s", attempt + 1, exc)
+            if attempt < retries - 1:
+                time.sleep(2 ** (attempt + 1))
+    logger.error("[arXiv] all attempts exhausted")
     return []
 
 
-def _parse_arxiv_xml(xml_content: str) -> list[dict[str, Any]]:
-    """Parse arXiv Atom XML into paper dicts."""
+def _atom_to_papers(xml_text: str) -> list[dict[str, Any]]:
+    """Parse arXiv Atom XML into a list of paper dicts."""
     papers: list[dict[str, Any]] = []
     try:
-        root = ET.fromstring(xml_content)
-    except ET.ParseError as e:
-        logger.error("XML parse error: %s", e)
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        logger.error("Atom XML parse failure: %s", exc)
         return papers
 
-    for entry in root.findall("atom:entry", ARXIV_NS):
-        paper: dict[str, Any] = {}
+    ns = _ATOM_NS
+    for entry in root.findall("a:entry", ns):
+        rec: dict[str, Any] = {}
 
-        id_elem = entry.find("atom:id", ARXIV_NS)
-        if id_elem is not None and id_elem.text:
-            paper["id"] = id_elem.text
-            m = re.search(r"(?:arXiv:)?(\d+\.\d+)", id_elem.text)
+        eid = entry.find("a:id", ns)
+        if eid is not None and eid.text:
+            rec["id"] = eid.text
+            m = re.search(r"(?:arXiv:)?(\d+\.\d+)", eid.text)
             if m:
-                paper["arxiv_id"] = m.group(1)
+                rec["arxiv_id"] = m.group(1)
 
-        title_elem = entry.find("atom:title", ARXIV_NS)
-        if title_elem is not None and title_elem.text:
-            paper["title"] = title_elem.text.strip()
+        ttl = entry.find("a:title", ns)
+        if ttl is not None and ttl.text:
+            rec["title"] = ttl.text.strip()
 
-        summary_elem = entry.find("atom:summary", ARXIV_NS)
-        if summary_elem is not None and summary_elem.text:
-            paper["summary"] = summary_elem.text.strip()
+        summ = entry.find("a:summary", ns)
+        if summ is not None and summ.text:
+            rec["summary"] = summ.text.strip()
 
-        authors: list[str] = []
-        affiliations: list[str] = []
-        for author in entry.findall("atom:author", ARXIV_NS):
-            name_elem = author.find("atom:name", ARXIV_NS)
-            if name_elem is not None and name_elem.text:
-                authors.append(name_elem.text)
-            affil = author.find("arxiv:affiliation", ARXIV_NS)
-            if affil is not None and affil.text:
-                aff = affil.text.strip()
-                if aff and aff not in affiliations:
-                    affiliations.append(aff)
-        paper["authors"] = authors
-        paper["affiliations"] = affiliations
+        names: list[str] = []
+        affils: list[str] = []
+        for author_node in entry.findall("a:author", ns):
+            nm = author_node.find("a:name", ns)
+            if nm is not None and nm.text:
+                names.append(nm.text)
+            af = author_node.find("arxiv:affiliation", ns)
+            if af is not None and af.text:
+                a = af.text.strip()
+                if a and a not in affils:
+                    affils.append(a)
+        rec["authors"] = names
+        rec["affiliations"] = affils
 
-        pub_elem = entry.find("atom:published", ARXIV_NS)
-        if pub_elem is not None and pub_elem.text:
-            paper["published"] = pub_elem.text
+        pub = entry.find("a:published", ns)
+        if pub is not None and pub.text:
+            rec["published"] = pub.text
             try:
-                paper["published_date"] = datetime.fromisoformat(
-                    pub_elem.text.replace("Z", "+00:00")
+                rec["published_date"] = datetime.fromisoformat(
+                    pub.text.replace("Z", "+00:00")
                 )
             except (ValueError, TypeError):
-                paper["published_date"] = None
+                rec["published_date"] = None
 
         cats: list[str] = []
-        for cat in entry.findall("atom:category", ARXIV_NS):
-            term = cat.get("term")
-            if term:
-                cats.append(term)
-        paper["categories"] = cats
+        for c in entry.findall("a:category", ns):
+            t = c.get("term")
+            if t:
+                cats.append(t)
+        rec["categories"] = cats
 
-        for link in entry.findall("atom:link", ARXIV_NS):
+        for link in entry.findall("a:link", ns):
             if link.get("title") == "pdf":
-                paper["pdf_url"] = link.get("href")
+                rec["pdf_url"] = link.get("href")
                 break
 
-        paper["url"] = paper.get("id", "")
-        paper["source"] = "arxiv"
-        papers.append(paper)
+        rec["url"] = rec.get("id", "")
+        rec["source"] = "arxiv"
+        papers.append(rec)
 
     return papers
 
 
+# Keep legacy name
+search_arxiv = query_arxiv
+
+
 # ---------------------------------------------------------------------------
-# Semantic Scholar hot papers
+# Semantic Scholar search
 # ---------------------------------------------------------------------------
 
-def search_semantic_scholar(
-    query: str,
-    start_date: datetime,
-    end_date: datetime,
+def query_semantic_scholar(
+    phrase: str,
+    from_dt: datetime,
+    to_dt: datetime,
     top_k: int = 20,
-    max_retries: int = 3,
+    retries: int = 3,
 ) -> list[dict[str, Any]]:
-    """Search Semantic Scholar for high-influence papers."""
-    import urllib.parse
-
-    date_range = f"{start_date.strftime('%Y-%m-%d')}:{end_date.strftime('%Y-%m-%d')}"
+    """Search S2 graph for papers matching *phrase* in the date window."""
+    date_range = f"{from_dt:%Y-%m-%d}:{to_dt:%Y-%m-%d}"
     params = {
-        "query": query,
+        "query": phrase,
         "publicationDateOrYear": date_range,
         "limit": 100,
-        "fields": SEMANTIC_SCHOLAR_FIELDS,
+        "fields": _S2_FIELDS,
     }
-    headers = {"User-Agent": "ScholarAgent/1.0"}
-    if S2_API_KEY:
-        headers["x-api-key"] = S2_API_KEY
+    hdrs = {"User-Agent": "ScholarAgent/1.0"}
+    if _S2_KEY:
+        hdrs["x-api-key"] = _S2_KEY
 
-    logger.info("[S2] Searching hot papers: '%s' (%s–%s)", query, start_date.date(), end_date.date())
+    logger.info("[S2] '%s' (%s–%s)", phrase, from_dt.date(), to_dt.date())
 
-    for attempt in range(max_retries):
+    for attempt in range(retries):
         try:
-            if HAS_REQUESTS:
-                resp = _requests.get(
-                    SEMANTIC_SCHOLAR_API_URL, params=params, headers=headers, timeout=15,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            if _HAS_REQUESTS:
+                r = _http.get(_S2_SEARCH_URL, params=params, headers=hdrs, timeout=15)
+                r.raise_for_status()
+                payload = r.json()
             else:
                 qs = urllib.parse.urlencode(params)
-                req = urllib_request.Request(
-                    f"{SEMANTIC_SCHOLAR_API_URL}?{qs}", headers=headers,
-                )
-                with urllib_request.urlopen(req, timeout=15) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
+                req = _url_lib.Request(f"{_S2_SEARCH_URL}?{qs}", headers=hdrs)
+                with _url_lib.urlopen(req, timeout=15) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
 
-            results = data.get("data", [])
+            results = payload.get("data", [])
             valid: list[dict[str, Any]] = []
             for p in results:
                 if not p.get("title") or not p.get("abstract"):
@@ -266,12 +264,11 @@ def search_semantic_scholar(
                 p["source"] = "semantic_scholar"
                 p["hot_score"] = p["influentialCitationCount"]
 
-                # Extract affiliations
                 if p.get("authors"):
                     affs: list[str] = []
                     for a in p["authors"]:
-                        for affil in a.get("affiliations") or []:
-                            name = affil.get("name", "") if isinstance(affil, dict) else str(affil)
+                        for af in a.get("affiliations") or []:
+                            name = af.get("name", "") if isinstance(af, dict) else str(af)
                             if name and name not in affs:
                                 affs.append(name)
                     if affs:
@@ -282,63 +279,74 @@ def search_semantic_scholar(
                 valid.append(p)
 
             valid.sort(key=lambda x: x["influentialCitationCount"], reverse=True)
-            logger.info("[S2] Found %d valid papers", len(valid))
+            logger.info("[S2] %d valid hits", len(valid))
             return valid[:top_k]
 
-        except Exception as e:
-            msg = str(e)
-            is_429 = "429" in msg or "Too Many Requests" in msg
-            if attempt < max_retries - 1:
-                wait = S2_RATE_LIMIT_WAIT if is_429 else (2 ** attempt) * 2
-                logger.warning("[S2] Retry in %ds: %s", wait, e)
+        except Exception as exc:
+            is_rate = "429" in str(exc) or "Too Many Requests" in str(exc)
+            if attempt < retries - 1:
+                wait = _S2_BACKOFF if is_rate else 2 ** (attempt + 1)
+                logger.warning("[S2] retry in %ds: %s", wait, exc)
                 time.sleep(wait)
             else:
-                logger.error("[S2] Failed after %d attempts", max_retries)
+                logger.error("[S2] all attempts failed")
     return []
 
 
-def search_hot_papers_from_categories(
+# Keep legacy name
+search_semantic_scholar = query_semantic_scholar
+
+
+# ---------------------------------------------------------------------------
+# Category-aware hot-paper sweep
+# ---------------------------------------------------------------------------
+
+def collect_hot_papers(
     categories: list[str],
-    start_date: datetime,
-    end_date: datetime,
-    top_k_per_category: int = 5,
+    from_dt: datetime,
+    to_dt: datetime,
+    per_cat: int = 5,
     config: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Search hot papers for multiple arXiv categories."""
-    all_papers: list[dict[str, Any]] = []
+    """Run S2 queries derived from research domains or category labels."""
+    bag: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
-    queries: list[str] = []
+    phrases: list[str] = []
     if config:
         for _, dcfg in config.get("research_domains", {}).items():
             kws = dcfg.get("keywords", [])
             if kws:
-                queries.append(" ".join(kws[:3]))
-    if not queries:
-        queries = [ARXIV_CATEGORY_KEYWORDS.get(c, c) for c in categories]
+                phrases.append(" ".join(kws[:3]))
+    if not phrases:
+        phrases = [_CATEGORY_PHRASES.get(c, c) for c in categories]
 
-    # Deduplicate queries
+    # dedup
     seen_q: set[str] = set()
     unique: list[str] = []
-    for q in queries:
-        ql = q.lower()
-        if ql not in seen_q:
-            seen_q.add(ql)
+    for q in phrases:
+        lk = q.lower()
+        if lk not in seen_q:
+            seen_q.add(lk)
             unique.append(q)
 
-    for query in unique:
-        papers = search_semantic_scholar(query, start_date, end_date, top_k_per_category)
-        for p in papers:
+    for phrase in unique:
+        hits = query_semantic_scholar(phrase, from_dt, to_dt, per_cat)
+        for p in hits:
             aid = p.get("arxiv_id")
             if aid:
                 if aid in seen_ids:
                     continue
                 seen_ids.add(aid)
-            all_papers.append(p)
-        time.sleep(S2_CATEGORY_REQUEST_INTERVAL)
+            bag.append(p)
+        time.sleep(_S2_INTER_QUERY_GAP)
 
-    all_papers.sort(key=lambda x: x.get("influentialCitationCount", 0), reverse=True)
-    return all_papers
+    bag.sort(key=lambda x: x.get("influentialCitationCount", 0), reverse=True)
+    return bag
+
+
+# Keep legacy name
+search_hot_papers_from_categories = collect_hot_papers
 
 
 # ---------------------------------------------------------------------------
@@ -354,68 +362,65 @@ def search_and_score(
     skip_hot: bool = False,
     query: str = "",
 ) -> dict[str, Any]:
-    """Full arXiv + S2 search → score → dedup pipeline.
-
-    Returns a dict with 'papers', 'date_windows', 'total_found'.
-    """
+    """Full search → score → dedup pipeline."""
     if categories is None:
         categories = ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
-
     if target_date is None:
         target_date = datetime.now()
 
-    w30_start, w30_end, w1y_start, w1y_end = calculate_date_windows(target_date)
+    rec_start, rec_end, yr_start, yr_end = _time_windows(target_date)
 
-    all_scored: list[dict[str, Any]] = []
+    scored: list[dict[str, Any]] = []
 
-    # Step 1: recent arXiv papers
-    recent = search_arxiv(categories, w30_start, w30_end, max_results)
+    # Stage 1: recent arXiv
+    recent = query_arxiv(categories, rec_start, rec_end, max_results)
     if recent:
-        scored = score_papers(recent, config, is_hot_batch=False)
-        logger.info("Scored %d recent arXiv papers", len(scored))
-        all_scored.extend(scored)
+        batch = score_papers(recent, config, is_hot_batch=False)
+        logger.info("Scored %d recent arXiv papers", len(batch))
+        scored.extend(batch)
 
-    # Step 2: hot papers from S2
+    # Stage 2: hot S2 papers
     if not skip_hot:
-        hot = search_hot_papers_from_categories(
-            categories, w1y_start, w1y_end, top_k_per_category=5, config=config,
-        )
+        hot = collect_hot_papers(categories, yr_start, yr_end, per_cat=5, config=config)
         if hot:
-            scored_hot = score_papers(hot, config, is_hot_batch=True)
-            logger.info("Scored %d hot papers", len(scored_hot))
-            all_scored.extend(scored_hot)
+            batch = score_papers(hot, config, is_hot_batch=True)
+            logger.info("Scored %d hot papers", len(batch))
+            scored.extend(batch)
 
-    # Step 2.5: query-based S2 search (if user provided a non-empty query)
+    # Stage 2b: user query against S2
     if query and query.strip():
-        query_papers = search_semantic_scholar(query.strip(), w1y_start, w1y_end, top_k=10)
-        if query_papers:
-            scored_query = score_papers(query_papers, config, is_hot_batch=True)
-            logger.info("Scored %d query-based S2 papers", len(scored_query))
-            all_scored.extend(scored_query)
+        q_hits = query_semantic_scholar(query.strip(), yr_start, yr_end, top_k=10)
+        if q_hits:
+            batch = score_papers(q_hits, config, is_hot_batch=True)
+            logger.info("Scored %d query-based papers", len(batch))
+            scored.extend(batch)
 
-    # Step 3: merge and dedup
-    all_scored.sort(key=lambda p: p["scores"]["recommendation"], reverse=True)
-
-    seen_ids: set[str] = set()
-    seen_titles: set[str] = set()
+    # Merge & dedup
+    scored.sort(key=lambda p: p["scores"]["recommendation"], reverse=True)
+    id_set: set[str] = set()
+    title_set: set[str] = set()
     unique: list[dict[str, Any]] = []
-    for p in all_scored:
+    for p in scored:
         aid = p.get("arxiv_id") or p.get("arxivId")
         if aid:
-            if aid not in seen_ids:
-                seen_ids.add(aid)
+            if aid not in id_set:
+                id_set.add(aid)
                 unique.append(p)
         else:
-            tn = re.sub(r"[^a-z0-9\s]", "", p.get("title", "").lower()).strip()
-            if tn and tn not in seen_titles:
-                seen_titles.add(tn)
+            norm = re.sub(r"[^a-z0-9\s]", "", p.get("title", "").lower()).strip()
+            if norm and norm not in title_set:
+                title_set.add(norm)
                 unique.append(p)
 
     return {
         "papers": unique[:top_n],
         "date_windows": {
-            "recent_30d": {"start": w30_start.isoformat(), "end": w30_end.isoformat()},
-            "past_year": {"start": w1y_start.isoformat(), "end": w1y_end.isoformat()},
+            "recent_30d": {"start": rec_start.isoformat(), "end": rec_end.isoformat()},
+            "past_year": {"start": yr_start.isoformat(), "end": yr_end.isoformat()},
         },
         "total_found": len(unique),
     }
+
+
+# Legacy alias
+calculate_date_windows = _time_windows

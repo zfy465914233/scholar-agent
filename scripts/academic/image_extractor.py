@@ -1,270 +1,278 @@
-"""Paper image extractor — arXiv source + PDF fallback.
+"""PDF and arXiv source figure extraction for academic papers.
 
-Priority:
-  1. arXiv source archive (pics/, figures/, etc.)
-  2. PDF-embedded figure files
-  3. Direct PDF image extraction (PyMuPDF)
+Two-stage pipeline:
+  1. Download the arXiv source tarball and harvest images from known
+     figure directories (figures/, pics/, fig/, images/, img/).
+  2. If too few figures were found, fall back to extracting embedded
+     images from the PDF via PyMuPDF.
 
-Adapted from evil-read-arxiv/extract-paper-images/scripts/extract_images.py
+Also provides ``download_arxiv_pdf`` for caching PDFs locally and
+``extract_pdf_text`` for plain-text extraction (BM25 indexing).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 import shutil
 import tarfile
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib import request as urllib_request
+from urllib import request as _url_lib
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Optional dependency guards
+# ---------------------------------------------------------------------------
+
 try:
     import fitz  # PyMuPDF
-    HAS_FITZ = True
+    _FITZ_OK = True
 except ImportError:
-    HAS_FITZ = False
+    _FITZ_OK = False
 
 try:
-    import requests as _requests
-    HAS_REQUESTS = True
+    import requests as _http
+    _REQUESTS_OK = True
 except ImportError:
-    HAS_REQUESTS = False
+    _REQUESTS_OK = False
+
+# Expose module-level flags expected by callers / tests
+HAS_FITZ = _FITZ_OK
+HAS_REQUESTS = _REQUESTS_OK
+
+# ---------------------------------------------------------------------------
+# Directory / extension conventions
+# ---------------------------------------------------------------------------
+
+_FIGURE_SUBDIRS = ("pics", "figures", "fig", "images", "img")
+_SOURCE_EXTS = {".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"}
+_RASTER_EXTS = {".png", ".jpg", ".jpeg"}
+_NOISE_NAMES = {"logo", "icon"}
 
 
-def _download_arxiv_source(arxiv_id: str, temp_dir: str) -> bool:
-    """Download and extract arXiv source archive."""
-    source_url = f"https://arxiv.org/e-print/{arxiv_id}"
-    logger.info("Downloading arXiv source: %s", source_url)
+# ---------------------------------------------------------------------------
+# HTTP helper
+# ---------------------------------------------------------------------------
 
+def _fetch_bytes(url: str, *, timeout: int = 60, ua: str = "scholar-agent/1.0 (research)"):
+    """Return (status, bytes) using requests or urllib fallback."""
+    headers = {"User-Agent": ua}
+    if _REQUESTS_OK:
+        r = _http.get(url, timeout=timeout, headers=headers)
+        return r.status_code, r.content
+    req = _url_lib.Request(url, headers=headers)
+    resp = _url_lib.urlopen(req, timeout=timeout)
+    return getattr(resp, "status", 200), resp.read()
+
+
+# ---------------------------------------------------------------------------
+# arXiv source download + extraction
+# ---------------------------------------------------------------------------
+
+def _pull_source_tarball(paper_id: str, dest: str) -> bool:
+    """Download the arXiv e-print tarball and extract into *dest*."""
+    url = f"https://arxiv.org/e-print/{paper_id}"
+    logger.info("Fetching source tarball: %s", url)
     try:
-        if HAS_REQUESTS:
-            resp = _requests.get(source_url, timeout=60)
-            content = resp.content if resp.status_code == 200 else None
-            status = resp.status_code
-        else:
-            req = urllib_request.urlopen(source_url, timeout=60)
-            content = req.read()
-            status = req.status
-
-        if status == 200 and content:
-            tar_path = os.path.join(temp_dir, f"{arxiv_id}.tar.gz")
-            with open(tar_path, "wb") as f:
-                f.write(content)
-
-            with tarfile.open(tar_path, "r:*") as tar:
-                safe = [
-                    m for m in tar.getmembers()
-                    if not m.name.startswith("/") and ".." not in m.name
-                    and not m.issym() and not m.islnk()
-                ]
-                tar.extractall(path=temp_dir, members=safe)
-            return True
-        return False
-    except Exception as e:
-        logger.error("Failed to download source: %s", e)
+        status, blob = _fetch_bytes(url, timeout=60)
+        if status != 200 or not blob:
+            return False
+        tar_path = os.path.join(dest, f"{paper_id}.tar")
+        with open(tar_path, "wb") as fh:
+            fh.write(blob)
+        with tarfile.open(tar_path, "r:*") as tf:
+            safe = [
+                m for m in tf.getmembers()
+                if not m.name.startswith("/") and ".." not in m.name
+                and not m.issym() and not m.islnk()
+            ]
+            tf.extractall(path=dest, members=safe)
+        return True
+    except Exception as exc:
+        logger.error("Source tarball failed: %s", exc)
         return False
 
+
+# ---------------------------------------------------------------------------
+# PDF download
+# ---------------------------------------------------------------------------
 
 def download_arxiv_pdf(arxiv_id: str, output_dir: str) -> str:
-    """Download arXiv PDF to output_dir/{arxiv_id}.pdf. Returns local path.
-
-    If the file already exists locally, returns the path without re-downloading.
-    """
+    """Download arXiv PDF to *output_dir*/*arxiv_id*.pdf (with caching)."""
     os.makedirs(output_dir, exist_ok=True)
-    dest = os.path.join(output_dir, f"{arxiv_id}.pdf")
+    target = os.path.join(output_dir, f"{arxiv_id}.pdf")
 
-    # Return existing file without re-downloading
-    if os.path.exists(dest) and os.path.getsize(dest) > 0:
-        logger.info("Using cached PDF: %s", dest)
-        return os.path.abspath(dest)
+    if os.path.exists(target) and os.path.getsize(target) > 0:
+        logger.info("PDF cache hit: %s", target)
+        return os.path.abspath(target)
 
-    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-    logger.info("Downloading arXiv PDF: %s", pdf_url)
-    headers = {"User-Agent": "scholar-agent/1.0 (research tool)"}
-
+    url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+    logger.info("Downloading PDF: %s", url)
     try:
-        if HAS_REQUESTS:
-            resp = _requests.get(pdf_url, timeout=120, headers=headers)
-            if resp.status_code != 200:
-                raise RuntimeError(f"arXiv returned HTTP {resp.status_code}")
-            content = resp.content
-        else:
-            req = urllib_request.Request(pdf_url, headers=headers)
-            resp = urllib_request.urlopen(req, timeout=120)
-            content = resp.read()
+        status, blob = _fetch_bytes(url, timeout=120)
+        if status != 200:
+            raise RuntimeError(f"arXiv returned HTTP {status}")
+        with open(target, "wb") as fh:
+            fh.write(blob)
+        return os.path.abspath(target)
+    except Exception as exc:
+        if os.path.exists(target):
+            os.remove(target)
+        raise RuntimeError(f"PDF download failed for {arxiv_id}: {exc}") from exc
 
-        with open(dest, "wb") as f:
-            f.write(content)
-        return os.path.abspath(dest)
-    except Exception as e:
-        # Clean up partial file
-        if os.path.exists(dest):
-            os.remove(dest)
-        raise RuntimeError(f"Failed to download PDF for {arxiv_id}: {e}") from e
 
+# ---------------------------------------------------------------------------
+# Text extraction (for BM25 indexing)
+# ---------------------------------------------------------------------------
 
 def extract_pdf_text(pdf_path: str, max_chars: int = 80000) -> str:
-    """Extract plain text from a PDF using PyMuPDF.
+    """Extract plain text from a PDF via PyMuPDF.
 
-    Used for BM25 index building. For paper analysis, the LLM reads PDFs directly.
-    PyMuPDF is primarily used for image file extraction (extract_paper_images).
-
-    Args:
-        pdf_path: Path to the PDF file.
-        max_chars: Maximum characters to extract (~20k tokens at 4 chars/token).
-
-    Returns:
-        Extracted text, or empty string if extraction fails.
+    LLMs read PDFs directly for analysis; this function exists for
+    programmatic indexing (BM25).
     """
-    if not HAS_FITZ:
-        logger.warning("PyMuPDF not installed, cannot extract text from PDF")
+    if not _FITZ_OK:
+        logger.warning("PyMuPDF unavailable — cannot extract text")
         return ""
     try:
         doc = fitz.open(pdf_path)
-        pages = []
-        for page in doc:
-            pages.append(page.get_text())
+        chunks = [page.get_text() for page in doc]
         doc.close()
-        text = "\n\n".join(pages)
-        return text[:max_chars]
-    except Exception as e:
-        logger.error("Failed to extract text from PDF: %s", e)
+        full = "\n\n".join(chunks)
+        return full[:max_chars]
+    except Exception as exc:
+        logger.error("Text extraction error: %s", exc)
         return ""
 
 
-def _find_source_figures(temp_dir: str) -> list[dict[str, Any]]:
-    """Find images in arXiv source directories."""
-    figures: list[dict[str, Any]] = []
+# ---------------------------------------------------------------------------
+# Source-level figure harvesting
+# ---------------------------------------------------------------------------
+
+def _find_source_figures(tmp_dir: str) -> list[dict[str, Any]]:
+    """Walk known figure sub-directories inside the extracted source."""
+    found: list[dict[str, Any]] = []
     seen: set[str] = set()
-    image_dirs = ["pics", "figures", "fig", "images", "img"]
-    image_exts = {".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"}
 
-    for d in image_dirs:
-        dpath = os.path.join(temp_dir, d)
-        if os.path.exists(dpath):
-            for fn in os.listdir(dpath):
-                if fn in seen:
-                    continue
-                ext = os.path.splitext(fn)[1].lower()
-                if ext in image_exts:
-                    seen.add(fn)
-                    figures.append({
-                        "type": "source",
-                        "source": "arxiv-source",
-                        "path": os.path.join(dpath, fn),
-                        "filename": fn,
-                    })
+    for subdir in _FIGURE_SUBDIRS:
+        dpath = os.path.join(tmp_dir, subdir)
+        if not os.path.isdir(dpath):
+            continue
+        for fn in os.listdir(dpath):
+            if fn in seen:
+                continue
+            if os.path.splitext(fn)[1].lower() in _SOURCE_EXTS:
+                seen.add(fn)
+                found.append({
+                    "type": "source",
+                    "source": "arxiv-source",
+                    "path": os.path.join(dpath, fn),
+                    "filename": fn,
+                })
 
-    # Fallback: root directory images
-    if not figures:
-        for fn in os.listdir(temp_dir):
-            ext = os.path.splitext(fn)[1].lower()
-            fpath = os.path.join(temp_dir, fn)
-            if os.path.isfile(fpath) and ext in {".png", ".jpg", ".jpeg"}:
-                if "logo" not in fn.lower() and "icon" not in fn.lower():
-                    figures.append({
-                        "type": "source",
-                        "source": "arxiv-source",
-                        "path": fpath,
-                        "filename": fn,
-                    })
+    # fallback: raster images in root (skip noise)
+    if not found:
+        for fn in os.listdir(tmp_dir):
+            full = os.path.join(tmp_dir, fn)
+            if not os.path.isfile(full):
+                continue
+            if os.path.splitext(fn)[1].lower() not in _RASTER_EXTS:
+                continue
+            if any(n in fn.lower() for n in _NOISE_NAMES):
+                continue
+            found.append({
+                "type": "source",
+                "source": "arxiv-source",
+                "path": full,
+                "filename": fn,
+            })
 
-    return figures
+    return found
 
+
+# ---------------------------------------------------------------------------
+# PDF-embedded image extraction
+# ---------------------------------------------------------------------------
 
 def _extract_pdf_images(
     pdf_path: str,
     output_dir: str,
-    min_width: int = 200,
-    min_height: int = 200,
+    min_w: int = 200,
+    min_h: int = 200,
     min_bytes: int = 5000,
 ) -> list[dict[str, Any]]:
-    """Extract images from PDF using PyMuPDF."""
-    if not HAS_FITZ:
-        logger.warning("PyMuPDF not installed, cannot extract from PDF")
+    if not _FITZ_OK:
         return []
-
-    images: list[dict[str, Any]] = []
+    result: list[dict[str, Any]] = []
     try:
         doc = fitz.open(pdf_path)
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            for img_idx, img in enumerate(page.get_images(full=True)):
-                xref = img[0]
+        for pg_idx in range(len(doc)):
+            page = doc[pg_idx]
+            for img_seq, info in enumerate(page.get_images(full=True)):
+                xref = info[0]
                 try:
-                    base = doc.extract_image(xref)
+                    payload = doc.extract_image(xref)
                 except Exception:
                     continue
-                if not base:
+                if not payload:
                     continue
-                if base.get("width", 0) < min_width or base.get("height", 0) < min_height:
-                    continue
-                if len(base["image"]) < min_bytes:
+                w = payload.get("width", 0)
+                h = payload.get("height", 0)
+                blob = payload["image"]
+                if w < min_w or h < min_h or len(blob) < min_bytes:
                     continue
 
-                fn = f"page{page_num + 1}_fig{img_idx + 1}.{base['ext']}"
-                fpath = os.path.join(output_dir, fn)
-                with open(fpath, "wb") as f:
-                    f.write(base["image"])
-
-                images.append({
-                    "filename": fn,
-                    "path": f"images/{fn}",
-                    "size": len(base["image"]),
-                    "width": base.get("width", 0),
-                    "height": base.get("height", 0),
-                    "ext": base["ext"],
+                fname = f"page{pg_idx + 1}_fig{img_seq + 1}.{payload['ext']}"
+                dest = os.path.join(output_dir, fname)
+                with open(dest, "wb") as fh:
+                    fh.write(blob)
+                result.append({
+                    "filename": fname,
+                    "path": f"images/{fname}",
+                    "size": len(blob),
+                    "width": w,
+                    "height": h,
+                    "ext": payload["ext"],
                     "source": "pdf-extraction",
                 })
         doc.close()
-    except Exception as e:
-        logger.error("PDF extraction error: %s", e)
+    except Exception as exc:
+        logger.error("PDF image extraction error: %s", exc)
+    return result
 
-    return images
 
+# ---------------------------------------------------------------------------
+# Top-level API
+# ---------------------------------------------------------------------------
 
 def extract_paper_images(
     paper_id: str,
     output_dir: str,
     pdf_path: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Extract images from a paper.
-
-    Args:
-        paper_id: arXiv ID (e.g. "2510.24701").
-        output_dir: Directory to save extracted images.
-        pdf_path: Optional local PDF file path.
-
-    Returns:
-        List of image metadata dicts.
-    """
+    """Harvest images from arXiv source + PDF fallback."""
     os.makedirs(output_dir, exist_ok=True)
-    arxiv_id = paper_id
-    all_figures: list[dict[str, Any]] = []
+    collected: list[dict[str, Any]] = []
 
-    with tempfile.TemporaryDirectory() as tmp:
-        # Step 1: arXiv source
-        if arxiv_id and _download_arxiv_source(arxiv_id, tmp):
-            source_figs = _find_source_figures(tmp)
-            for fig in source_figs:
-                dest = os.path.join(output_dir, fig["filename"])
-                shutil.copy2(fig["path"], dest)
-                all_figures.append({
-                    "filename": fig["filename"],
-                    "path": f"images/{fig['filename']}",
+    with tempfile.TemporaryDirectory() as scratch:
+        # Stage 1: source tarball
+        if paper_id and _pull_source_tarball(paper_id, scratch):
+            for entry in _find_source_figures(scratch):
+                dest = os.path.join(output_dir, entry["filename"])
+                shutil.copy2(entry["path"], dest)
+                collected.append({
+                    "filename": entry["filename"],
+                    "path": f"images/{entry['filename']}",
                     "size": os.path.getsize(dest),
-                    "ext": os.path.splitext(fig["filename"])[1][1:].lower(),
-                    "source": fig["source"],
+                    "ext": os.path.splitext(entry["filename"])[1][1:].lower(),
+                    "source": entry["source"],
                 })
 
-        # Step 2: PDF extraction fallback
-        if len(all_figures) < 3 and pdf_path and HAS_FITZ:
-            pdf_figs = _extract_pdf_images(pdf_path, output_dir)
-            all_figures.extend(pdf_figs)
+        # Stage 2: PDF fallback when source yields too few
+        if len(collected) < 3 and pdf_path and _FITZ_OK:
+            collected.extend(_extract_pdf_images(pdf_path, output_dir))
 
-    return all_figures
+    return collected
