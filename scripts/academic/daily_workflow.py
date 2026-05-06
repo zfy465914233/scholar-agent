@@ -149,8 +149,8 @@ def _generate_track_arxiv_innovation(
 
     cats = categories or ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
     now = target_date or datetime.now()
-    start = (now - timedelta(days=days_window)).strftime("%Y%m%d0000")
-    end = now.strftime("%Y%m%d2359")
+    start = now - timedelta(days=days_window)
+    end = now
 
     raw_papers = search_arxiv(cats, start, end, max_results=200)
 
