@@ -137,8 +137,9 @@ init 后的目录结构：
 
 | 依赖 | macOS | Ubuntu / Debian | Windows |
 |------|-------|----------------|---------|
-| poppler（PDF 文本提取） | `brew install poppler` | `sudo apt install poppler-utils` | `winget install poppler` 或 `choco install poppler` |
 | Python 3.10+ | `brew install python` | `sudo apt install python3` | [python.org](https://www.python.org/downloads/) |
+
+PDF 文本和图片提取由 PyMuPDF 处理（`pip install -e .` 会自动安装）。
 
 ## 推荐工作流
 
@@ -195,6 +196,7 @@ init 后的目录结构：
 | 变量 | 必需 | 说明 |
 |------|------|------|
 | `SCHOLAR_ACADEMIC` | 否 | 设为 `1` 启用学术工具 |
+| `SCHOLAR_HOME` | 否 | 覆盖数据目录（默认 `~/scholar/`） |
 | `S2_API_KEY` | 否 | Semantic Scholar API key（[免费申请](https://api.semanticscholar.org/)） |
 | `LLM_API_KEY` | 否 | LLM API key（用于高级合成管线） |
 
@@ -202,11 +204,17 @@ init 后的目录结构：
 
 ```
 scholar-agent/
-├── mcp_server.py              # MCP 服务器（13 个工具）
+├── mcp_server.py              # MCP 服务器（14 个工具）
 ├── setup_mcp.py               # 嵌入已有项目
 ├── pyproject.toml             # 包配置
-├── .scholar.json               # 项目与学术配置
+├── .scholar.example.json      # 带注释的配置示例
 ├── schemas/                   # 答案 + 证据 JSON schema
+├── templates/                 # 配置与 MCP 注册模板
+├── skills/                    # Claude Code 斜杠命令技能
+├── scholar_agent/             # Python 包（CLI、安装器、配置）
+│   ├── cli.py                 # CLI 入口
+│   ├── installers/            # Claude/VSCode/OpenCode 的 MCP 注册
+│   └── config/                # 配置加载、路径、用户配置
 ├── scripts/
 │   ├── academic/              # 学术研究模块
 │   │   ├── arxiv_search.py    # arXiv + Semantic Scholar 搜索
@@ -219,11 +227,9 @@ scholar-agent/
 │   ├── scholar_config.py       # 配置读取
 │   ├── local_index.py         # BM25 索引构建
 │   ├── local_retrieve.py      # 知识检索
-│   ├── close_knowledge_loop.py # 知识卡片构建
+│   ├── close_knowledge_loop.py # 知识卡片构建 + 质量门控
 │   └── ...                    # 研究、合成、治理、图谱
-├── knowledge/                 # 知识卡片（gitignored，用户生成）
-├── indexes/                   # 生成的索引（gitignored）
-└── tests/                     # 247 个测试
+└── tests/                     # 266 个测试
 ```
 
 ## 更多特色
@@ -239,7 +245,7 @@ scholar-agent/
 python -m pytest tests/ -v
 ```
 
-247 个测试，约 13 秒。无需外部服务。
+266 个测试，约 6 秒。无需外部服务。
 
 ## 许可证
 

@@ -374,8 +374,8 @@ def _doctor_payload() -> dict[str, object]:
         except Exception:
             pass
 
-    # poppler
-    poppler_installed = shutil.which("pdftotext") is not None
+    # PyMuPDF (PDF text/image extraction)
+    pymupdf_available = importlib.util.find_spec("fitz") is not None
 
     # fastmcp
     fastmcp_available = importlib.util.find_spec("fastmcp") is not None
@@ -393,7 +393,7 @@ def _doctor_payload() -> dict[str, object]:
         "checks": checks,
         "dependencies": {
             "fastmcp": fastmcp_available,
-            "poppler": poppler_installed,
+            "PyMuPDF": pymupdf_available,
         },
         "mcp": {
             "claude_registered": claude_registered,
@@ -424,8 +424,8 @@ def _format_doctor_text(payload: dict[str, object]) -> str:
         for name, ok in deps.items():
             icon = "ok" if ok else "MISSING"
             lines.append(f"  {name}: {icon}")
-            if not ok and name == "poppler":
-                problems.append("poppler not found — PDF text extraction will not work. Install with: brew install poppler")
+            if not ok and name == "PyMuPDF":
+                problems.append("PyMuPDF not installed — PDF text and image extraction will not work. Install with: pip install PyMuPDF")
             if not ok and name == "fastmcp":
                 problems.append("fastmcp not found — MCP server will not start. Install with: pip install -e .")
 

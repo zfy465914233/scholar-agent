@@ -133,8 +133,9 @@ Directory structure after init:
 
 | Dependency | macOS | Ubuntu / Debian | Windows |
 |-----------|-------|----------------|---------|
-| poppler (PDF text extraction) | `brew install poppler` | `sudo apt install poppler-utils` | `winget install poppler` or `choco install poppler` |
 | Python 3.10+ | `brew install python` | `sudo apt install python3` | [python.org](https://www.python.org/downloads/) |
+
+PDF text and image extraction is handled by PyMuPDF (`pip install -e .` installs it automatically).
 
 ## Recommended Workflow
 
@@ -153,7 +154,7 @@ For best analysis quality, follow this order:
 | Tool | Description |
 |------|-------------|
 | `query_knowledge` | Search local knowledge base |
-| `save_research` | Save structured research results as a knowledge card |
+| `save_research` | Save structured research results as a knowledge card (supports Mermaid diagrams, source images) |
 | `list_knowledge` | Browse all knowledge cards |
 | `capture_answer` | Quick-capture a Q&A pair as a draft card |
 | `ingest_source` | Ingest a URL or raw text into the knowledge base |
@@ -191,6 +192,7 @@ Copy `.env.example` to `.env` and configure:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SCHOLAR_ACADEMIC` | No | Set to `1` to enable academic tools |
+| `SCHOLAR_HOME` | No | Override data directory (default: `~/scholar/`) |
 | `S2_API_KEY` | No | Semantic Scholar API key ([get one free](https://api.semanticscholar.org/)) |
 | `LLM_API_KEY` | No | LLM API key for advanced synthesis pipeline |
 
@@ -198,11 +200,17 @@ Copy `.env.example` to `.env` and configure:
 
 ```
 scholar-agent/
-├── mcp_server.py              # MCP server (13 tools)
+├── mcp_server.py              # MCP server (14 tools)
 ├── setup_mcp.py               # Embed into existing projects
 ├── pyproject.toml             # Package configuration
-├── .scholar.json               # Project & academic configuration
+├── .scholar.example.json      # Example config with comments
 ├── schemas/                   # Answer + evidence JSON schemas
+├── templates/                 # Config & MCP templates for setup
+├── skills/                    # Claude Code slash-command skills
+├── scholar_agent/             # Python package (CLI, installers, config)
+│   ├── cli.py                 # CLI entry points
+│   ├── installers/            # MCP registration for Claude/VSCode/OpenCode
+│   └── config/                # Config loading, paths, profiles
 ├── scripts/
 │   ├── academic/              # Academic research modules
 │   │   ├── arxiv_search.py    # arXiv + Semantic Scholar search
@@ -215,11 +223,9 @@ scholar-agent/
 │   ├── scholar_config.py       # Configuration reader
 │   ├── local_index.py         # BM25 index builder
 │   ├── local_retrieve.py      # Knowledge retrieval
-│   ├── close_knowledge_loop.py # Knowledge card builder
+│   ├── close_knowledge_loop.py # Knowledge card builder + quality gates
 │   └── ...                    # Research, synthesis, governance, graph
-├── knowledge/                 # Knowledge cards (gitignored, user-generated)
-├── indexes/                   # Generated indexes (gitignored)
-└── tests/                     # 247 tests
+└── tests/                     # 266 tests
 ```
 
 ## More Features
@@ -235,7 +241,7 @@ scholar-agent/
 python -m pytest tests/ -v
 ```
 
-247 tests, ~13s. No external services needed.
+266 tests, ~6s. No external services needed.
 
 ## License
 
