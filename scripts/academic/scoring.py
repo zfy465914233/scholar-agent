@@ -158,8 +158,9 @@ class PaperScorer:
             """Sigmoid-like mapping from [0, _CEILING] to [0, 10]."""
             if v <= 0:
                 return 0.0
+            v = min(v, _CEILING)
             ratio = v / _CEILING
-            return 10.0 * ratio / (ratio + 0.3) * 1.3  # maps 0→0, 5→8.1, saturates near 10
+            return 10.0 * ratio / (ratio + 0.3) * 1.3  # maps 0→0, 5→10.0, saturates near 10
 
         rec = round(
             sum(_norm(dims_raw[k]) * weights.get(k, 0) for k in weights),
