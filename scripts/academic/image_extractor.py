@@ -1,10 +1,10 @@
 """PDF and arXiv source figure extraction for academic papers.
 
 Two-stage pipeline:
-  1. Download the arXiv source tarball and harvest images from known
-     figure directories (figures/, pics/, fig/, images/, img/).
+  1. Selectively extract image files from the arXiv source tarball
+     (only image extensions, skip .tex/.bib etc).
   2. If too few figures were found, fall back to extracting embedded
-     images from the PDF via PyMuPDF.
+     images from the PDF via PyMuPDF — with global area-based ranking.
 
 Also provides ``download_arxiv_pdf`` for caching PDFs locally and
 ``extract_pdf_text`` for plain-text extraction (BM25 indexing).
@@ -44,13 +44,12 @@ HAS_FITZ = _FITZ_OK
 HAS_REQUESTS = _REQUESTS_OK
 
 # ---------------------------------------------------------------------------
-# Directory / extension conventions
+# Image conventions
 # ---------------------------------------------------------------------------
 
-_FIGURE_SUBDIRS = ("pics", "figures", "fig", "images", "img")
-_SOURCE_EXTS = {".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"}
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"}
 _RASTER_EXTS = {".png", ".jpg", ".jpeg"}
-_NOISE_NAMES = {"logo", "icon"}
+_NOISE_NAMES = {"logo", "icon", "badge", "banner", "watermark"}
 
 
 # ---------------------------------------------------------------------------
@@ -69,11 +68,11 @@ def _fetch_bytes(url: str, *, timeout: int = 60, ua: str = "scholar-agent/1.0 (r
 
 
 # ---------------------------------------------------------------------------
-# arXiv source download + extraction
+# Selective source tarball extraction (only image files)
 # ---------------------------------------------------------------------------
 
 def _pull_source_tarball(paper_id: str, dest: str) -> bool:
-    """Download the arXiv e-print tarball and extract into *dest*."""
+    """Download arXiv e-print and selectively extract only image files."""
     url = f"https://arxiv.org/e-print/{paper_id}"
     logger.info("Fetching source tarball: %s", url)
     try:
@@ -83,13 +82,29 @@ def _pull_source_tarball(paper_id: str, dest: str) -> bool:
         tar_path = os.path.join(dest, f"{paper_id}.tar")
         with open(tar_path, "wb") as fh:
             fh.write(blob)
+
+        # Selective extraction: only image files, skip everything else
         with tarfile.open(tar_path, "r:*") as tf:
-            safe = [
+            image_members = [
                 m for m in tf.getmembers()
-                if not m.name.startswith("/") and ".." not in m.name
-                and not m.issym() and not m.islnk()
+                if not m.name.startswith("/")
+                and ".." not in m.name
+                and not m.issym()
+                and not m.islnk()
+                and os.path.splitext(m.name)[1].lower() in _IMAGE_EXTS
             ]
-            tf.extractall(path=dest, members=safe)
+            if image_members:
+                tf.extractall(path=dest, members=image_members)
+            else:
+                # Fallback: try full extraction if no image members found
+                safe = [
+                    m for m in tf.getmembers()
+                    if not m.name.startswith("/")
+                    and ".." not in m.name
+                    and not m.issym()
+                    and not m.islnk()
+                ]
+                tf.extractall(path=dest, members=safe)
         return True
     except Exception as exc:
         logger.error("Source tarball failed: %s", exc)
@@ -149,64 +164,84 @@ def extract_pdf_text(pdf_path: str, max_chars: int = 80000) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Source-level figure harvesting
+# Glob-based source image discovery
 # ---------------------------------------------------------------------------
 
-def _find_source_figures(tmp_dir: str) -> list[dict[str, Any]]:
-    """Walk known figure sub-directories inside the extracted source."""
+def _discover_source_images(scratch_dir: str) -> list[dict[str, Any]]:
+    """Use pathlib glob to find images, dynamically choosing the best directory.
+
+    Instead of iterating a fixed list of directory names, this scans all
+    subdirectories and picks the one with the most image files.
+    """
+    root = Path(scratch_dir)
+    # Collect all image files across all subdirectories
+    all_images: list[Path] = []
+    for ext in _RASTER_EXTS:
+        all_images.extend(root.rglob(f"*{ext}"))
+
+    if not all_images:
+        # Also check source extensions for non-raster image formats
+        for ext in (".pdf", ".eps", ".svg"):
+            all_images.extend(root.rglob(f"*{ext}"))
+
+    if not all_images:
+        return []
+
+    # Filter out noise files
+    filtered = [
+        p for p in all_images
+        if not any(n in p.name.lower() for n in _NOISE_NAMES)
+    ]
+    if not filtered:
+        filtered = all_images
+
+    # Group by parent directory, pick the richest directory
+    dir_counts: dict[Path, list[Path]] = {}
+    for p in filtered:
+        parent = p.parent
+        dir_counts.setdefault(parent, []).append(p)
+
+    # Use the directory with the most images as the primary source
+    best_dir = max(dir_counts, key=lambda d: len(dir_counts[d]))
+
     found: list[dict[str, Any]] = []
     seen: set[str] = set()
-
-    for subdir in _FIGURE_SUBDIRS:
-        dpath = os.path.join(tmp_dir, subdir)
-        if not os.path.isdir(dpath):
+    for img_path in dir_counts[best_dir]:
+        fn = img_path.name
+        if fn in seen:
             continue
-        for fn in os.listdir(dpath):
-            if fn in seen:
-                continue
-            if os.path.splitext(fn)[1].lower() in _SOURCE_EXTS:
-                seen.add(fn)
-                found.append({
-                    "type": "source",
-                    "source": "arxiv-source",
-                    "path": os.path.join(dpath, fn),
-                    "filename": fn,
-                })
-
-    # fallback: raster images in root (skip noise)
-    if not found:
-        for fn in os.listdir(tmp_dir):
-            full = os.path.join(tmp_dir, fn)
-            if not os.path.isfile(full):
-                continue
-            if os.path.splitext(fn)[1].lower() not in _RASTER_EXTS:
-                continue
-            if any(n in fn.lower() for n in _NOISE_NAMES):
-                continue
-            found.append({
-                "type": "source",
-                "source": "arxiv-source",
-                "path": full,
-                "filename": fn,
-            })
+        seen.add(fn)
+        found.append({
+            "kind": "source_archive",
+            "origin": "arxiv-tarball",
+            "path": str(img_path),
+            "filename": fn,
+        })
 
     return found
 
 
 # ---------------------------------------------------------------------------
-# PDF-embedded image extraction
+# PDF image extraction with global area ranking
 # ---------------------------------------------------------------------------
 
-def _extract_pdf_images(
+def _pull_embedded_images(
     pdf_path: str,
     output_dir: str,
-    min_w: int = 200,
-    min_h: int = 200,
-    min_bytes: int = 5000,
+    max_images: int = 20,
+    min_bytes: int = 4000,
 ) -> list[dict[str, Any]]:
+    """Extract PDF images via global metadata sweep + area ranking.
+
+    Instead of processing page-by-page and keeping everything above threshold,
+    this collects ALL image metadata first, ranks by area, takes the top-N,
+    then saves only those.
+    """
     if not _FITZ_OK:
         return []
-    result: list[dict[str, Any]] = []
+
+    # Phase 1: collect all image metadata across all pages
+    candidates: list[dict[str, Any]] = []
     try:
         doc = fitz.open(pdf_path)
         for pg_idx in range(len(doc)):
@@ -222,25 +257,46 @@ def _extract_pdf_images(
                 w = payload.get("width", 0)
                 h = payload.get("height", 0)
                 blob = payload["image"]
-                if w < min_w or h < min_h or len(blob) < min_bytes:
-                    continue
-
-                fname = f"page{pg_idx + 1}_fig{img_seq + 1}.{payload['ext']}"
-                dest = os.path.join(output_dir, fname)
-                with open(dest, "wb") as fh:
-                    fh.write(blob)
-                result.append({
-                    "filename": fname,
-                    "path": f"images/{fname}",
-                    "size": len(blob),
+                area = w * h
+                candidates.append({
+                    "page": pg_idx + 1,
+                    "seq": img_seq + 1,
                     "width": w,
                     "height": h,
+                    "area": area,
+                    "blob": blob,
                     "ext": payload["ext"],
-                    "source": "pdf-extraction",
+                    "size": len(blob),
                 })
         doc.close()
     except Exception as exc:
         logger.error("PDF image extraction error: %s", exc)
+        return []
+
+    # Phase 2: global ranking by area, filter by minimum size
+    candidates.sort(key=lambda c: c["area"], reverse=True)
+    top = [
+        c for c in candidates
+        if c["size"] >= min_bytes
+    ][:max_images]
+
+    # Phase 3: save only the selected images
+    result: list[dict[str, Any]] = []
+    for c in top:
+        fname = f"p{c['page']}_img{c['seq']}.{c['ext']}"
+        dest = os.path.join(output_dir, fname)
+        with open(dest, "wb") as fh:
+            fh.write(c["blob"])
+        result.append({
+            "filename": fname,
+            "rel_path": f"images/{fname}",
+            "byte_size": c["size"],
+            "width": c["width"],
+            "height": c["height"],
+            "format": c["ext"],
+            "origin": "pdf-extraction",
+        })
+
     return result
 
 
@@ -258,21 +314,21 @@ def extract_paper_images(
     collected: list[dict[str, Any]] = []
 
     with tempfile.TemporaryDirectory() as scratch:
-        # Stage 1: source tarball
+        # Stage 1: selective source extraction + glob discovery
         if paper_id and _pull_source_tarball(paper_id, scratch):
-            for entry in _find_source_figures(scratch):
+            for entry in _discover_source_images(scratch):
                 dest = os.path.join(output_dir, entry["filename"])
                 shutil.copy2(entry["path"], dest)
                 collected.append({
                     "filename": entry["filename"],
-                    "path": f"images/{entry['filename']}",
-                    "size": os.path.getsize(dest),
-                    "ext": os.path.splitext(entry["filename"])[1][1:].lower(),
-                    "source": entry["source"],
+                    "rel_path": f"images/{entry['filename']}",
+                    "byte_size": os.path.getsize(dest),
+                    "format": os.path.splitext(entry["filename"])[1][1:].lower(),
+                    "origin": entry.get("origin", "arxiv-tarball"),
                 })
 
         # Stage 2: PDF fallback when source yields too few
-        if len(collected) < 3 and pdf_path and _FITZ_OK:
-            collected.extend(_extract_pdf_images(pdf_path, output_dir))
+        if len(collected) < 2 and pdf_path and _FITZ_OK:
+            collected.extend(_pull_embedded_images(pdf_path, output_dir))
 
     return collected

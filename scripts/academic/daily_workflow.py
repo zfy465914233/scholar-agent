@@ -144,7 +144,7 @@ def _generate_track_arxiv_innovation(
     target_date: datetime | None = None,
 ) -> dict[str, Any]:
     """Track 2: arXiv innovation papers — heuristic + LLM batch scoring."""
-    from academic.arxiv_search import search_arxiv
+    from academic.arxiv_search import query_arxiv
     from academic.innovation_scorer import innovation_pre_filter, innovation_llm_batch_score
 
     cats = categories or ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
@@ -152,7 +152,7 @@ def _generate_track_arxiv_innovation(
     start = now - timedelta(days=days_window)
     end = now
 
-    raw_papers = search_arxiv(cats, start, end, max_results=200)
+    raw_papers = query_arxiv(cats, start, end, limit=200)
 
     # Heuristic pre-filter
     candidates = innovation_pre_filter(raw_papers, config, max_candidates=max_candidates)
@@ -316,7 +316,7 @@ def build_daily_note(
     # --- Frontmatter ---
     keywords: set[str] = set()
     for p in papers:
-        for kw in p.get("matched_keywords", []):
+        for kw in p.get("domain_keywords", []):
             keywords.add(kw)
     kw_yaml = ", ".join(sorted(keywords)[:20]) if keywords else ""
 
@@ -442,7 +442,7 @@ def _render_paper_block(
     if isinstance(authors, list):
         authors = ", ".join(str(a) for a in authors[:5])
     arxiv_id = p.get("arxiv_id", "")
-    domain = p.get("matched_domain", "")
+    domain = p.get("best_domain", "")
     impact = p.get("_impact_score")
     innovation = p.get("_innovation_final_score")
     llm_comment = p.get("_llm_comment", "")

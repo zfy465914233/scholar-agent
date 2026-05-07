@@ -50,7 +50,7 @@ class TestScoring(unittest.TestCase):
         scored = self.score_papers(papers, self.config)
         self.assertEqual(len(scored), 1)
         self.assertIn("scores", scored[0])
-        self.assertGreater(scored[0]["scores"]["relevance"], 0)
+        self.assertGreater(scored[0]["scores"]["fit"], 0)
 
     def test_relevance_excluded_keyword_returns_zero(self):
         papers = [{
@@ -75,20 +75,21 @@ class TestScoring(unittest.TestCase):
         }]
         scored = self.score_papers(papers, self.config)
         self.assertGreaterEqual(len(scored), 1, "Paper should be scored")
-        self.assertGreater(scored[0]["scores"]["recency"], 0.5)
+        self.assertGreater(scored[0]["scores"]["freshness"], 0.5)
 
     def test_recency_score_beyond_180_days(self):
         papers = [{
             "title": "Old LLM work",
             "summary": "A transformer model.",
             "categories": ["cs.AI"],
-            "published_date": datetime.now() - timedelta(days=200),
+            "published_date": datetime.now() - timedelta(days=300),
             "citationCount": 0,
             "source": "arxiv",
         }]
         scored = self.score_papers(papers, self.config)
         self.assertGreaterEqual(len(scored), 1, "Paper should be scored")
-        self.assertLessEqual(scored[0]["scores"]["recency"], 0.3)
+        # Linear decay: 300/365 days old should have low but non-zero freshness
+        self.assertLess(scored[0]["scores"]["freshness"], 1.0)
 
     def test_score_papers_batch(self):
         papers = [
@@ -121,8 +122,8 @@ class TestPaperAnalyzer(unittest.TestCase):
         self.title_to_filename = title_to_filename
 
     def test_title_to_filename_special_chars(self):
-        self.assertEqual(self.title_to_filename("Hello: World"), "Hello_World")
-        self.assertEqual(self.title_to_filename("A/B Test?"), "A_B_Test")
+        self.assertEqual(self.title_to_filename("Hello: World"), "Hello--World")
+        self.assertEqual(self.title_to_filename("A/B Test?"), "A-B-Test")
         self.assertEqual(self.title_to_filename("  spaces  "), "spaces")
 
     def test_generate_note_zh_creates_file_with_all_sections(self):
@@ -132,7 +133,7 @@ class TestPaperAnalyzer(unittest.TestCase):
                 "arxiv_id": "2401.99999",
                 "authors": ["Author A", "Author B"],
                 "summary": "This is a test abstract about LLM.",
-                "matched_domain": "LLM",
+                "best_domain": "LLM",
                 "scores": {"recommendation": 8.5},
             }
             path = self.generate_note(paper, tmp, language="zh")
@@ -153,7 +154,7 @@ class TestPaperAnalyzer(unittest.TestCase):
                 "arxiv_id": "2401.00001",
                 "authors": ["John Doe"],
                 "summary": "An English abstract.",
-                "matched_domain": "Agent",
+                "best_domain": "Agent",
                 "scores": {"recommendation": 7.0},
             }
             path = self.generate_note(paper, tmp, language="en")
@@ -204,21 +205,21 @@ class TestPaperAnalyzer(unittest.TestCase):
 
 class TestImageExtractor(unittest.TestCase):
 
-    def test_find_source_figures_empty_dir(self):
-        from academic.image_extractor import _find_source_figures
+    def test_discover_source_images_empty_dir(self):
+        from academic.image_extractor import _discover_source_images
         with tempfile.TemporaryDirectory() as tmp:
-            figs = _find_source_figures(tmp)
+            figs = _discover_source_images(tmp)
             self.assertEqual(figs, [])
 
-    def test_find_source_figures_with_images(self):
-        from academic.image_extractor import _find_source_figures
+    def test_discover_source_images_with_images(self):
+        from academic.image_extractor import _discover_source_images
         with tempfile.TemporaryDirectory() as tmp:
             fig_dir = os.path.join(tmp, "figures")
             os.makedirs(fig_dir)
             # Create dummy image files
             for name in ["fig1.png", "fig2.jpg", "data.csv"]:
                 Path(fig_dir, name).write_bytes(b"dummy")
-            figs = _find_source_figures(tmp)
+            figs = _discover_source_images(tmp)
             filenames = {f["filename"] for f in figs}
             self.assertIn("fig1.png", filenames)
             self.assertIn("fig2.jpg", filenames)
@@ -229,7 +230,7 @@ class TestImageExtractor(unittest.TestCase):
         original = image_extractor.HAS_FITZ
         image_extractor.HAS_FITZ = False
         try:
-            result = image_extractor._extract_pdf_images("/nonexistent.pdf", "/tmp")
+            result = image_extractor._pull_embedded_images("/nonexistent.pdf", "/tmp")
             self.assertEqual(result, [])
         finally:
             image_extractor.HAS_FITZ = original
@@ -241,58 +242,58 @@ class TestImageExtractor(unittest.TestCase):
 
 class TestNoteLinker(unittest.TestCase):
 
-    def test_find_related_papers_shared_keywords(self):
-        from academic.note_linker import find_related_papers
+    def test_discover_related_notes_shared_keywords(self):
+        from academic.note_linker import discover_related_notes
         paper = {
             "title": "LLM Reasoning",
-            "matched_keywords": ["LLM", "reasoning"],
-            "matched_domain": "AI",
+            "domain_keywords": ["LLM", "reasoning"],
+            "best_domain": "AI",
             "authors": ["Alice"],
         }
         others = [
             {
                 "title": "Another LLM Paper",
-                "matched_keywords": ["LLM", "transformer"],
-                "matched_domain": "AI",
+                "domain_keywords": ["LLM", "transformer"],
+                "best_domain": "AI",
                 "authors": ["Bob"],
             },
             {
                 "title": "Unrelated Paper",
-                "matched_keywords": ["biology"],
-                "matched_domain": "Bio",
+                "domain_keywords": ["biology"],
+                "best_domain": "Bio",
                 "authors": ["Carol"],
             },
         ]
-        related = find_related_papers(paper, others, max_links=5)
-        self.assertIn("Another_LLM_Paper", related)
+        related = discover_related_notes(paper, others, max_links=5)
+        self.assertIn("Another-LLM-Paper", related)
 
-    def test_find_related_papers_no_self_link(self):
-        from academic.note_linker import find_related_papers
+    def test_discover_related_notes_no_self_link(self):
+        from academic.note_linker import discover_related_notes
         paper = {
             "title": "My Paper",
-            "matched_keywords": ["LLM"],
-            "matched_domain": "AI",
+            "domain_keywords": ["LLM"],
+            "best_domain": "AI",
             "authors": [],
         }
         others = [paper]  # same paper in the list
-        related = find_related_papers(paper, others)
+        related = discover_related_notes(paper, others)
         self.assertEqual(related, [])
 
-    def test_scan_notes_for_keywords_extracts_acronyms(self):
-        from academic.note_linker import scan_notes_for_keywords
+    def test_build_keyword_index_extracts_acronyms(self):
+        from academic.note_linker import build_keyword_index
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "BLIP-2_Visual_Reasoning.md"
             note.write_text(
                 '---\ntitle: "BLIP-2: Bootstrapping Language-Image"\ntags:\n  - VLP\n---\nContent here.\n',
                 encoding="utf-8",
             )
-            index = scan_notes_for_keywords(tmp)
+            index = build_keyword_index(tmp)
             # Should extract "BLIP-2" from pre-colon text
             self.assertIn("blip-2", index)
             self.assertEqual(index["blip-2"], "BLIP-2_Visual_Reasoning")
 
-    def test_linkify_keywords_skips_frontmatter(self):
-        from academic.note_linker import linkify_keywords
+    def test_apply_wiki_links_skips_frontmatter(self):
+        from academic.note_linker import apply_wiki_links
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "test.md"
             note.write_text(
@@ -300,7 +301,7 @@ class TestNoteLinker(unittest.TestCase):
                 encoding="utf-8",
             )
             keyword_index = {"blip-2": "BLIP-2_Note"}
-            modified, count = linkify_keywords(str(note), keyword_index)
+            modified, count = apply_wiki_links(str(note), keyword_index)
             content = note.read_text(encoding="utf-8")
             # Frontmatter should NOT be linked
             self.assertIn('title: "BLIP-2 paper"', content)
@@ -309,8 +310,8 @@ class TestNoteLinker(unittest.TestCase):
             self.assertTrue(modified)
             self.assertEqual(count, 1)
 
-    def test_linkify_keywords_skips_code_blocks(self):
-        from academic.note_linker import linkify_keywords
+    def test_apply_wiki_links_skips_code_blocks(self):
+        from academic.note_linker import apply_wiki_links
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "test.md"
             note.write_text(
@@ -318,7 +319,7 @@ class TestNoteLinker(unittest.TestCase):
                 encoding="utf-8",
             )
             keyword_index = {"blip": "BLIP_Note"}
-            modified, count = linkify_keywords(str(note), keyword_index)
+            modified, count = apply_wiki_links(str(note), keyword_index)
             content = note.read_text(encoding="utf-8")
             # Code block should not be linked
             self.assertIn("BLIP = load()", content)
@@ -326,8 +327,8 @@ class TestNoteLinker(unittest.TestCase):
             # Body text should be linked
             self.assertIn("[[BLIP_Note|BLIP]]", content)
 
-    def test_linkify_keywords_skips_existing_wikilinks(self):
-        from academic.note_linker import linkify_keywords
+    def test_apply_wiki_links_skips_existing_wikilinks(self):
+        from academic.note_linker import apply_wiki_links
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "test.md"
             note.write_text(
@@ -335,7 +336,7 @@ class TestNoteLinker(unittest.TestCase):
                 encoding="utf-8",
             )
             keyword_index = {"blip": "BLIP_Note"}
-            modified, count = linkify_keywords(str(note), keyword_index)
+            modified, count = apply_wiki_links(str(note), keyword_index)
             self.assertFalse(modified)
             self.assertEqual(count, 0)
 
@@ -385,8 +386,8 @@ class TestDailyWorkflow(unittest.TestCase):
                     "authors": ["Alice"],
                     "arxiv_id": "2401.00001",
                     "scores": {"recommendation": 9.0},
-                    "matched_domain": "LLM",
-                    "matched_keywords": ["LLM"],
+                    "best_domain": "LLM",
+                    "domain_keywords": ["LLM"],
                 },
             ]
             path = build_daily_note("2025-01-01", papers, tmp, language="zh")
@@ -406,8 +407,8 @@ class TestDailyWorkflow(unittest.TestCase):
                     "authors": ["Bob"],
                     "arxiv_id": "2401.00002",
                     "scores": {"recommendation": 7.5},
-                    "matched_domain": "Agent",
-                    "matched_keywords": ["agent"],
+                    "best_domain": "Agent",
+                    "domain_keywords": ["agent"],
                 },
             ]
             path = build_daily_note("2025-01-01", papers, tmp, language="en")

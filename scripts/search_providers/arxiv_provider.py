@@ -167,10 +167,10 @@ def _env_categories() -> list[str]:
 def _default_scoring_config(categories: list[str]) -> dict[str, Any]:
     """Build a minimal scoring config from category codes."""
     keywords: list[str] = []
-    from academic.arxiv_search import ARXIV_CATEGORY_KEYWORDS
+    from academic.arxiv_search import _CATEGORY_PHRASES
 
     for cat in categories:
-        kw = ARXIV_CATEGORY_KEYWORDS.get(cat, "")
+        kw = _CATEGORY_PHRASES.get(cat, "")
         if kw:
             keywords.extend(kw.split())
 
@@ -198,9 +198,9 @@ def _search_arxiv_raw(
     max_results: int = 200,
 ) -> list[dict[str, Any]]:
     """Fetch recent arXiv papers and normalise to candidate dicts."""
-    from academic.arxiv_search import search_arxiv as _search
+    from academic.arxiv_search import query_arxiv as _search
 
-    papers = _search(categories, start_date, end_date, max_results)
+    papers = _search(categories, start_date, end_date, limit=max_results)
     return [
         {
             "url": p.get("url") or p.get("id", ""),
@@ -221,9 +221,9 @@ def _search_semantic_scholar_raw(
     top_k: int = 20,
 ) -> list[dict[str, Any]]:
     """Fetch Semantic Scholar papers and normalise to candidate dicts."""
-    from academic.arxiv_search import search_semantic_scholar as _search
+    from academic.arxiv_search import query_semantic_scholar as _search
 
-    papers = _search(query, start_date, end_date, top_k)
+    papers = _search(query, start_date, end_date, top_k=top_k)
     return [
         {
             "url": p.get("url") or f"https://doi.org/{p['externalIds']['DOI']}"

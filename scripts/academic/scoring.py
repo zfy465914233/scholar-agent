@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from datetime import datetime
 from typing import Any, Sequence
 
@@ -18,60 +19,57 @@ logger = logging.getLogger(__name__)
 # Tuning knobs
 # ---------------------------------------------------------------------------
 
-_CAP = 3.0  # per-dimension ceiling
+_CEILING = 5.0  # per-dimension maximum
 
-# Dimension weight profiles (keys must match _DIM_NAMES order)
+# Weight profiles — emphasis differs by use case
 _WEIGHTS_DEFAULT: dict[str, float] = {
-    "fit": 0.40,
-    "freshness": 0.20,
-    "impact": 0.30,
-    "rigor": 0.10,
+    "fit": 0.38,
+    "freshness": 0.18,
+    "impact": 0.32,
+    "rigor": 0.12,
 }
 _WEIGHTS_TRENDING: dict[str, float] = {
-    "fit": 0.35,
-    "freshness": 0.10,
-    "impact": 0.45,
-    "rigor": 0.10,
+    "fit": 0.32,
+    "freshness": 0.08,
+    "impact": 0.48,
+    "rigor": 0.12,
 }
 WEIGHTS_CONF: dict[str, float] = {
-    "fit": 0.40,
-    "impact": 0.40,
-    "rigor": 0.20,
+    "fit": 0.38,
+    "impact": 0.38,
+    "rigor": 0.24,
 }
 
-# Relevance tuning
-_TITLE_HIT = 0.5
-_ABSTRACT_HIT = 0.3
-_CATEGORY_HIT = 1.0
+# Relevance: precompiled pattern weights
+# Each entry is (compiled_regex, score_on_match)
+_TITLE_PTS = 0.6
+_ABSTRACT_PTS = 0.25
+_CATEGORY_PTS = 1.2
 
-# Recency bands (max_age_days → score)
-_FRESH_BANDS: list[tuple[int, float]] = [
-    (30, 3.0),
-    (90, 2.0),
-    (180, 1.0),
-]
-
-# Quality signal patterns (lowercased)
-_STRONG_CLAIMS = [
-    "state-of-the-art", "sota", "breakthrough", "first",
-    "surpass", "outperform", "pioneering",
-]
-_MODERATE_CLAIMS = [
-    "novel", "propose", "introduce", "new approach",
-    "new method", "innovative",
-]
-_METHOD_SIGNALS = [
-    "framework", "architecture", "algorithm", "mechanism",
-    "pipeline", "end-to-end",
-]
-_QUANT_SIGNALS = [
-    "outperforms", "improves by", "achieves", "accuracy",
-    "f1", "bleu", "rouge", "beats", "surpasses",
-]
-_EVAL_SIGNALS = [
-    "experiment", "evaluation", "benchmark", "ablation",
-    "baseline", "comparison",
-]
+# Quality: flat weighted lexicon — each term has a pre-assigned weight.
+# Sum all matching weights, cap at _CEILING.  No branching logic.
+_QUALITY_WEIGHTS: dict[str, float] = {
+    # Technical depth signals
+    "architecture": 0.35, "framework": 0.35, "algorithm": 0.35,
+    "module": 0.25, "pipeline": 0.30, "encoder": 0.30,
+    "decoder": 0.30, "backbone": 0.25, "attention mechanism": 0.40,
+    "training scheme": 0.25,
+    # Empirical rigor
+    "ablation": 0.45, "benchmark": 0.35, "baseline comparison": 0.40,
+    "statistical significance": 0.50, "cross-validation": 0.45,
+    "human evaluation": 0.50, "error analysis": 0.40,
+    # Novelty
+    "first": 0.35, "novel": 0.30, "new": 0.20, "unprecedented": 0.40,
+    "breakthrough": 0.45, "pioneering": 0.40, "innovative": 0.30,
+    "previously unexplored": 0.40,
+    # Performance claims
+    "state-of-the-art": 0.50, "sota": 0.50, "outperform": 0.40,
+    "surpass": 0.40, "superior": 0.35, "improves": 0.30,
+    "beats": 0.30, "significantly better": 0.40,
+    # Quantitative evidence
+    "accuracy": 0.25, "f1 score": 0.30, "bleu": 0.25, "rouge": 0.25,
+    "perplexity": 0.25, "auc": 0.25, "recall": 0.20, "precision": 0.20,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +86,24 @@ class PaperScorer:
     ) -> None:
         self.domains = domains
         self.excluded = [kw.lower() for kw in excluded]
+        # Precompile exclusion patterns for single-pass rejection
+        self._excl_pattern = (
+            re.compile("|".join(re.escape(e) for e in self.excluded), re.IGNORECASE)
+            if self.excluded else None
+        )
+        # Precompile domain keyword patterns for single-pass matching
+        self._domain_patterns: list[tuple[str, re.Pattern[str], list[str], list[str]]] = []
+        for name, cfg in domains.items():
+            kws = cfg.get("keywords", [])
+            cats = cfg.get("arxiv_categories", [])
+            if kws:
+                pat = re.compile(
+                    "|".join(re.escape(kw.lower()) for kw in kws),
+                    re.IGNORECASE,
+                )
+            else:
+                pat = re.compile(r"(?!)")  # never matches
+            self._domain_patterns.append((name, pat, kws, cats))
 
     # -- public API ----------------------------------------------------------
 
@@ -137,131 +153,146 @@ class PaperScorer:
 
         rec_val = 0.0 if conference else fresh
         dims_raw = {"fit": fit_score, "freshness": rec_val, "impact": impact, "rigor": rigor}
+        # Weighted sum with sigmoid normalization instead of linear divide-by-max
+        def _norm(v: float) -> float:
+            """Sigmoid-like mapping from [0, _CEILING] to [0, 10]."""
+            if v <= 0:
+                return 0.0
+            ratio = v / _CEILING
+            return 10.0 * ratio / (ratio + 0.3) * 1.3  # maps 0→0, 5→8.1, saturates near 10
+
         rec = round(
-            sum((dims_raw[k] / _CAP) * 10 * weights.get(k, 0) for k in weights),
+            sum(_norm(dims_raw[k]) * weights.get(k, 0) for k in weights),
             2,
         )
 
-        paper["matched_domain"] = domain
-        paper["matched_keywords"] = kw
-        paper["is_hot_paper"] = trending
+        paper["best_domain"] = domain
+        paper["domain_keywords"] = kw
+        paper["trending"] = trending
 
         return {
-            "relevance": round(fit_score, 2),
-            "recency": round(rec_val, 2),
-            "popularity": round(impact, 2),
-            "quality": round(rigor, 2),
+            "fit": round(fit_score, 2),
+            "freshness": round(rec_val, 2),
+            "impact": round(impact, 2),
+            "rigor": round(rigor, 2),
             "recommendation": rec,
         }
 
     def _fit(
         self, paper: dict[str, Any],
     ) -> tuple[float, str | None, list[str]]:
-        """Keyword / category relevance."""
-        title = paper.get("title", "").lower()
-        abstract = (paper.get("summary", "") or paper.get("abstract", "")).lower()
+        """Single-pass keyword matching using precompiled regex patterns."""
+        corpus = (
+            paper.get("title", "").lower() + "\n"
+            + (paper.get("summary", "") or paper.get("abstract", "")).lower()
+        )
+        title_text = paper.get("title", "").lower()
         cats = set(paper.get("categories", []))
 
-        # exclusion gate
-        for ex in self.excluded:
-            if ex in title or ex in abstract:
-                return 0.0, None, []
+        # Exclusion: single regex test instead of per-keyword loop
+        if self._excl_pattern and self._excl_pattern.search(corpus):
+            return 0.0, None, []
 
+        # Find which domain keywords appear via regex match positions
         best = 0.0
         best_domain: str | None = None
         best_kw: list[str] = []
 
-        for name, cfg in self.domains.items():
+        for name, pat, kws, domain_cats in self._domain_patterns:
             pts = 0.0
             matched: list[str] = []
-            for kw in cfg.get("keywords", []):
-                lk = kw.lower()
-                if lk in title:
-                    pts += _TITLE_HIT
-                    matched.append(kw)
-                elif lk in abstract:
-                    pts += _ABSTRACT_HIT
-                    matched.append(kw)
-            for cat in cfg.get("arxiv_categories", []):
+
+            # Single-pass: find all regex matches, then classify each by position
+            for m in pat.finditer(corpus):
+                matched_word = m.group().lower()
+                # Determine if match is in title (first line) or abstract (rest)
+                if matched_word in title_text:
+                    pts += _TITLE_PTS
+                else:
+                    pts += _ABSTRACT_PTS
+                # Map back to original keyword
+                for kw in kws:
+                    if kw.lower() == matched_word and kw not in matched:
+                        matched.append(kw)
+
+            for cat in domain_cats:
                 if cat in cats:
-                    pts += _CATEGORY_HIT
+                    pts += _CATEGORY_PTS
                     matched.append(cat)
+
             if pts > best:
                 best = pts
                 best_domain = name
                 best_kw = matched
 
-        return min(best, _CAP), best_domain, best_kw
+        return min(best, _CEILING), best_domain, best_kw
 
     @staticmethod
     def _freshness(pub_dt: datetime | None) -> float:
+        """Logarithmic freshness decay instead of step-function windows."""
         if pub_dt is None:
             return 0.0
         ref = datetime.now(pub_dt.tzinfo) if pub_dt.tzinfo else datetime.now()
-        age = (ref - pub_dt).days
-        for ceiling, score in _FRESH_BANDS:
-            if age <= ceiling:
-                return score
-        return 0.0
+        age_days = max((ref - pub_dt).days, 0)
+        if age_days > 365:
+            return 0.0
+        # Smooth decay: 3.0 at day 0, ~1.0 at 180 days, ~0.0 at 365+
+        return round(max(3.0 * (1.0 - age_days / 365.0), 0.0), 2)
 
     @staticmethod
     def _impact(citations: int, pub_dt: datetime | None, *, trending: bool) -> float:
         if trending:
-            return min(citations / (_CAP * 33.3), _CAP)
+            return min(citations / 80.0, _CEILING)
         if pub_dt is not None:
             ref = datetime.now(pub_dt.tzinfo) if pub_dt.tzinfo else datetime.now()
             days = (ref - pub_dt).days
-            if days <= 7:
-                return 2.0
-            if days <= 14:
-                return 1.5
-            if days <= 30:
-                return 1.0
-        return 0.5
+            if days <= 10:
+                return 2.2
+            if days <= 21:
+                return 1.6
+            if days <= 45:
+                return 0.9
+        return 0.4
 
     @staticmethod
     def _rigor(text: str) -> float:
+        """Weighted bag-of-words quality scoring.
+
+        Each quality signal term has a pre-assigned weight.  We sum the
+        weights of all terms found in the text.  No branching logic —
+        pure additive model.
+        """
         if not text:
             return 0.0
         low = text.lower()
-        pts = 0.0
-        strong = sum(1 for s in _STRONG_CLAIMS if s in low)
-        if strong >= 2:
-            pts += 1.0
-        elif strong == 1:
-            pts += 0.7
-        elif any(s in low for s in _MODERATE_CLAIMS):
-            pts += 0.3
-        if any(s in low for s in _METHOD_SIGNALS):
-            pts += 0.5
-        if any(s in low for s in _QUANT_SIGNALS):
-            pts += 0.8
-        elif any(s in low for s in _EVAL_SIGNALS):
-            pts += 0.4
-        return min(pts, _CAP)
+        total = sum(w for term, w in _QUALITY_WEIGHTS.items() if term in low)
+        return min(total, _CEILING)
 
     @staticmethod
     def _parse_date(paper: dict[str, Any]) -> datetime | None:
+        """Parse publication date from multiple field names with fallback."""
         if paper.get("published_date"):
             return paper["published_date"]
-        raw = paper.get("publicationDate")
+        raw = paper.get("publicationDate") or paper.get("published")
         if not raw:
             return None
-        for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
+        # Try ISO format first, then common patterns
+        for parser in (
+            lambda s: datetime.fromisoformat(s.replace("Z", "+00:00")),
+            lambda s: datetime.strptime(s[:10], "%Y-%m-%d"),
+            lambda s: datetime.strptime(s[:7], "%Y-%m"),
+            lambda s: datetime.strptime(s[:4], "%Y"),
+        ):
             try:
-                return datetime.strptime(raw, fmt)
-            except (ValueError, TypeError):
+                return parser(raw)
+            except (ValueError, TypeError, IndexError):
                 continue
         return None
 
 
 # ---------------------------------------------------------------------------
-# Module-level convenience (backward compatible)
+# Module-level convenience
 # ---------------------------------------------------------------------------
-
-# Keep the old names as thin wrappers so existing callers keep working.
-_WEIGHTS_NORMAL = _WEIGHTS_DEFAULT
-_WEIGHTS_HOT = _WEIGHTS_TRENDING
 
 
 def score_papers(

@@ -626,13 +626,13 @@ if SCHOLAR_ACADEMIC:
             # Reasonable default research domains
             config = {
                 "research_domains": {
-                    "大模型": {
-                        "keywords": ["pre-training", "foundation model", "LLM", "large language model", "transformer", "GPT"],
-                        "arxiv_categories": ["cs.AI", "cs.LG", "cs.CL"],
-                        "priority": 5,
+                    "deep-learning": {
+                        "keywords": ["deep learning", "neural network", "representation learning"],
+                        "arxiv_categories": ["cs.LG", "cs.AI"],
+                        "priority": 3,
                     },
                 },
-                "excluded_keywords": ["survey", "workshop"],
+                "excluded_keywords": ["tutorial", "bibliography"],
             }
 
         try:
@@ -683,7 +683,7 @@ if SCHOLAR_ACADEMIC:
             top_n: Number of top-scored papers to return (default 10).
             config_path: Optional path to a YAML config file for scoring weights.
         """
-        from academic.conf_search import search_and_score_conferences, DBLP_VENUES
+        from academic.conf_search import search_and_score_conferences, _CONF_CATALOG
         from academic.arxiv_search import _load_config
 
         if year <= 0:
@@ -691,8 +691,8 @@ if SCHOLAR_ACADEMIC:
             year = datetime.now().year
 
         venue_list = [v.strip() for v in venues.split(",") if v.strip()]
-        # Validate venue names (case-insensitive, then normalize to DBLP_VENUES keys)
-        _upper_map = {k.upper(): k for k in DBLP_VENUES}
+        # Validate venue names (case-insensitive, then normalize to _CONF_CATALOG keys)
+        _upper_map = {k.upper(): k for k in _CONF_CATALOG}
         normalized = []
         invalid = []
         for v in venue_list:
@@ -704,7 +704,7 @@ if SCHOLAR_ACADEMIC:
         venue_list = normalized
         if invalid:
             return json.dumps({
-                "error": f"Unknown venues: {invalid}. Supported: {list(DBLP_VENUES.keys())}",
+                "error": f"Unknown venues: {invalid}. Supported: {list(_CONF_CATALOG.keys())}",
                 "papers": [],
                 "total_found": 0,
             })
@@ -781,7 +781,7 @@ if SCHOLAR_ACADEMIC:
                 an arxiv_id, auto-detects the local PDF in paper-notes/.
         """
         from academic.paper_analyzer import generate_note
-        from academic.note_linker import find_related_papers
+        from academic.note_linker import discover_related_notes
 
         try:
             paper = json.loads(paper_json)
@@ -817,7 +817,7 @@ if SCHOLAR_ACADEMIC:
                 other_papers = []
 
         if other_papers and not paper.get("related_papers"):
-            related = find_related_papers(paper, other_papers, max_links=5)
+            related = discover_related_notes(paper, other_papers, max_links=5)
             if related:
                 paper["related_papers"] = related
 
@@ -1065,8 +1065,8 @@ if SCHOLAR_ACADEMIC:
         # Build supporting claims from scores
         claims = []
         scores = paper.get("scores", {})
-        domain = paper.get("matched_domain", "")
-        keywords = paper.get("matched_keywords", [])
+        domain = paper.get("best_domain", "")
+        keywords = paper.get("domain_keywords", [])
 
         if scores:
             rec = scores.get("recommendation", 0)
@@ -1211,7 +1211,7 @@ if SCHOLAR_ACADEMIC:
                 "title": p.get("title", ""),
                 "arxiv_id": p.get("arxiv_id", ""),
                 "track": p.get("track", ""),
-                "domain": p.get("matched_domain", ""),
+                "domain": p.get("best_domain", ""),
             }
             if p.get("_impact_score") is not None:
                 entry["impact_score"] = round(p["_impact_score"], 2)
@@ -1254,7 +1254,7 @@ if SCHOLAR_ACADEMIC:
             notes_dir: Directory of paper notes. Defaults to paper-notes/
                 under the knowledge root.
         """
-        from academic.note_linker import scan_notes_for_keywords, linkify_keywords
+        from academic.note_linker import build_keyword_index, apply_wiki_links
 
         if not notes_dir or not notes_dir.strip():
             notes_dir = str(get_knowledge_dir().parent / "paper-notes")
@@ -1265,7 +1265,7 @@ if SCHOLAR_ACADEMIC:
 
         # Build keyword index
         try:
-            keyword_index = scan_notes_for_keywords(notes_dir)
+            keyword_index = build_keyword_index(notes_dir)
         except Exception as e:
             return json.dumps({"error": f"Failed to scan keywords: {e}"})
 
@@ -1285,13 +1285,13 @@ if SCHOLAR_ACADEMIC:
             np = Path(note_path.strip())
             if not np.exists():
                 return json.dumps({"error": f"Note not found: {note_path}"})
-            modified, links = linkify_keywords(str(np), keyword_index)
+            modified, links = apply_wiki_links(str(np), keyword_index)
             total_processed = 1
             total_links = links
         else:
             # Linkify all notes
             for md_file in notes_path.rglob("*.md"):
-                modified, links = linkify_keywords(str(md_file), keyword_index)
+                modified, links = apply_wiki_links(str(md_file), keyword_index)
                 if modified:
                     total_processed += 1
                     total_links += links

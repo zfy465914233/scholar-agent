@@ -25,162 +25,198 @@ except ImportError:
     HAS_REQUESTS = False
 
 # ---------------------------------------------------------------------------
-# Venue config
+# Venue config — derived from DBLP taxonomy and arXiv category mappings
 # ---------------------------------------------------------------------------
 
-DBLP_VENUES: dict[str, dict[str, Any]] = {
-    "CVPR": {"toc": "conf/cvpr", "toc_name": "cvpr{year}"},
-    "ICCV": {"toc": "conf/iccv", "toc_name": "iccv{year}"},
-    "ECCV": {"toc": "conf/eccv", "toc_name": None, "venue_query": "ECCV"},
-    "ICLR": {"toc": "conf/iclr", "toc_name": "iclr{year}"},
-    "AAAI": {"toc": "conf/aaai", "toc_name": "aaai{year}"},
-    "NeurIPS": {"toc": "conf/nips", "toc_name": "neurips{year}"},
-    "ICML": {"toc": "conf/icml", "toc_name": "icml{year}"},
-    "MICCAI": {"toc": "conf/miccai", "toc_name": None, "venue_query": "MICCAI"},
-    "ACL": {"toc": "conf/acl", "toc_name": "acl{year}"},
-    "EMNLP": {"toc": "conf/emnlp", "toc_name": None, "venue_query": "EMNLP"},
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class _VenueSpec:
+    """DBLP venue specification with optional TOC path and arXiv categories."""
+    dblp_prefix: str          # e.g. "conf/cvpr"
+    toc_fmt: str | None       # e.g. "cvpr{year}" — None means use venue_query
+    venue_label: str          # e.g. "CVPR" — used in venue:year queries
+    arxiv_cats: tuple[str, ...] = ()
+
+    def toc_path(self, year: int) -> str | None:
+        if not self.toc_fmt:
+            return None
+        return f"toc:db/{self.dblp_prefix}/{self.toc_fmt.format(year=year)}.bht:"
+
+_CONF_CATALOG: dict[str, _VenueSpec] = {
+    "CVPR":    _VenueSpec("conf/cvpr",   "cvpr{year}",    "CVPR",    ("cs.CV",)),
+    "ICCV":    _VenueSpec("conf/iccv",   "iccv{year}",    "ICCV",    ("cs.CV",)),
+    "ECCV":    _VenueSpec("conf/eccv",   None,            "ECCV",    ("cs.CV",)),
+    "ICLR":    _VenueSpec("conf/iclr",   "iclr{year}",    "ICLR",    ("cs.LG", "cs.AI")),
+    "AAAI":    _VenueSpec("conf/aaai",   "aaai{year}",    "AAAI",    ("cs.AI",)),
+    "NeurIPS": _VenueSpec("conf/nips",   "neurips{year}", "NeurIPS", ("cs.LG", "cs.AI", "cs.CL")),
+    "ICML":    _VenueSpec("conf/icml",   "icml{year}",    "ICML",    ("cs.LG",)),
+    "MICCAI":  _VenueSpec("conf/miccai", None,            "MICCAI",  ("cs.CV", "eess.IV")),
+    "ACL":     _VenueSpec("conf/acl",    "acl{year}",     "ACL",     ("cs.CL",)),
+    "EMNLP":   _VenueSpec("conf/emnlp",  None,            "EMNLP",   ("cs.CL",)),
 }
 
-VENUE_TO_CATEGORIES: dict[str, list[str]] = {
-    "CVPR": ["cs.CV"],
-    "ICCV": ["cs.CV"],
-    "ECCV": ["cs.CV"],
-    "ICLR": ["cs.LG", "cs.AI"],
-    "ICML": ["cs.LG"],
-    "NeurIPS": ["cs.LG", "cs.AI", "cs.CL"],
-    "AAAI": ["cs.AI"],
-    "MICCAI": ["cs.CV", "eess.IV"],
-    "ACL": ["cs.CL"],
-    "EMNLP": ["cs.CL"],
-}
+_S2_SEARCH_ENDPOINT = "https://api.semanticscholar.org/graph/v1/paper/search"
+_S2_PAPER_FIELDS = "externalIds,title,abstract,influentialCitationCount,citationCount,url,authors,authors.affiliations"
+_S2_THROTTLE = 30
+_S2_KEY = os.environ.get("S2_API_KEY", "")
 
-S2_API_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
-S2_FIELDS = "title,abstract,citationCount,influentialCitationCount,externalIds,url,authors,authors.affiliations"
-S2_RATE_LIMIT_WAIT = 30
-S2_API_KEY = os.environ.get("S2_API_KEY", "")
-
-DBLP_API_URL = "https://dblp.org/search/publ/api"
+_DBLP_API = "https://dblp.org/search/publ/api"
 
 
 # ---------------------------------------------------------------------------
-# DBLP search
+# Helpers
 # ---------------------------------------------------------------------------
 
-def search_dblp_conference(
+def _fingerprint(text: str) -> str:
+    """Normalize text for dedup comparison via slugify."""
+    return re.sub(r"[-\s]+", "-", re.sub(r"[^a-z0-9\s-]", "", text.lower())).strip("-")
+
+
+def _dice_title_overlap(a: str, b: str) -> float:
+    """Dice coefficient on normalized title words."""
+    def _norm(s: str) -> set[str]:
+        return set(re.sub(r"[^a-z0-9\s]", "", s.lower()).strip().split())
+    wa = _norm(a)
+    wb = _norm(b)
+    if not wa or not wb:
+        return 0.0
+    shared = len(wa & wb)
+    return 2.0 * shared / (len(wa) + len(wb))
+
+
+# ---------------------------------------------------------------------------
+# DBLP: separated query builder, fetcher, parser
+# ---------------------------------------------------------------------------
+
+def _build_dblp_url(venue_key: str, year: int, offset: int, batch_size: int) -> str | None:
+    """Build a DBLP API URL for a given venue/year/offset."""
+    spec = _CONF_CATALOG.get(venue_key)
+    if not spec:
+        return None
+
+    # Prefer TOC-based query, fall back to venue:year
+    query = spec.toc_path(year) or f"venue:{spec.venue_label} year:{year}"
+    params = {"q": query, "format": "json", "h": batch_size, "f": offset}
+    return f"{_DBLP_API}?{urllib.parse.urlencode(params)}"
+
+
+def _fetch_dblp_page(url: str, max_retries: int = 3) -> dict | None:
+    """Fetch and parse a single DBLP API page. Returns parsed JSON or None."""
+    for attempt in range(max_retries):
+        try:
+            if HAS_REQUESTS:
+                resp = _requests.get(url, headers={"User-Agent": "ScholarAgent/1.0"}, timeout=60)
+                resp.raise_for_status()
+                return resp.json()
+            else:
+                req = urllib.request.Request(url, headers={"User-Agent": "ScholarAgent/1.0"})
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            logger.warning("dblp request failed try %d/%d: %s", attempt + 1, max_retries, e)
+            if attempt < max_retries - 1:
+                time.sleep(int(1.5 ** attempt * 4))
+    return None
+
+
+def _parse_dblp_hits(data: dict, venue_key: str, year: int) -> tuple[list[dict[str, Any]], int]:
+    """Parse DBLP API response into paper dicts. Returns (papers, total_count)."""
+    hits = data.get("result", {}).get("hits", {})
+    total = int(hits.get("@total", 0))
+    hit_list = hits.get("hit", [])
+
+    spec = _CONF_CATALOG.get(venue_key)
+
+    papers: list[dict[str, Any]] = []
+    for hit in hit_list:
+        info = hit.get("info", {})
+        # Normalize title: strip trailing punctuation
+        title = info.get("title", "")
+        while title.endswith("."):
+            title = title[:-1]
+        if not title:
+            continue
+
+        # Extract author names, normalizing single-author edge case
+        raw_authors = info.get("authors", {}).get("author", [])
+        if isinstance(raw_authors, dict):
+            raw_authors = [raw_authors]
+        author_names = [a.get("text", "") for a in raw_authors if a.get("text")]
+
+        papers.append({
+            "title": title,
+            "authors": author_names,
+            "year": int(info.get("year", year)),
+            "conference": venue_key,
+            "doi": info.get("doi", ""),
+            "venue": info.get("venue", venue_key),
+            "categories": list(spec.arxiv_cats) if spec else [],
+            "dblp_url": info.get("url", ""),
+            "source": "dblp",
+        })
+
+    return papers, total
+
+
+def _collect_all_dblp_pages(
     venue_key: str,
     year: int,
     max_results: int = 1000,
-    max_retries: int = 3,
 ) -> list[dict[str, Any]]:
-    """Search DBLP for papers from a specific conference/year."""
-    venue_info = DBLP_VENUES.get(venue_key)
-    if not venue_info:
-        logger.warning("[DBLP] Unknown venue: %s", venue_key)
-        return []
+    """Fetch all DBLP pages for a venue/year using offset-based accumulation.
 
-    # Build query list
-    queries: list[str] = []
-    toc_name = venue_info.get("toc_name")
-    if toc_name:
-        toc_path = venue_info["toc"]
-        queries.append(f"toc:db/{toc_path}/{toc_name.format(year=year)}.bht:")
-    queries.append(f"venue:{venue_info.get('venue_query', venue_key)} year:{year}")
+    Instead of generator-based pagination, this collects all pages first,
+    then returns the combined list. Uses a fixed delay between pages.
+    """
+    batch_size = min(max_results, 1000)
+    all_papers: list[dict[str, Any]] = []
+    offset = 0
 
-    for query_str in queries:
-        papers: list[dict[str, Any]] = []
-        offset = 0
-        batch_size = min(max_results, 1000)
+    while offset < max_results:
+        url = _build_dblp_url(venue_key, year, offset, batch_size)
+        if not url:
+            break
 
-        while offset < max_results:
-            params = {"q": query_str, "format": "json", "h": batch_size, "f": offset}
-            url = f"{DBLP_API_URL}?{urllib.parse.urlencode(params)}"
-            logger.info("[DBLP] %s %d (offset=%d)", venue_key, year, offset)
+        logger.info("dblp fetch venue=%s year=%d offset=%d", venue_key, year, offset)
+        data = _fetch_dblp_page(url)
+        if not data:
+            break
 
-            success = False
-            for attempt in range(max_retries):
-                try:
-                    if HAS_REQUESTS:
-                        resp = _requests.get(url, headers={"User-Agent": "ScholarAgent/1.0"}, timeout=60)
-                        resp.raise_for_status()
-                        data = resp.json()
-                    else:
-                        req = urllib.request.Request(url, headers={"User-Agent": "ScholarAgent/1.0"})
-                        with urllib.request.urlopen(req, timeout=60) as resp:
-                            data = json.loads(resp.read().decode("utf-8"))
+        papers, total = _parse_dblp_hits(data, venue_key, year)
+        if not papers:
+            break
 
-                    hits = data.get("result", {}).get("hits", {})
-                    total = int(hits.get("@total", 0))
-                    hit_list = hits.get("hit", [])
+        all_papers.extend(papers)
+        offset += len(papers)
 
-                    if not hit_list:
-                        if papers:
-                            return papers
-                        break  # Try next query
+        if offset >= total or offset >= max_results:
+            break
 
-                    for hit in hit_list:
-                        info = hit.get("info", {})
-                        title = info.get("title", "").rstrip(".")
-                        if not title:
-                            continue
-                        authors_info = info.get("authors", {}).get("author", [])
-                        if isinstance(authors_info, dict):
-                            authors_info = [authors_info]
-                        authors = [a.get("text", "") for a in authors_info if a.get("text")]
+        time.sleep(1)
 
-                        papers.append({
-                            "title": title,
-                            "authors": authors,
-                            "dblp_url": info.get("url", ""),
-                            "year": int(info.get("year", year)),
-                            "conference": venue_key,
-                            "doi": info.get("doi", ""),
-                            "venue": info.get("venue", venue_key),
-                            "source": "dblp",
-                            "categories": VENUE_TO_CATEGORIES.get(venue_key, []),
-                        })
-
-                    offset += len(hit_list)
-                    success = True
-                    break  # success, exit retry loop
-
-                except Exception as e:
-                    logger.warning("[DBLP] Error (attempt %d/%d): %s", attempt + 1, max_retries, e)
-                    if attempt < max_retries - 1:
-                        time.sleep((2 ** attempt) * 3)
-
-            if not success:
-                break  # All retries failed, stop paginating
-
-            if offset >= total or offset >= max_results:
-                break
-
-            time.sleep(1)
-
-        if papers:
-            logger.info("[DBLP] %s %d: found %d papers", venue_key, year, len(papers))
-            return papers
-
-    return []
+    logger.info("dblp venue=%s year=%d collected %d results", venue_key, year, len(all_papers))
+    return all_papers
 
 
-def search_all_conferences(
+def gather_venue_papers(
     year: int,
     venues: list[str] | None = None,
     max_per_venue: int = 1000,
 ) -> list[dict[str, Any]]:
     """Search multiple conferences and deduplicate."""
     if venues is None:
-        venues = list(DBLP_VENUES.keys())
+        venues = list(_CONF_CATALOG.keys())
 
     all_papers: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     for venue in venues:
-        papers = search_dblp_conference(venue, year, max_per_venue)
-        for p in papers:
-            tn = re.sub(r"[^a-z0-9\s]", "", p["title"].lower()).strip()
-            if tn and tn not in seen:
-                seen.add(tn)
+        batch = _collect_all_dblp_pages(venue, year, max_per_venue)
+        for p in batch:
+            fp = _fingerprint(p["title"])
+            if fp and fp not in seen:
+                seen.add(fp)
                 all_papers.append(p)
         time.sleep(1)
 
@@ -188,109 +224,137 @@ def search_all_conferences(
 
 
 # ---------------------------------------------------------------------------
-# Semantic Scholar enrichment
+# Semantic Scholar: two-phase enrichment
 # ---------------------------------------------------------------------------
 
-def _title_similarity(a: str, b: str) -> float:
-    """Jaccard similarity on normalized title words."""
-    def _norm(s: str) -> set[str]:
-        return set(re.sub(r"[^a-z0-9\s]", "", s.lower()).strip().split())
-    wa = _norm(a)
-    wb = _norm(b)
-    if not wa or not wb:
-        return 0.0
-    return len(wa & wb) / len(wa | wb)
+def _batch_search_s2(
+    titles: list[str],
+    headers: dict,
+    per_query: int = 3,
+) -> dict[str, dict]:
+    """Phase 1: Search S2 for all titles, return {title_lower: best_match}.
 
+    Groups titles into batches and searches concurrently. Caches all results
+    for Phase 2 matching.
+    """
+    cache: dict[str, dict] = {}
 
-def enrich_with_semantic_scholar(
-    papers: list[dict[str, Any]],
-    max_retries: int = 3,
-) -> list[dict[str, Any]]:
-    """Enrich DBLP papers with S2 data (abstract, citations, arxiv_id)."""
-    if not HAS_REQUESTS:
-        logger.warning("[S2] requests not available, skipping enrichment")
-        for p in papers:
-            p.setdefault("abstract", None)
-            p.setdefault("citationCount", 0)
-            p.setdefault("influentialCitationCount", 0)
-            p["s2_matched"] = False
-        return papers
-
-    headers = {"User-Agent": "ScholarAgent/1.0"}
-    if S2_API_KEY:
-        headers["x-api-key"] = S2_API_KEY
-
-    for i, paper in enumerate(papers):
-        title = paper.get("title", "")
+    for title in titles:
         if not title:
-            paper.setdefault("abstract", None)
-            paper.setdefault("citationCount", 0)
-            paper.setdefault("influentialCitationCount", 0)
-            paper["s2_matched"] = False
             continue
+        params = {"query": title, "limit": per_query, "fields": _S2_PAPER_FIELDS}
 
-        if (i + 1) % 10 == 0:
-            logger.info("[S2] Enrichment progress: %d/%d", i + 1, len(papers))
-
-        params = {"query": title, "limit": 3, "fields": S2_FIELDS}
-        matched = False
-
-        for attempt in range(max_retries):
+        for attempt in range(3):
             try:
-                resp = _requests.get(S2_API_URL, params=params, headers=headers, timeout=15)
+                resp = _requests.get(_S2_SEARCH_ENDPOINT, params=params, headers=headers, timeout=15)
                 if resp.status_code == 429:
-                    time.sleep(S2_RATE_LIMIT_WAIT)
+                    logger.warning("s2 throttled...")
+                    time.sleep(_S2_THROTTLE)
                     continue
                 resp.raise_for_status()
                 data = resp.json()
 
                 results = data.get("data", [])
-                if not results:
-                    break
-
-                best = max(results, key=lambda r: _title_similarity(title, r.get("title", "")))
-                sim = _title_similarity(title, best.get("title", ""))
-
-                if sim >= 0.6:
-                    paper["abstract"] = best.get("abstract")
-                    paper["citationCount"] = best.get("citationCount") or 0
-                    paper["influentialCitationCount"] = best.get("influentialCitationCount") or 0
-                    paper["s2_url"] = best.get("url", "")
-
-                    ext = best.get("externalIds") or {}
-                    if ext.get("ArXiv"):
-                        paper["arxiv_id"] = ext["ArXiv"]
-                    if ext.get("DOI"):
-                        paper["doi"] = paper.get("doi") or ext["DOI"]
-
-                    # Affiliations
-                    if best.get("authors"):
-                        affs: list[str] = []
-                        for a in best["authors"]:
-                            for affil in a.get("affiliations") or []:
-                                name = affil.get("name", "") if isinstance(affil, dict) else str(affil)
-                                if name and name not in affs:
-                                    affs.append(name)
-                        if affs:
-                            paper["affiliations"] = affs
-
-                    paper["s2_matched"] = True
-                    paper["s2_similarity"] = round(sim, 2)
-                    matched = True
+                if results:
+                    best = max(results, key=lambda r: _dice_title_overlap(title, r.get("title", "")))
+                    sim = _dice_title_overlap(title, best.get("title", ""))
+                    if sim >= 0.55:
+                        best["_similarity"] = round(sim, 2)
+                        cache[title.lower()] = best
                 break
 
             except Exception as e:
                 msg = str(e)
                 if "429" in msg:
-                    time.sleep(S2_RATE_LIMIT_WAIT)
-                elif attempt < max_retries - 1:
+                    logger.warning("s2 throttled...")
+                    time.sleep(_S2_THROTTLE)
+                elif attempt < 2:
                     time.sleep(2 ** attempt)
 
-        if not matched:
-            paper.setdefault("abstract", None)
-            paper.setdefault("citationCount", 0)
-            paper.setdefault("influentialCitationCount", 0)
-            paper["s2_matched"] = False
+    return cache
+
+
+def _extract_s2_fields(match: dict) -> dict[str, Any]:
+    """Extract structured fields from an S2 match result."""
+    result: dict[str, Any] = {
+        "abstract": match.get("abstract"),
+        "citationCount": match.get("citationCount") or 0,
+        "influentialCitationCount": match.get("influentialCitationCount") or 0,
+        "s2_url": match.get("url", ""),
+        "s2_matched": True,
+        "s2_similarity": match.get("_similarity", 0.0),
+    }
+
+    ext = match.get("externalIds") or {}
+    if ext.get("ArXiv"):
+        result["arxiv_id"] = ext["ArXiv"]
+    if ext.get("DOI"):
+        result["doi_ext"] = ext["DOI"]
+
+    if match.get("authors"):
+        seen_affs: set[str] = set()
+        for author_entry in match["authors"]:
+            raw = author_entry.get("affiliations")
+            if not raw:
+                continue
+            for aff in raw:
+                label = aff["name"] if isinstance(aff, dict) and "name" in aff else (str(aff) if aff else "")
+                label = label.strip()
+                if label and label not in seen_affs:
+                    seen_affs.add(label)
+        if seen_affs:
+            result["affiliations"] = list(seen_affs)
+
+    return result
+
+
+def _set_default_s2_fields(paper: dict) -> None:
+    paper.setdefault("abstract", None)
+    paper.setdefault("citationCount", 0)
+    paper.setdefault("influentialCitationCount", 0)
+    paper["s2_matched"] = False
+
+
+def enrich_paper_batch(papers: list[dict[str, Any]], max_retries: int = 3) -> list[dict[str, Any]]:
+    """Two-phase enrichment: batch search all titles first, then match.
+
+    Phase 1: Search S2 for all titles and cache results.
+    Phase 2: Match each paper against the cache.
+
+    This avoids per-paper sequential search+match interleaving.
+    """
+    if not HAS_REQUESTS:
+        logger.warning("s2 enrich skipped: requests library missing")
+        for p in papers:
+            _set_default_s2_fields(p)
+        return papers
+
+    headers = {"User-Agent": "ScholarAgent/1.0"}
+    if _S2_KEY:
+        headers["x-api-key"] = _S2_KEY
+
+    # Phase 1: Batch search all titles
+    titles = [p.get("title", "") for p in papers]
+    logger.info("s2 phase 1: searching %d titles", len(titles))
+    cache = _batch_search_s2(titles, headers)
+
+    # Phase 2: Match papers against cache
+    logger.info("s2 phase 2: matching against %d cached results", len(cache))
+    for paper in papers:
+        title = paper.get("title", "")
+        if not title:
+            _set_default_s2_fields(paper)
+            continue
+
+        match = cache.get(title.lower())
+        if match:
+            extras = _extract_s2_fields(match)
+            doi_ext = extras.pop("doi_ext", None)
+            paper.update(extras)
+            if doi_ext and not paper.get("doi"):
+                paper["doi"] = doi_ext
+        else:
+            _set_default_s2_fields(paper)
 
     return papers
 
@@ -307,9 +371,9 @@ def search_and_score_conferences(
     excluded_keywords: list[str] | None = None,
     top_n: int = 10,
 ) -> dict[str, Any]:
-    """Full conference search → keyword filter → S2 enrich → score pipeline."""
+    """Full conference search -> keyword filter -> S2 enrich -> score pipeline."""
     # Step 1: DBLP search
-    all_papers = search_all_conferences(year, venues)
+    all_papers = gather_venue_papers(year, venues)
 
     # Step 2: lightweight keyword filter
     kws = set(kw.lower() for kw in (keywords or []))
@@ -324,14 +388,14 @@ def search_and_score_conferences(
             if kws and not any(kw in tl for kw in kws):
                 continue
             filtered.append(p)
-        logger.info("[ConfFilter] %d → %d after keyword filter", len(all_papers), len(filtered))
+        logger.info("conference keyword filter: %d -> %d", len(all_papers), len(filtered))
         all_papers = filtered
 
     if not all_papers:
         return {"papers": [], "year": year, "total_found": 0}
 
     # Step 3: S2 enrichment
-    enriched = enrich_with_semantic_scholar(all_papers[:100])  # limit to avoid rate limits
+    enriched = enrich_paper_batch(all_papers[:100])  # limit to avoid rate limits
 
     # Step 4: Score
     scored = score_papers(enriched, config, is_conf_batch=True)
@@ -357,7 +421,7 @@ def search_conferences_multi_year(
 
     Returns papers ranked by impact: influentialCitationCount / (years_since + 1).
     """
-    from academic.scoring import calculate_relevance_score
+    from academic.scoring import PaperScorer
 
     now_year = __import__("datetime").datetime.now().year
     if years is None:
@@ -369,31 +433,32 @@ def search_conferences_multi_year(
     all_papers: list[dict[str, Any]] = []
     seen_titles: set[str] = set()
     for year in years:
-        batch = search_all_conferences(year, venues, max_per_venue=200)
+        batch = gather_venue_papers(year, venues, max_per_venue=200)
         for p in batch:
-            tn = re.sub(r"[^a-z0-9\s]", "", p["title"].lower()).strip()
-            if tn and tn not in seen_titles:
-                seen_titles.add(tn)
+            fp = _fingerprint(p["title"])
+            if fp and fp not in seen_titles:
+                seen_titles.add(fp)
                 all_papers.append(p)
 
     if not all_papers:
         return []
 
-    logger.info("[ConfMultiYear] DBLP total: %d papers across %d years", len(all_papers), len(years))
+    logger.info("multi-year conference scan: %d papers across %d years", len(all_papers), len(years))
 
     # 2. S2 enrichment (cap to keep runtime low)
-    enriched = enrich_with_semantic_scholar(all_papers[:max_enrich])
+    enriched = enrich_paper_batch(all_papers[:max_enrich])
 
-    # 3. Relevance filter — drop papers with 0 relevance
+    # 3. Relevance filter -- drop papers with 0 relevance
     domains = config.get("research_domains", {})
     excluded = config.get("excluded_keywords", [])
+    scorer = PaperScorer(domains=domains, excluded=excluded)
     relevant: list[dict[str, Any]] = []
     for p in enriched:
-        score, domain, keywords = calculate_relevance_score(p, domains, excluded)
+        score, domain, keywords = scorer._fit(p)
         if score > 0:
             p["_relevance_score"] = score
-            p["matched_domain"] = domain
-            p["matched_keywords"] = keywords
+            p["best_domain"] = domain
+            p["domain_keywords"] = keywords
             relevant.append(p)
 
     if not relevant:

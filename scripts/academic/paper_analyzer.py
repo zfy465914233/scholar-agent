@@ -18,8 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 def title_to_filename(title: str) -> str:
-    """Convert paper title to safe filename (consistent with generate_note.py)."""
-    return re.sub(r'[ /\\:*?"<>|]+', '_', title).strip('_')
+    """Convert paper title to safe filename via slugification."""
+    # Replace common separators with hyphens, strip unsafe chars
+    slug = re.sub(r'[/\\:]', '-', title)
+    slug = re.sub(r'[*?"<>|]', '', slug)
+    slug = re.sub(r'\s+', '-', slug.strip())
+    return slug[:120].rstrip('-')
 
 
 def _yaml_escape(s: str) -> str:
@@ -534,11 +538,11 @@ def _generate_zh_note(
     """Generate Chinese deep-analysis markdown note."""
     # --- Tags ---
     domain_tags = {
-        "大模型与智能体": ["大模型", "LLM", "智能体"],
+        "LLM与Agent": ["LLM", "Agent", "大模型"],
         "运筹优化与库存规划": ["运筹优化", "库存规划", "供应链"],
-        "大模型": ["大模型", "LLM"],
-        "多模态技术": ["多模态", "Vision-Language"],
-        "智能体": ["智能体", "Agent"],
+        "LLM": ["LLM", "Large-Language-Model"],
+        "多模态": ["多模态", "Multimodal", "VLM"],
+        "Agent": ["Agent", "Autonomous-Agent"],
     }
     tags = ["论文笔记"] + domain_tags.get(domain, [domain])
     tags_yaml = "\n".join(f"  - {tag}" for tag in tags)
@@ -566,21 +570,21 @@ def _generate_zh_note(
     # --- Build note ---
     parts: list[str] = []
 
-    # Frontmatter
+    # Frontmatter — reordered and added new fields
     parts.append(f'''---
-date: "{date}"
-paper_id: "{paper_id}"
 title: "{_yaml_escape(title)}"
+paper_id: "{paper_id}"
 authors: "{_yaml_escape(authors)}"
 domain: "{domain}"
+date: "{date}"
+status: skeleton
 tags:
 {tags_yaml}
-quality_score: "{score_str}"
 related_papers:
 {related_yaml}
+quality_score: "{score_str}"
 created: "{date}"
 updated: "{date}"
-status: skeleton
 ---''')
 
     # Title
@@ -667,10 +671,10 @@ def _generate_en_note(
     """Generate English deep-analysis markdown note."""
     # --- Tags ---
     domain_tags = {
-        "LLM & Agents": ["LLM", "Agent"],
-        "LLM": ["LLM", "Large Language Model"],
-        "Multimodal": ["Multimodal", "Vision-Language"],
-        "Agent": ["Agent", "Multi-Agent"],
+        "LLM & Agents": ["LLM", "Autonomous-Agent"],
+        "LLM": ["LLM", "Large-Language-Model"],
+        "Multimodal": ["Multimodal", "VLM"],
+        "Agent": ["Agent", "Agentic-System"],
     }
     tags = ["paper-notes"] + domain_tags.get(domain, [domain])
     tags_yaml = "\n".join(f"  - {tag}" for tag in tags)
@@ -698,21 +702,21 @@ def _generate_en_note(
     # --- Build note ---
     parts: list[str] = []
 
-    # Frontmatter
+    # Frontmatter — reordered and added new fields
     parts.append(f'''---
-date: "{date}"
-paper_id: "{paper_id}"
 title: "{_yaml_escape(title)}"
+paper_id: "{paper_id}"
 authors: "{_yaml_escape(authors)}"
 domain: "{domain}"
+date: "{date}"
+status: skeleton
 tags:
 {tags_yaml}
-quality_score: "{score_str}"
 related_papers:
 {related_yaml}
+quality_score: "{score_str}"
 created: "{date}"
 updated: "{date}"
-status: skeleton
 ---''')
 
     # Title
@@ -809,7 +813,7 @@ def generate_note(
     paper_id = paper.get("arxiv_id") or paper.get("paper_id") or "unknown"
     authors_list = paper.get("authors", [])
     authors = ", ".join(authors_list[:5]) if isinstance(authors_list, list) else str(authors_list)
-    domain = paper.get("matched_domain") or paper.get("domain") or "Other"
+    domain = paper.get("best_domain") or paper.get("domain") or "Other"
     date = paper.get("published", "")[:10] if paper.get("published") else datetime.now().strftime("%Y-%m-%d")
     if not date:
         date = datetime.now().strftime("%Y-%m-%d")
