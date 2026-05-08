@@ -16,67 +16,86 @@ Complete extraction of all tunable parameters, constants, thresholds, and formul
 
 | Location | Parameter | Value | Controls |
 |---|---|---|---|
-| scoring.py:25-30 | `_WEIGHTS_DEFAULT` | `{"fit": 0.38, "freshness": 0.18, "impact": 0.32, "rigor": 0.12}` | Default dimension weights for weighted recommendation score |
-| scoring.py:31-36 | `_WEIGHTS_TRENDING` | `{"fit": 0.32, "freshness": 0.08, "impact": 0.48, "rigor": 0.12}` | Weights when ranking trending/hot papers |
-| scoring.py:37-41 | `WEIGHTS_CONF` | `{"fit": 0.38, "impact": 0.38, "rigor": 0.24}` | Weights for conference papers (no freshness dimension) |
+| scoring.py:25-30 | `_WEIGHTS_DEFAULT` | `{"fit": 0.34, "freshness": 0.14, "impact": 0.32, "rigor": 0.20}` | Default dimension weights for weighted recommendation score |
+| scoring.py:31-36 | `_WEIGHTS_TRENDING` | `{"fit": 0.28, "freshness": 0.07, "impact": 0.45, "rigor": 0.20}` | Weights when ranking trending/hot papers |
+| scoring.py:37-41 | `WEIGHTS_CONF` | `{"fit": 0.34, "impact": 0.38, "rigor": 0.28}` | Weights for conference papers (no freshness dimension) |
 
 ### 1.3 Relevance Scoring (Keyword Match Points)
 
 | Location | Parameter | Value | Controls |
 |---|---|---|---|
-| scoring.py:45 | `_TITLE_PTS` | `0.6` | Points added when a domain keyword matches in the paper title |
-| scoring.py:46 | `_ABSTRACT_PTS` | `0.25` | Points added when a domain keyword matches in the abstract |
-| scoring.py:47 | `_CATEGORY_PTS` | `1.2` | Points added when the paper's arXiv category matches the domain config |
+| scoring.py:44 | `_TITLE_PTS` | `1.0` | Points added when a domain keyword matches in the paper title |
+| scoring.py:45 | `_ABSTRACT_PTS` | `0.3` | Points added when a domain keyword matches in the abstract |
+| scoring.py:46 | `_CATEGORY_PTS` | `1.0` | Points added when the paper's arXiv category matches the domain config |
 
 ### 1.4 Quality Weighted Lexicon (Rigor Scoring)
 
 | Location | Parameter | Value | Controls |
 |---|---|---|---|
-| scoring.py:51-72 | `_QUALITY_WEIGHTS` | See below | Weighted bag-of-words for rigor dimension. Sum all matching weights, cap at `_CEILING` (5.0) |
+| scoring.py:50-88 | `_QUALITY_WEIGHTS` | See below | Weighted bag-of-words for rigor dimension. Sum all matching weights, cap at `_CEILING` (5.0) |
 
 Full lexicon values:
 
 ```
-# Technical depth signals
-"architecture": 0.35, "framework": 0.35, "algorithm": 0.35,
-"module": 0.25, "pipeline": 0.30, "encoder": 0.30,
-"decoder": 0.30, "backbone": 0.25, "attention mechanism": 0.40,
-"training scheme": 0.25,
-
-# Empirical rigor
-"ablation": 0.45, "benchmark": 0.35, "baseline comparison": 0.40,
-"statistical significance": 0.50, "cross-validation": 0.45,
-"human evaluation": 0.50, "error analysis": 0.40,
-
-# Novelty
-"first": 0.35, "novel": 0.30, "new": 0.20, "unprecedented": 0.40,
-"breakthrough": 0.45, "pioneering": 0.40, "innovative": 0.30,
-"previously unexplored": 0.40,
-
-# Performance claims
-"state-of-the-art": 0.50, "sota": 0.50, "outperform": 0.40,
-"surpass": 0.40, "superior": 0.35, "improves": 0.30,
-"beats": 0.30, "significantly better": 0.40,
-
-# Quantitative evidence
-"accuracy": 0.25, "f1 score": 0.30, "bleu": 0.25, "rouge": 0.25,
-"perplexity": 0.25, "auc": 0.25, "recall": 0.20, "precision": 0.20,
+# --- Theoretical rigor signals ---
+"theorem": 0.50, "proof": 0.50, "proposition": 0.45, "lemma": 0.40,
+"corollary": 0.40, "formal": 0.45, "formal verification": 0.50,
+"axiomatic": 0.45, "derivation": 0.35, "rigorous": 0.40,
+# --- Methodological depth ---
+"principled": 0.45, "methodology": 0.40, "systematic": 0.35,
+"theoretical analysis": 0.50, "theoretical framework": 0.45,
+"complexity": 0.35, "convergence": 0.40, "bound": 0.35,
+"optimal": 0.40, "optimality": 0.45, "guarantee": 0.40,
+# --- Statistical / mathematical ---
+"bayesian": 0.45, "calibration": 0.45, "likelihood": 0.40,
+"probabilistic": 0.40, "estimation": 0.35, "variance": 0.30,
+"bias": 0.30, "statistical": 0.40, "distribution": 0.30,
+# --- Validation methodology ---
+"validate": 0.40, "validation": 0.40, "verify": 0.40,
+"verification": 0.45, "robustness": 0.40, "sensitivity analysis": 0.45,
+"reproducib": 0.40, "fairness": 0.35,
+# --- Technical depth (engineering) ---
+"architecture": 0.30, "framework": 0.30, "algorithm": 0.30,
+"module": 0.20, "pipeline": 0.25, "encoder": 0.25,
+"decoder": 0.25, "backbone": 0.20, "attention mechanism": 0.35,
+"training scheme": 0.20,
+# --- Empirical rigor ---
+"ablation": 0.40, "benchmark": 0.30, "baseline comparison": 0.35,
+"statistical significance": 0.45, "cross-validation": 0.40,
+"human evaluation": 0.45, "error analysis": 0.35,
+# --- Novelty ---
+"first": 0.30, "novel": 0.25, "new": 0.15, "unprecedented": 0.35,
+"breakthrough": 0.40, "pioneering": 0.35, "innovative": 0.25,
+"previously unexplored": 0.35,
+# --- Performance claims ---
+"state-of-the-art": 0.40, "sota": 0.40, "outperform": 0.35,
+"surpass": 0.35, "superior": 0.30, "improves": 0.25,
+"beats": 0.25, "significantly better": 0.35,
+# --- Quantitative evidence ---
+"accuracy": 0.20, "f1 score": 0.25, "bleu": 0.20, "rouge": 0.20,
+"perplexity": 0.20, "auc": 0.20, "recall": 0.15, "precision": 0.15,
 ```
 
 ### 1.5 Normalization Formula
 
 | Location | Parameter | Formula | Controls |
 |---|---|---|---|
-| scoring.py:157-163 | `_norm(v)` | `10.0 * (v / _CEILING) / ((v / _CEILING) + 0.3) * 1.3` | Sigmoid-like mapping from raw dimension `[0, _CEILING]` to `[0, 10]`. At `v = _CEILING` (5.0): ratio = 1.0, result = 10.0 |
+| scoring.py:172-177 | `_norm(v)` | `min(v / _CEILING * 10.0, 10.0)` | Linear mapping from raw dimension `[0, _CEILING]` to `[0, 10]` |
 
-### 1.6 Freshness Decay Formula
+### 1.6 Fit Scoring: Keyword Deduplication
+
+| Location | Parameter | Value | Controls |
+|---|---|---|---|
+| scoring.py:222-226 | Keyword dedup | `seen_words` set | Each unique keyword counted at most once per domain match |
+
+### 1.7 Freshness Decay Formula
 
 | Location | Parameter | Formula / Value | Controls |
 |---|---|---|---|
 | scoring.py:238 | Freshness cutoff | `age_days > 365` returns `0.0` | Papers older than 1 year get zero freshness |
 | scoring.py:241 | Freshness decay | `3.0 * (1.0 - age_days / 365.0)` | Linear decay: 3.0 at day 0, ~1.0 at 180 days, ~0.0 at 365+ |
 
-### 1.7 Impact Scoring
+### 1.8 Impact Scoring
 
 | Location | Parameter | Value / Formula | Controls |
 |---|---|---|---|

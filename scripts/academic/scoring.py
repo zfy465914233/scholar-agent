@@ -23,52 +23,68 @@ _CEILING = 5.0  # per-dimension maximum
 
 # Weight profiles — emphasis differs by use case
 _WEIGHTS_DEFAULT: dict[str, float] = {
-    "fit": 0.38,
-    "freshness": 0.18,
+    "fit": 0.34,
+    "freshness": 0.14,
     "impact": 0.32,
-    "rigor": 0.12,
+    "rigor": 0.20,
 }
 _WEIGHTS_TRENDING: dict[str, float] = {
-    "fit": 0.32,
-    "freshness": 0.08,
-    "impact": 0.48,
-    "rigor": 0.12,
+    "fit": 0.28,
+    "freshness": 0.07,
+    "impact": 0.45,
+    "rigor": 0.20,
 }
 WEIGHTS_CONF: dict[str, float] = {
-    "fit": 0.38,
+    "fit": 0.34,
     "impact": 0.38,
-    "rigor": 0.24,
+    "rigor": 0.28,
 }
 
 # Relevance: precompiled pattern weights
-# Each entry is (compiled_regex, score_on_match)
-_TITLE_PTS = 0.6
-_ABSTRACT_PTS = 0.25
-_CATEGORY_PTS = 1.2
+_TITLE_PTS = 1.0
+_ABSTRACT_PTS = 0.3
+_CATEGORY_PTS = 1.0
 
 # Quality: flat weighted lexicon — each term has a pre-assigned weight.
 # Sum all matching weights, cap at _CEILING.  No branching logic.
 _QUALITY_WEIGHTS: dict[str, float] = {
-    # Technical depth signals
-    "architecture": 0.35, "framework": 0.35, "algorithm": 0.35,
-    "module": 0.25, "pipeline": 0.30, "encoder": 0.30,
-    "decoder": 0.30, "backbone": 0.25, "attention mechanism": 0.40,
-    "training scheme": 0.25,
-    # Empirical rigor
-    "ablation": 0.45, "benchmark": 0.35, "baseline comparison": 0.40,
-    "statistical significance": 0.50, "cross-validation": 0.45,
-    "human evaluation": 0.50, "error analysis": 0.40,
-    # Novelty
-    "first": 0.35, "novel": 0.30, "new": 0.20, "unprecedented": 0.40,
-    "breakthrough": 0.45, "pioneering": 0.40, "innovative": 0.30,
-    "previously unexplored": 0.40,
-    # Performance claims
-    "state-of-the-art": 0.50, "sota": 0.50, "outperform": 0.40,
-    "surpass": 0.40, "superior": 0.35, "improves": 0.30,
-    "beats": 0.30, "significantly better": 0.40,
-    # Quantitative evidence
-    "accuracy": 0.25, "f1 score": 0.30, "bleu": 0.25, "rouge": 0.25,
-    "perplexity": 0.25, "auc": 0.25, "recall": 0.20, "precision": 0.20,
+    # --- Theoretical rigor signals ---
+    "theorem": 0.50, "proof": 0.50, "proposition": 0.45, "lemma": 0.40,
+    "corollary": 0.40, "formal": 0.45, "formal verification": 0.50,
+    "axiomatic": 0.45, "derivation": 0.35, "rigorous": 0.40,
+    # --- Methodological depth ---
+    "principled": 0.45, "methodology": 0.40, "systematic": 0.35,
+    "theoretical analysis": 0.50, "theoretical framework": 0.45,
+    "complexity": 0.35, "convergence": 0.40, "bound": 0.35,
+    "optimal": 0.40, "optimality": 0.45, "guarantee": 0.40,
+    # --- Statistical / mathematical ---
+    "bayesian": 0.45, "calibration": 0.45, "likelihood": 0.40,
+    "probabilistic": 0.40, "estimation": 0.35, "variance": 0.30,
+    "bias": 0.30, "statistical": 0.40, "distribution": 0.30,
+    # --- Validation methodology ---
+    "validate": 0.40, "validation": 0.40, "verify": 0.40,
+    "verification": 0.45, "robustness": 0.40, "sensitivity analysis": 0.45,
+    "reproducib": 0.40, "fairness": 0.35,
+    # --- Technical depth (engineering) ---
+    "architecture": 0.30, "framework": 0.30, "algorithm": 0.30,
+    "module": 0.20, "pipeline": 0.25, "encoder": 0.25,
+    "decoder": 0.25, "backbone": 0.20, "attention mechanism": 0.35,
+    "training scheme": 0.20,
+    # --- Empirical rigor ---
+    "ablation": 0.40, "benchmark": 0.30, "baseline comparison": 0.35,
+    "statistical significance": 0.45, "cross-validation": 0.40,
+    "human evaluation": 0.45, "error analysis": 0.35,
+    # --- Novelty ---
+    "first": 0.30, "novel": 0.25, "new": 0.15, "unprecedented": 0.35,
+    "breakthrough": 0.40, "pioneering": 0.35, "innovative": 0.25,
+    "previously unexplored": 0.35,
+    # --- Performance claims ---
+    "state-of-the-art": 0.40, "sota": 0.40, "outperform": 0.35,
+    "surpass": 0.35, "superior": 0.30, "improves": 0.25,
+    "beats": 0.25, "significantly better": 0.35,
+    # --- Quantitative evidence ---
+    "accuracy": 0.20, "f1 score": 0.25, "bleu": 0.20, "rouge": 0.20,
+    "perplexity": 0.20, "auc": 0.20, "recall": 0.15, "precision": 0.15,
 }
 
 
@@ -153,14 +169,12 @@ class PaperScorer:
 
         rec_val = 0.0 if conference else fresh
         dims_raw = {"fit": fit_score, "freshness": rec_val, "impact": impact, "rigor": rigor}
-        # Weighted sum with sigmoid normalization instead of linear divide-by-max
+        # Linear normalization: simple, transparent, creates natural score spread.
         def _norm(v: float) -> float:
-            """Sigmoid-like mapping from [0, _CEILING] to [0, 10]."""
+            """Linear mapping from [0, _CEILING] to [0, 10]."""
             if v <= 0:
                 return 0.0
-            v = min(v, _CEILING)
-            ratio = v / _CEILING
-            return 10.0 * ratio / (ratio + 0.3) * 1.3  # maps 0→0, 5→10.0, saturates near 10
+            return min(v / _CEILING * 10.0, 10.0)
 
         rec = round(
             sum(_norm(dims_raw[k]) * weights.get(k, 0) for k in weights),
@@ -202,16 +216,18 @@ class PaperScorer:
         for name, pat, kws, domain_cats in self._domain_patterns:
             pts = 0.0
             matched: list[str] = []
+            seen_words: set[str] = set()
 
-            # Single-pass: find all regex matches, then classify each by position
+            # Count each keyword at most once — title takes priority.
             for m in pat.finditer(corpus):
                 matched_word = m.group().lower()
-                # Determine if match is in title (first line) or abstract (rest)
+                if matched_word in seen_words:
+                    continue
+                seen_words.add(matched_word)
                 if matched_word in title_text:
                     pts += _TITLE_PTS
                 else:
                     pts += _ABSTRACT_PTS
-                # Map back to original keyword
                 for kw in kws:
                     if kw.lower() == matched_word and kw not in matched:
                         matched.append(kw)
