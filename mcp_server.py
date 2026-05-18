@@ -587,6 +587,19 @@ def _find_local_pdf(arxiv_id: str, title: str = "") -> str | None:
         candidate = paper_notes_dir.rglob(f"{safe}/{safe}.pdf")
         for match in candidate:
             return str(match)
+        # Broader search: any PDF under a directory matching the title
+        for match in paper_notes_dir.rglob("*.pdf"):
+            # Match if parent dir or filename contains the title (fuzzy)
+            parent_name = match.parent.name.lower()
+            stem_name = match.stem.lower()
+            title_lower = title.lower()[:60]
+            title_words = set(_re.findall(r"[a-z0-9]+", title_lower))
+            parent_words = set(_re.findall(r"[a-z0-9]+", parent_name))
+            if title_words and title_words.issubset(parent_words):
+                return str(match)
+            stem_words = set(_re.findall(r"[a-z0-9]+", stem_name))
+            if title_words and len(title_words & stem_words) >= min(len(title_words), 3):
+                return str(match)
     # Fallback: search by arXiv ID
     if arxiv_id:
         for match in paper_notes_dir.rglob(f"{arxiv_id}.pdf"):
@@ -873,6 +886,17 @@ if SCHOLAR_ACADEMIC:
             except Exception:
                 pdf_text = ""
 
+        # Auto-fill placeholders from PDF text via LLM
+        fill_result = None
+        if pdf_text:
+            try:
+                from academic.paper_analyzer import fill_note_from_pdf
+                fill_result = fill_note_from_pdf(note_path, pdf_text)
+                logger.info("Auto-fill result: %s", fill_result)
+            except Exception as exc:
+                logger.warning("Auto-fill failed: %s", exc)
+                fill_result = {"status": "error", "reason": str(exc)}
+
         # Quality check on the generated note
         quality_check = {"has_issues": False, "issues": [], "placeholder_count": 0}
         try:
@@ -881,7 +905,7 @@ if SCHOLAR_ACADEMIC:
         except Exception:
             pass
 
-        # Build instructions for the caller about filling placeholders
+        # Build instructions for the caller about remaining placeholders
         placeholder_count = quality_check.get("placeholder_count", 0)
         instructions = None
         if placeholder_count > 0 and pdf_text:
@@ -904,6 +928,8 @@ if SCHOLAR_ACADEMIC:
             "quality_check": quality_check,
             "instructions": instructions,
         }
+        if fill_result:
+            result_payload["fill_result"] = fill_result
         dep_warnings = _optional_dep_warnings()
         if dep_warnings:
             result_payload["warnings"] = dep_warnings

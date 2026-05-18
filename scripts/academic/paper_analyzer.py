@@ -13,6 +13,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 logger = logging.getLogger(__name__)
 
@@ -819,7 +821,21 @@ def generate_note(
     paper_id = paper.get("arxiv_id") or paper.get("paper_id") or "unknown"
     authors_list = paper.get("authors", [])
     authors = ", ".join(authors_list[:5]) if isinstance(authors_list, list) else str(authors_list)
-    domain = paper.get("best_domain") or paper.get("domain") or "Other"
+    domain = paper.get("best_domain") or paper.get("domain") or ""
+    if not domain or domain == "Other":
+        try:
+            from domain_router import infer_domain
+            knowledge_root = Path(output_dir).parent / "knowledge"
+            paper_abstract = paper.get("summary", "") or paper.get("abstract", "")
+            slug, _ = infer_domain(
+                query=title,
+                knowledge_root=knowledge_root,
+                card_title=title,
+                card_summary=paper_abstract[:500] if paper_abstract else "",
+            )
+            domain = slug if slug else "Other"
+        except Exception:
+            domain = "Other"
     date = paper.get("published", "")[:10] if paper.get("published") else datetime.now().strftime("%Y-%m-%d")
     if not date:
         date = datetime.now().strftime("%Y-%m-%d")
@@ -919,4 +935,222 @@ def check_note_quality(note_path: str) -> dict:
         "has_issues": len(issues) > 0,
         "issues": issues,
         "placeholder_count": placeholder_count,
+    }
+
+
+# ---------------------------------------------------------------------------
+# LLM-powered auto-fill
+# ---------------------------------------------------------------------------
+
+_FILL_SYSTEM_PROMPT = """\
+You are a research paper analysis assistant. Your task is to fill in ALL
+<!-- LLM: ... --> placeholders in a structured markdown note, using the
+provided PDF full text as source material.
+
+Rules:
+1. Replace each <!-- LLM: ... --> comment with substantive content that
+   fulfills the instruction inside the comment.
+2. Preserve the surrounding markdown structure — headings, tables, block
+   quotes, callouts. Only replace the placeholder comments themselves.
+3. Write in the same language as the template (Chinese for zh, English for en).
+4. Use LaTeX for mathematical formulas ($...$ inline, $$...$$ block).
+5. Be specific — cite numbers, dataset names, method details from the PDF.
+6. If the PDF text is insufficient for a section, write what you can and
+   append <!-- INCOMPLETE --> after your text.
+7. Output the COMPLETE note with all placeholders filled. Do NOT truncate."""
+
+
+def _detect_api_format() -> str:
+    """Detect which API format to use: 'anthropic' or 'openai'.
+
+    Priority:
+      1. SCHOLAR_FILLER_API_FORMAT env var (explicit override)
+      2. Anthropic credentials present → 'anthropic'
+      3. OpenAI credentials present → 'openai'
+      4. Default 'openai'
+    """
+    explicit = os.getenv("SCHOLAR_FILLER_API_FORMAT", "").lower()
+    if explicit in ("anthropic", "openai"):
+        return explicit
+
+    # Anthropic creds take priority if available
+    if os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY"):
+        return "anthropic"
+    return "openai"
+
+
+def _fill_api_url() -> str:
+    fmt = _detect_api_format()
+    if fmt == "anthropic":
+        return (
+            os.getenv("SCHOLAR_FILLER_API_URL")
+            or os.getenv("ANTHROPIC_BASE_URL")
+            or "https://api.anthropic.com"
+        )
+    return (
+        os.getenv("SCHOLAR_FILLER_API_URL")
+        or os.getenv("SCHOLAR_ROUTER_API_URL")
+        or os.getenv("LLM_API_URL")
+        or "https://api.openai.com/v1"
+    )
+
+
+def _fill_api_key() -> str:
+    fmt = _detect_api_format()
+    if fmt == "anthropic":
+        return (
+            os.getenv("SCHOLAR_FILLER_API_KEY")
+            or os.getenv("ANTHROPIC_AUTH_TOKEN")
+            or os.getenv("ANTHROPIC_API_KEY")
+            or ""
+        )
+    return (
+        os.getenv("SCHOLAR_FILLER_API_KEY")
+        or os.getenv("SCHOLAR_ROUTER_API_KEY")
+        or os.getenv("LLM_API_KEY")
+        or os.getenv("GITHUB_TOKEN")
+        or ""
+    )
+
+
+def _fill_model() -> str:
+    fmt = _detect_api_format()
+    if fmt == "anthropic":
+        return (
+            os.getenv("SCHOLAR_FILLER_MODEL")
+            or os.getenv("ANTHROPIC_MODEL")
+            or "claude-sonnet-4-20250514"
+        )
+    return (
+        os.getenv("SCHOLAR_FILLER_MODEL")
+        or os.getenv("SCHOLAR_ROUTER_MODEL")
+        or os.getenv("LLM_MODEL")
+        or "gpt-4o-mini"
+    )
+
+
+def _call_llm_anthropic(api_url: str, api_key: str, model: str,
+                        system_prompt: str, user_prompt: str) -> str:
+    """Call Anthropic /messages endpoint. Returns assistant text."""
+    import json as _json
+
+    url = api_url.rstrip("/") + "/messages"
+    payload = {
+        "model": model,
+        "max_tokens": 8192,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": user_prompt}],
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+    req = Request(url, data=_json.dumps(payload).encode("utf-8"),
+                  headers=headers, method="POST")
+    with urlopen(req, timeout=180) as response:
+        data = _json.loads(response.read().decode("utf-8"))
+    # Find the first text block (content may start with thinking blocks)
+    for block in data["content"]:
+        if block.get("type") == "text":
+            return block["text"].strip()
+    raise KeyError("No text block in Anthropic response")
+
+
+def _call_llm_openai(api_url: str, api_key: str, model: str,
+                     system_prompt: str, user_prompt: str) -> str:
+    """Call OpenAI-compatible /chat/completions endpoint. Returns assistant text."""
+    import json as _json
+
+    url = api_url.rstrip("/") + "/chat/completions"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.3,
+        "max_tokens": 8192,
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    req = Request(url, data=_json.dumps(payload).encode("utf-8"),
+                  headers=headers, method="POST")
+    with urlopen(req, timeout=120) as response:
+        data = _json.loads(response.read().decode("utf-8"))
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
+    """Fill <!-- LLM: --> placeholders in a note using PDF text via LLM.
+
+    Supports both Anthropic and OpenAI API formats, auto-detected from
+    environment variables.
+
+    Args:
+        note_path: Path to the generated markdown note.
+        pdf_text: Full text extracted from the PDF.
+
+    Returns:
+        Dict with 'status', 'placeholders_filled', 'model_used'.
+    """
+    api_key = _fill_api_key()
+    if not api_key:
+        return {"status": "skipped", "reason": "No API key configured", "placeholders_filled": 0}
+
+    content = Path(note_path).read_text(encoding="utf-8")
+    placeholder_count = len(re.findall(r"<!--\s*LLM:", content))
+    if placeholder_count == 0:
+        return {"status": "skipped", "reason": "No placeholders to fill", "placeholders_filled": 0}
+
+    # Truncate PDF text to avoid token limit
+    max_pdf_chars = 60000
+    truncated = pdf_text[:max_pdf_chars]
+    if len(pdf_text) > max_pdf_chars:
+        truncated += "\n\n[... PDF text truncated ...]"
+
+    user_prompt = (
+        f"Here is the PDF full text:\n\n---\n{truncated}\n---\n\n"
+        f"Now fill ALL <!-- LLM: --> placeholders in this note:\n\n{content}"
+    )
+
+    fmt = _detect_api_format()
+    api_url = _fill_api_url()
+    model = _fill_model()
+
+    try:
+        if fmt == "anthropic":
+            filled_content = _call_llm_anthropic(
+                api_url, api_key, model, _FILL_SYSTEM_PROMPT, user_prompt)
+        else:
+            filled_content = _call_llm_openai(
+                api_url, api_key, model, _FILL_SYSTEM_PROMPT, user_prompt)
+    except (HTTPError, URLError, OSError, Exception) as exc:
+        logger.warning("fill_note_from_pdf LLM call failed (%s): %s", fmt, exc)
+        return {"status": "error", "reason": str(exc), "placeholders_filled": 0}
+
+    # Remove markdown code fences if the LLM wrapped its output
+    if filled_content.startswith("```markdown\n"):
+        filled_content = filled_content[len("```markdown\n"):]
+    if filled_content.startswith("```\n"):
+        filled_content = filled_content[len("```\n"):]
+    if filled_content.endswith("\n```"):
+        filled_content = filled_content[:-4]
+
+    remaining = len(re.findall(r"<!--\s*LLM:", filled_content))
+    filled_count = placeholder_count - remaining
+
+    # Update frontmatter status
+    filled_content = filled_content.replace("status: skeleton", "status: filled", 1)
+
+    Path(note_path).write_text(filled_content, encoding="utf-8")
+
+    return {
+        "status": "ok",
+        "placeholders_filled": filled_count,
+        "placeholders_remaining": remaining,
+        "model_used": model,
+        "api_format": fmt,
     }
