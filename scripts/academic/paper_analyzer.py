@@ -16,16 +16,12 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from common import sanitize_title
+
 logger = logging.getLogger(__name__)
 
-
-def title_to_filename(title: str) -> str:
-    """Convert paper title to safe filename via slugification."""
-    # Replace common separators with hyphens, strip unsafe chars
-    slug = re.sub(r'[/\\:]', '-', title)
-    slug = re.sub(r'[*?"<>|]', '', slug)
-    slug = re.sub(r'\s+', '-', slug.strip())
-    return slug[:120].rstrip('-')
+# Backward-compatible alias used by note_linker.py
+title_to_filename = sanitize_title
 
 
 def _yaml_escape(s: str) -> str:
@@ -850,10 +846,10 @@ def generate_note(
     # Compute relative path from note file to local PDF
     local_pdf_rel = ""
     if local_pdf_path and os.path.isfile(local_pdf_path):
-        # Note will be at output_dir/domain/filename.md
+        # Note will be at output_dir/domain/filename/filename.md (same subfolder as download_paper)
         filename = title_to_filename(title)
         safe_domain = domain.strip("/\\").replace("..", "") or "Other"
-        note_path_abs = os.path.join(output_dir, safe_domain, f"{filename}.md")
+        note_path_abs = os.path.join(output_dir, safe_domain, filename, f"{filename}.md")
         try:
             local_pdf_rel = os.path.relpath(local_pdf_path, os.path.dirname(note_path_abs))
         except ValueError:
@@ -875,7 +871,8 @@ def generate_note(
     filename = title_to_filename(title)
     # Sanitize domain for directory name
     safe_domain = domain.strip("/\\").replace("..", "") or "Other"
-    note_dir = os.path.join(output_dir, safe_domain)
+    # Create subfolder matching download_paper structure: domain/title/title.md
+    note_dir = os.path.join(output_dir, safe_domain, filename)
     os.makedirs(note_dir, exist_ok=True)
     note_path = os.path.join(note_dir, f"{filename}.md")
 
@@ -960,73 +957,92 @@ Rules:
 7. Output the COMPLETE note with all placeholders filled. Do NOT truncate."""
 
 
-def _detect_api_format() -> str:
-    """Detect which API format to use: 'anthropic' or 'openai'.
+def _resolve_providers() -> list[tuple[str, str, str, str]]:
+    """Resolve ordered list of LLM providers to try.
+
+    Each provider is a (format, url, key, model) tuple.  Providers are
+    tried in priority order; the first successful call wins.
 
     Priority:
-      1. SCHOLAR_FILLER_API_FORMAT env var (explicit override)
-      2. Anthropic credentials present → 'anthropic'
-      3. OpenAI credentials present → 'openai'
-      4. Default 'openai'
+      1. Explicit SCHOLAR_FILLER_* env vars (user-chosen override)
+      2. Anthropic credentials (ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY)
+      3. OpenAI-compatible credentials (SCHOLAR_ROUTER_*, LLM_*, GITHUB_TOKEN)
+
+    Deduplication: same (format, url) pair is only tried once.
     """
-    explicit = os.getenv("SCHOLAR_FILLER_API_FORMAT", "").lower()
-    if explicit in ("anthropic", "openai"):
-        return explicit
+    providers: list[tuple[str, str, str, str]] = []
+    seen: set[tuple[str, str]] = set()
 
-    # Anthropic creds take priority if available
-    if os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY"):
-        return "anthropic"
-    return "openai"
+    def _add(fmt: str, url: str, key: str, model: str) -> None:
+        signature = (fmt, url.rstrip("/"))
+        if signature not in seen and key:
+            seen.add(signature)
+            providers.append((fmt, url, key, model))
 
-
-def _fill_api_url() -> str:
-    fmt = _detect_api_format()
-    if fmt == "anthropic":
-        return (
-            os.getenv("SCHOLAR_FILLER_API_URL")
-            or os.getenv("ANTHROPIC_BASE_URL")
-            or "https://api.anthropic.com"
-        )
-    return (
-        os.getenv("SCHOLAR_FILLER_API_URL")
-        or os.getenv("SCHOLAR_ROUTER_API_URL")
-        or os.getenv("LLM_API_URL")
-        or "https://api.openai.com/v1"
+    # --- Priority 1: Explicit SCHOLAR_FILLER_* override ---
+    # Only activate if user has explicitly configured at least FORMAT or URL.
+    # Otherwise we'd shadow Priority 2/3 with an incomplete config.
+    filler_explicit = bool(
+        os.getenv("SCHOLAR_FILLER_API_FORMAT")
+        or os.getenv("SCHOLAR_FILLER_API_URL")
     )
-
-
-def _fill_api_key() -> str:
-    fmt = _detect_api_format()
-    if fmt == "anthropic":
-        return (
+    if filler_explicit:
+        filler_key = (
             os.getenv("SCHOLAR_FILLER_API_KEY")
             or os.getenv("ANTHROPIC_AUTH_TOKEN")
             or os.getenv("ANTHROPIC_API_KEY")
             or ""
         )
-    return (
-        os.getenv("SCHOLAR_FILLER_API_KEY")
-        or os.getenv("SCHOLAR_ROUTER_API_KEY")
+        if filler_key:
+            filler_fmt = os.getenv("SCHOLAR_FILLER_API_FORMAT", "").lower()
+            if filler_fmt not in ("anthropic", "openai"):
+                filler_fmt = "openai"  # safe default
+            filler_url = os.getenv("SCHOLAR_FILLER_API_URL", "")
+            if not filler_url:
+                filler_url = (
+                    os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+                    if filler_fmt == "anthropic"
+                    else "https://api.openai.com/v1"
+                )
+            filler_model = os.getenv("SCHOLAR_FILLER_MODEL", "")
+            if not filler_model:
+                filler_model = (
+                    os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+                    if filler_fmt == "anthropic"
+                    else "gpt-4o-mini"
+                )
+            _add(filler_fmt, filler_url, filler_key, filler_model)
+
+    # --- Priority 2: Anthropic credentials ---
+    anth_key = os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY")
+    if anth_key:
+        anth_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+        anth_model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+        _add("anthropic", anth_url, anth_key, anth_model)
+
+    # --- Priority 3: OpenAI-compatible credentials ---
+    oai_key = (
+        os.getenv("SCHOLAR_ROUTER_API_KEY")
         or os.getenv("LLM_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
         or os.getenv("GITHUB_TOKEN")
         or ""
     )
-
-
-def _fill_model() -> str:
-    fmt = _detect_api_format()
-    if fmt == "anthropic":
-        return (
-            os.getenv("SCHOLAR_FILLER_MODEL")
-            or os.getenv("ANTHROPIC_MODEL")
-            or "claude-sonnet-4-20250514"
+    if oai_key:
+        oai_url = (
+            os.getenv("SCHOLAR_ROUTER_API_URL")
+            or os.getenv("LLM_API_URL")
+            or os.getenv("OPENAI_BASE_URL")
+            or "https://api.openai.com/v1"
         )
-    return (
-        os.getenv("SCHOLAR_FILLER_MODEL")
-        or os.getenv("SCHOLAR_ROUTER_MODEL")
-        or os.getenv("LLM_MODEL")
-        or "gpt-4o-mini"
-    )
+        oai_model = (
+            os.getenv("SCHOLAR_ROUTER_MODEL")
+            or os.getenv("LLM_MODEL")
+            or "gpt-4o-mini"
+        )
+        _add("openai", oai_url, oai_key, oai_model)
+
+    return providers
 
 
 def _call_llm_anthropic(api_url: str, api_key: str, model: str,
@@ -1034,7 +1050,12 @@ def _call_llm_anthropic(api_url: str, api_key: str, model: str,
     """Call Anthropic /messages endpoint. Returns assistant text."""
     import json as _json
 
-    url = api_url.rstrip("/") + "/messages"
+    # Avoid double-appending /messages
+    base = api_url.rstrip("/")
+    if base.endswith("/messages"):
+        url = base
+    else:
+        url = base + "/messages"
     payload = {
         "model": model,
         "max_tokens": 8192,
@@ -1050,6 +1071,35 @@ def _call_llm_anthropic(api_url: str, api_key: str, model: str,
                   headers=headers, method="POST")
     with urlopen(req, timeout=180) as response:
         data = _json.loads(response.read().decode("utf-8"))
+
+    # Handle API error responses
+    if "error" in data:
+        err = data["error"]
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        raise RuntimeError(f"Anthropic API error: {msg}")
+
+    # Handle missing content field
+    if "content" not in data:
+        logger.error("Unexpected Anthropic response (no 'content' key): %s",
+                     _json.dumps(data)[:500])
+        # Try common proxy wrapper fields
+        for alt_key in ("output", "text", "response", "result"):
+            if alt_key in data:
+                val = data[alt_key]
+                if isinstance(val, str):
+                    return val.strip()
+                if isinstance(val, list):
+                    for item in val:
+                        if isinstance(item, dict) and item.get("type") == "text":
+                            return item["text"].strip()
+                        if isinstance(item, str):
+                            return item.strip()
+        raise KeyError(
+            f"Anthropic response missing 'content' key. "
+            f"Available keys: {list(data.keys())}. "
+            f"Response preview: {_json.dumps(data)[:200]}"
+        )
+
     # Find the first text block (content may start with thinking blocks)
     for block in data["content"]:
         if block.get("type") == "text":
@@ -1062,7 +1112,13 @@ def _call_llm_openai(api_url: str, api_key: str, model: str,
     """Call OpenAI-compatible /chat/completions endpoint. Returns assistant text."""
     import json as _json
 
-    url = api_url.rstrip("/") + "/chat/completions"
+    # Avoid double-appending /chat/completions
+    base = api_url.rstrip("/")
+    if base.endswith("/chat/completions"):
+        url = base
+    else:
+        url = base + "/chat/completions"
+
     payload = {
         "model": model,
         "messages": [
@@ -1080,14 +1136,35 @@ def _call_llm_openai(api_url: str, api_key: str, model: str,
                   headers=headers, method="POST")
     with urlopen(req, timeout=120) as response:
         data = _json.loads(response.read().decode("utf-8"))
+
+    # Handle API error responses
+    if "error" in data:
+        err = data["error"]
+        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        raise RuntimeError(f"OpenAI API error: {msg}")
+
+    if "choices" not in data or not data["choices"]:
+        logger.error("Unexpected OpenAI response (no 'choices'): %s",
+                     _json.dumps(data)[:500])
+        raise KeyError(
+            f"OpenAI response has no choices. "
+            f"Available keys: {list(data.keys())}. "
+            f"Response preview: {_json.dumps(data)[:200]}"
+        )
+
     return data["choices"][0]["message"]["content"].strip()
 
 
 def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
     """Fill <!-- LLM: --> placeholders in a note using PDF text via LLM.
 
-    Supports both Anthropic and OpenAI API formats, auto-detected from
-    environment variables.
+    Automatically discovers available LLM providers from environment
+    variables and tries them in priority order until one succeeds.
+
+    Provider priority:
+      1. SCHOLAR_FILLER_* explicit override
+      2. ANTHROPIC_* credentials
+      3. OpenAI-compatible credentials
 
     Args:
         note_path: Path to the generated markdown note.
@@ -1096,14 +1173,14 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
     Returns:
         Dict with 'status', 'placeholders_filled', 'model_used'.
     """
-    api_key = _fill_api_key()
-    if not api_key:
-        return {"status": "skipped", "reason": "No API key configured", "placeholders_filled": 0}
-
     content = Path(note_path).read_text(encoding="utf-8")
     placeholder_count = len(re.findall(r"<!--\s*LLM:", content))
     if placeholder_count == 0:
         return {"status": "skipped", "reason": "No placeholders to fill", "placeholders_filled": 0}
+
+    providers = _resolve_providers()
+    if not providers:
+        return {"status": "skipped", "reason": "No API key configured", "placeholders_filled": 0}
 
     # Truncate PDF text to avoid token limit
     max_pdf_chars = 60000
@@ -1116,20 +1193,26 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
         f"Now fill ALL <!-- LLM: --> placeholders in this note:\n\n{content}"
     )
 
-    fmt = _detect_api_format()
-    api_url = _fill_api_url()
-    model = _fill_model()
+    # Try each provider in priority order
+    filled_content = None
+    used_provider = None
+    last_error = None
 
-    try:
-        if fmt == "anthropic":
-            filled_content = _call_llm_anthropic(
-                api_url, api_key, model, _FILL_SYSTEM_PROMPT, user_prompt)
-        else:
-            filled_content = _call_llm_openai(
-                api_url, api_key, model, _FILL_SYSTEM_PROMPT, user_prompt)
-    except (HTTPError, URLError, OSError, Exception) as exc:
-        logger.warning("fill_note_from_pdf LLM call failed (%s): %s", fmt, exc)
-        return {"status": "error", "reason": str(exc), "placeholders_filled": 0}
+    for fmt, api_url, key, model in providers:
+        try:
+            logger.info("Trying LLM fill: %s @ %s (model=%s)", fmt, api_url, model)
+            call = _call_llm_anthropic if fmt == "anthropic" else _call_llm_openai
+            filled_content = call(api_url, key, model, _FILL_SYSTEM_PROMPT, user_prompt)
+            used_provider = (fmt, api_url, model)
+            break
+        except Exception as exc:
+            last_error = exc
+            logger.warning("LLM fill failed (%s @ %s): %s", fmt, api_url, exc)
+            continue
+
+    if filled_content is None:
+        reason = str(last_error) if last_error else "All providers failed"
+        return {"status": "error", "reason": reason, "placeholders_filled": 0}
 
     # Remove markdown code fences if the LLM wrapped its output
     if filled_content.startswith("```markdown\n"):
@@ -1151,6 +1234,6 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
         "status": "ok",
         "placeholders_filled": filled_count,
         "placeholders_remaining": remaining,
-        "model_used": model,
-        "api_format": fmt,
+        "model_used": used_provider[2],
+        "api_format": used_provider[0],
     }

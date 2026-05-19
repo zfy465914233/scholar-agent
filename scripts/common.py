@@ -80,6 +80,22 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
 
 # ── Slugification ──────────────────────────────────────────────────
 
+def sanitize_title(title: str) -> str:
+    """Convert a paper title to a filesystem-safe directory/filename.
+
+    Replaces unsafe characters with underscores, collapses whitespace,
+    and truncates to 120 chars.  Used by both ``generate_note`` and
+    ``download_paper`` so they produce the same subfolder name.
+    """
+    s = unicodedata.normalize("NFKC", title.strip())
+    s = re.sub(r"[:/\\?*|\"<>,;&%#@!()]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = s.replace(" ", "_")
+    if len(s) > 120:
+        s = s[:120].rstrip("_")
+    return s or "untitled"
+
+
 def slugify(text: str, fallback: str = "untitled") -> str:
     """Convert text to a URL-safe slug.
 

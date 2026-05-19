@@ -64,6 +64,7 @@ from close_knowledge_loop import (
     QUALITY_THRESHOLD_CAPTURE_ANSWER,
 )
 from close_knowledge_loop import reindex as _reindex
+from common import sanitize_title
 from scholar_config import get_knowledge_dir, get_index_path, get_research_interests, load_config
 from local_retrieve import retrieve
 
@@ -559,21 +560,8 @@ def _parse_arxiv_id(paper_id: str) -> str | None:
     return None
 
 
-def _sanitize_title(title: str) -> str:
-    """Convert a paper title to a filesystem-safe directory/filename."""
-    import unicodedata
-    # Normalize unicode, replace common separators
-    s = unicodedata.normalize("NFKC", title.strip())
-    # Replace colons, slashes, and other problematic chars
-    s = _re.sub(r"[:/\\?*|\"<>,;&%#@!()]", " ", s)
-    # Collapse whitespace and strip
-    s = _re.sub(r"\s+", " ", s).strip()
-    # Replace spaces with underscores
-    s = s.replace(" ", "_")
-    # Truncate to reasonable length
-    if len(s) > 120:
-        s = s[:120].rstrip("_")
-    return s or "untitled"
+# Slugification consolidated into common.sanitize_title
+_sanitize_title = sanitize_title
 
 
 def _find_local_pdf(arxiv_id: str, title: str = "") -> str | None:
