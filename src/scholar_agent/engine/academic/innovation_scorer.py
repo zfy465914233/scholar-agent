@@ -140,7 +140,7 @@ def innovation_llm_batch_score(
     }
 
     try:
-        from synthesize_answer import call_llm
+        from scholar_agent.engine.synthesize_answer import call_llm
         result = call_llm(request_payload)
         raw = result.get("raw_content", "")
         evaluations = _parse_llm_response(raw, len(candidates))

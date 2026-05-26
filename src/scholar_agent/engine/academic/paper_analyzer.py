@@ -126,7 +126,13 @@ def _load_sections():
     from scholar_agent.templates import load_zh_sections, load_en_sections
     return load_zh_sections(), load_en_sections()
 
-_ZH_SECTIONS, _EN_SECTIONS = _load_sections()
+_sections_cache: tuple[dict, dict] | None = None
+
+def _get_sections() -> tuple[dict, dict]:
+    global _sections_cache
+    if _sections_cache is None:
+        _sections_cache = _load_sections()
+    return _sections_cache
 
 
 # ---------------------------------------------------------------------------
@@ -280,24 +286,25 @@ updated: "{date}"
 """)
 
     # Template sections
-    parts.append(_ZH_SECTIONS["abstract_translation"].format(
+    zh, _ = _get_sections()
+    parts.append(zh["abstract_translation"].format(
         abstract=abstract or "<!-- LLM: 请从论文中提取英文摘要 -->",
     ))
-    parts.append(_ZH_SECTIONS["background"])
-    parts.append(_ZH_SECTIONS["research_questions"])
-    parts.append(_ZH_SECTIONS["method"].format(
+    parts.append(zh["background"])
+    parts.append(zh["research_questions"])
+    parts.append(zh["method"].format(
         framework_images=framework_imgs + "\n" if framework_imgs else "",
         math_instruction_core=math_instruction_core,
         math_instruction_details=math_instruction_details,
     ))
-    parts.append(_ZH_SECTIONS["experiments"].format(
+    parts.append(zh["experiments"].format(
         results_images=results_imgs + "\n" if results_imgs else "",
     ))
-    parts.append(_ZH_SECTIONS["analysis"].format(domain=domain))
-    parts.append(_ZH_SECTIONS["comparison"])
-    parts.append(_ZH_SECTIONS["roadmap"])
-    parts.append(_ZH_SECTIONS["future_work"])
-    parts.append(_ZH_SECTIONS["evaluation"])
+    parts.append(zh["analysis"].format(domain=domain))
+    parts.append(zh["comparison"])
+    parts.append(zh["roadmap"])
+    parts.append(zh["future_work"])
+    parts.append(zh["evaluation"])
 
     # Personal notes
     parts.append("""\
@@ -477,24 +484,25 @@ updated: "{date}"
 """)
 
     # Template sections
-    parts.append(_EN_SECTIONS["abstract_analysis"].format(
+    _, en = _get_sections()
+    parts.append(en["abstract_analysis"].format(
         abstract=abstract or "<!-- LLM: Extract the abstract from the paper -->",
     ))
-    parts.append(_EN_SECTIONS["background"])
-    parts.append(_EN_SECTIONS["research_questions"])
-    parts.append(_EN_SECTIONS["method"].format(
+    parts.append(en["background"])
+    parts.append(en["research_questions"])
+    parts.append(en["method"].format(
         framework_images=framework_imgs + "\n" if framework_imgs else "",
         math_instruction_core=math_instruction_core,
         math_instruction_details=math_instruction_details,
     ))
-    parts.append(_EN_SECTIONS["experiments"].format(
+    parts.append(en["experiments"].format(
         results_images=results_imgs + "\n" if results_imgs else "",
     ))
-    parts.append(_EN_SECTIONS["analysis"].format(domain=domain))
-    parts.append(_EN_SECTIONS["comparison"])
-    parts.append(_EN_SECTIONS["roadmap"])
-    parts.append(_EN_SECTIONS["future_work"])
-    parts.append(_EN_SECTIONS["evaluation"])
+    parts.append(en["analysis"].format(domain=domain))
+    parts.append(en["comparison"])
+    parts.append(en["roadmap"])
+    parts.append(en["future_work"])
+    parts.append(en["evaluation"])
 
     # Personal notes
     parts.append("""\
@@ -559,7 +567,7 @@ def generate_note(
     domain = paper.get("best_domain") or paper.get("domain") or ""
     if not domain or domain == "Other":
         try:
-            from domain_router import infer_domain
+            from scholar_agent.engine.domain_router import infer_domain
             knowledge_root = Path(output_dir).parent / "knowledge"
             paper_abstract = paper.get("summary", "") or paper.get("abstract", "")
             slug, _ = infer_domain(

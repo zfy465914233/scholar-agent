@@ -254,7 +254,7 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
 
     # Check for potential contradictions (cards with high textual overlap)
     if len(cards) >= 2:
-        from common import safe_slug
+        from scholar_agent.engine.common import safe_slug
         titles = [(c.get("id", ""), c.get("title", "").lower().split()) for c in cards if c.get("title")]
         contradictions = []
         for i, (id_a, words_a) in enumerate(titles):

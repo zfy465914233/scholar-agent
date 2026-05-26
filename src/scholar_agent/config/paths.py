@@ -11,8 +11,17 @@ _SCHOLAR_HOME_DIR = "scholar"
 
 
 def get_scholar_root() -> Path:
-    # Assumes this module lives at scholar_agent/config/paths.py, so parents[2] is the project root.
-    return Path(__file__).resolve().parents[2]
+    """Return the project root by walking up from this file to find pyproject.toml."""
+    candidate = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
+    # Fallback for src layout: scholar_agent/config/ → parents[3] = repo root
+    return Path(__file__).resolve().parents[3]
 
 
 def _default_user_home() -> Path:

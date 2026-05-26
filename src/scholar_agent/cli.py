@@ -11,10 +11,6 @@ import sys
 from pathlib import Path
 from typing import Callable, Sequence
 
-# Ensure scripts/ is importable (needed when running as a standalone entry point)
-_ROOT = Path(__file__).resolve().parents[1]
-_SCRIPTS = _ROOT / "scripts"
-
 from scholar_agent.engine import scholar_config
 
 from scholar_agent.config.loader import resolve_config
@@ -697,16 +693,11 @@ def _run_init(
     # Step 2: Build initial BM25 index (non-fatal)
     index_built = False
     try:
-        import subprocess
-        scholar_root = _ROOT
-        index_script = scholar_root / "scripts" / "local_index.py"
-        if index_script.exists():
-            result = subprocess.run(
-                [sys.executable, str(index_script)],
-                capture_output=True, text=True, cwd=str(user_home),
-                timeout=30,
-            )
-            index_built = result.returncode == 0
+        from scholar_agent.engine.local_index import write_index
+        knowledge_dir = Path(load_config()["knowledge_dir"])
+        index_path = Path(load_config()["index_path"])
+        write_index(knowledge_dir, index_path)
+        index_built = True
     except Exception:
         pass
 

@@ -43,7 +43,7 @@ where = ["src"]
 include = ["scholar_agent*"]
 
 [tool.setuptools.package-data]
-scholar_agent = ["../../schemas/**", "../../templates/**", "../../.scholar.example.json", "../../config/**", "skills/**", "validation/**"]
+scholar_agent = ["schemas/**", "templates/**", "config_data/**", "skills/**", "validation/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

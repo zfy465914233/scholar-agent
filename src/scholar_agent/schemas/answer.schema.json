@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "StructuredAnswer",
+  "description": "Schema for research answers produced by the synthesis layer and consumed by the knowledge loop. Every answer flowing through synthesize_answer.py and close_knowledge_loop.py must conform to this schema.",
+  "type": "object",
+  "required": ["answer", "supporting_claims"],
+  "properties": {
+    "answer": {
+      "type": "string",
+      "minLength": 200,
+      "description": "Concise direct answer to the question. Should be detailed enough for an agent to gain actionable knowledge and design technical roadmaps. Minimum 200 characters."
+    },
+    "supporting_claims": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Factual claims directly supported by evidence. Each claim must reference at least one evidence_id. At least 1 claim required.",
+      "items": {
+        "type": "object",
+        "required": ["claim", "evidence_ids", "confidence"],
+        "properties": {
+          "claim": {
+            "type": "string",
+            "minLength": 20,
+            "description": "The factual claim text. Include specific quantitative results when available. Minimum 20 characters."
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "description": "IDs of evidence items that support this claim."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low"],
+            "description": "Confidence level of this claim based on evidence strength."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "inferences": {
+      "type": "array",
+      "default": [],
+      "description": "Reasoning and conclusions drawn from the evidence, but not directly stated by any single source. Should include practical recommendations and technical roadmaps.",
+      "items": { "type": "string" }
+    },
+    "uncertainty": {
+      "type": "array",
+      "default": [],
+      "description": "Known limitations, caveats, and areas where evidence is weak or conflicting.",
+      "items": { "type": "string" }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "default": [],
+      "description": "Specific evidence gaps that would strengthen the answer if filled. Useful for guiding future research.",
+      "items": { "type": "string" }
+    },
+    "suggested_next_steps": {
+      "type": "array",
+      "default": [],
+      "description": "Actionable next steps for the user, ordered by priority. Should be concrete enough to execute.",
+      "items": { "type": "string" }
+    },
+    "expected_output": {
+      "type": "string",
+      "default": "",
+      "description": "For method-type cards: description of what a successful result looks like (output format, shape, key metrics, acceptance criteria). Synthesize from the answer if not provided by sources. Only required when the content is procedural/method-like."
+    },
+    "example": {
+      "type": "string",
+      "default": "",
+      "description": "For method-type cards: a minimal worked example (sample input → steps → expected output). Construct synthetically if sources lack one. Write '[insufficient data — needs supplementation]' if impossible to construct."
+    },
+    "visual_aids": {
+      "type": "array",
+      "default": [],
+      "description": "Visual aids to improve understanding. AI should auto-generate these when the topic involves processes, architectures, comparisons, data flow, or spatial relationships. Omit for pure definitions or simple facts.",
+      "items": {
+        "type": "object",
+        "required": ["type", "content", "caption"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["mermaid", "image_url", "image_path"],
+            "description": "mermaid = inline Mermaid diagram code; image_url = remote image; image_path = local file path."
+          },
+          "content": {
+            "type": "string",
+            "description": "Mermaid code (for mermaid type) or URL/path (for image types)."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Short caption explaining what the visual shows."
+          },
+          "after_section": {
+            "type": "string",
+            "enum": ["answer", "supporting_claims", "inferences", "uncertainty", "missing_evidence", "suggested_next_steps"],
+            "description": "Insert this visual after the specified section. If omitted, it goes at the end of the card."
+          },
+          "alt_text": {
+            "type": "string",
+            "description": "Alt text for accessibility (defaults to caption if omitted)."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

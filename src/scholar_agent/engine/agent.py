@@ -32,7 +32,7 @@ from typing import Any
 from scholar_agent.engine.exceptions import ScholarError, ResearchError, SynthesisError
 
 ENGINE_DIR = Path(__file__).resolve().parent
-DEFAULT_INDEX = Path(__file__).resolve().parents[3] / "indexes" / "local" / "index.json"
+DEFAULT_INDEX = Path.cwd() / "indexes" / "local" / "index.json"
 
 logger = logging.getLogger(__name__)
 
@@ -208,7 +208,7 @@ class Synthesizer:
         Uses in-process call when possible, subprocess fallback otherwise.
         """
         try:
-            from synthesize_answer import synthesize as _synthesize
+            from scholar_agent.engine.synthesize_answer import synthesize as _synthesize
             return _synthesize(prompt_bundle, self.model or "gpt-4o-mini", dry_run=dry_run)
         except ImportError:
             logger.debug("Falling back to subprocess for synthesis")

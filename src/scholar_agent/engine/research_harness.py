@@ -138,8 +138,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    root = Path(__file__).resolve().parents[1]
-    schema = load_schema(root / "schemas" / "evidence.schema.json")
+    from scholar_agent.engine.common import get_package_data_path
+    schema = load_schema(get_package_data_path("schemas", "evidence.schema.json"))
 
     try:
         external_batch = load_external_candidates(args.external_candidates)

@@ -19,13 +19,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from typing import TypedDict
 
-from scholar_agent.engine.common import get_repo_root
+from scholar_agent.engine.common import get_package_data_path
 
-_REPO_ROOT = get_repo_root()
-
-SKILL_PATH = _REPO_ROOT / "schemas" / "routing_skill.md"
-POLICY_PATH = _REPO_ROOT / "schemas" / "domain_routing_policy.json"
-GUIDE_PATH = _REPO_ROOT / "schemas" / "domain_routing_guide.md"
+SKILL_PATH = get_package_data_path("schemas", "routing_skill.md")
+POLICY_PATH = get_package_data_path("schemas", "domain_routing_policy.json")
+GUIDE_PATH = get_package_data_path("schemas", "domain_routing_guide.md")
 
 # ── Limits ──────────────────────────────────────────────────────────
 

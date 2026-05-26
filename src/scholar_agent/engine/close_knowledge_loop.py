@@ -24,9 +24,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Import config helpers
-from scholar_agent.engine.common import safe_slug, extract_entities, get_repo_root
+from scholar_agent.engine.common import safe_slug, extract_entities, get_package_data_path
 
-ANSWER_SCHEMA_PATH = get_repo_root() / "schemas" / "answer.schema.json"
+ANSWER_SCHEMA_PATH = get_package_data_path("schemas", "answer.schema.json")
 
 from scholar_agent.engine.domain_router import infer_domain as _infer_domain
 from scholar_agent.engine.domain_router import infer_domain_decision as _infer_domain_decision
@@ -672,7 +672,7 @@ def build_knowledge_card(
 def reindex(knowledge_root: Path, index_output: Path) -> bool:
     """Rebuild the local index."""
     try:
-        from local_index import write_index
+        from scholar_agent.engine.local_index import write_index
         write_index(knowledge_root, index_output)
         return True
     except Exception:

@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 _REPO_ROOT: Path | None = None
 
+# Package data directory (schemas, templates, config_data live here)
+_PKG_DATA_DIR = Path(__file__).resolve().parent.parent  # scholar_agent/
+
 
 def get_repo_root() -> Path:
     """Return the project repository root directory.
@@ -48,6 +51,18 @@ def get_repo_root() -> Path:
     # Fallback: assume src layout → up 3 levels from engine/
     _REPO_ROOT = Path(__file__).resolve().parents[3]
     return _REPO_ROOT
+
+
+def get_package_data_path(*parts: str) -> Path:
+    """Return a path to a bundled data file within the scholar_agent package.
+
+    Looks for the file at ``_PKG_DATA_DIR / parts`` first (pip-installed),
+    then falls back to ``get_repo_root() / parts`` (development mode).
+    """
+    pkg_path = _PKG_DATA_DIR.joinpath(*parts)
+    if pkg_path.exists():
+        return pkg_path
+    return get_repo_root().joinpath(*parts)
 
 
 # ── Frontmatter parsing ────────────────────────────────────────────

@@ -1,0 +1,26 @@
+{
+  "major_domains": {
+    "major-domain-a": {
+      "label": "大类名称",
+      "description": "Describe what belongs in this major domain and what kinds of questions should route here.",
+      "aliases": ["major alias 1", "major alias 2"],
+      "allow_new_subdomains": true,
+      "default_subdomain": "",
+      "subdomains": {
+        "subdomain-a": {
+          "label": "子类名称",
+          "description": "Describe what belongs in this subdomain.",
+          "aliases": ["subdomain alias 1", "subdomain alias 2"]
+        }
+      }
+    },
+    "general": {
+      "label": "通用",
+      "description": "Global fallback major domain used only as a last resort.",
+      "aliases": ["general", "通用"],
+      "allow_new_subdomains": false,
+      "default_subdomain": "",
+      "subdomains": {}
+    }
+  }
+}

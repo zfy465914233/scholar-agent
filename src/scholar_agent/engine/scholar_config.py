@@ -22,8 +22,19 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Scholar Agent's own directory (where this file lives)
-SCHOLAR_ROOT = Path(__file__).resolve().parents[1]
+# Scholar Agent's own directory — walk up to find repo root for embedded-mode support
+def _resolve_scholar_root() -> Path:
+    candidate = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (candidate / "pyproject.toml").exists():
+            return candidate
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
+    return Path(__file__).resolve().parents[3]
+
+SCHOLAR_ROOT = _resolve_scholar_root()
 
 # Defaults: always resolve relative to cwd, not scholar-agent directory
 _DEFAULTS = {
