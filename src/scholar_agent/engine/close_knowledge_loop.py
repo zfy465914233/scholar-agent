@@ -23,11 +23,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[2]
-ANSWER_SCHEMA_PATH = _ROOT / "schemas" / "answer.schema.json"
-
 # Import config helpers
-from scholar_agent.engine.common import safe_slug, extract_entities
+from scholar_agent.engine.common import safe_slug, extract_entities, get_repo_root
+
+ANSWER_SCHEMA_PATH = get_repo_root() / "schemas" / "answer.schema.json"
+
 from scholar_agent.engine.domain_router import infer_domain as _infer_domain
 from scholar_agent.engine.domain_router import infer_domain_decision as _infer_domain_decision
 from scholar_agent.engine.scholar_config import get_knowledge_dir, get_index_path

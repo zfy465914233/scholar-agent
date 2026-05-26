@@ -71,7 +71,8 @@ def _load_s2_key() -> str:
     try:
         import yaml
         from pathlib import Path
-        cfg_path = Path(__file__).resolve().parents[2] / "config" / "config.yaml"
+        from scholar_agent.engine.common import get_repo_root
+        cfg_path = get_repo_root() / "config" / "config.yaml"
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
             _S2_KEY = cfg.get("s2_api_key", "")

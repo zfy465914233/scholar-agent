@@ -22,10 +22,11 @@ from pathlib import Path
 
 # Import run_pipeline (scripts dir is on sys.path when run as script)
 from scholar_agent.engine.run_pipeline import run_pipeline
+from scholar_agent.engine.common import get_repo_root
 
 logger = logging.getLogger(__name__)
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = get_repo_root()
 DEFAULT_INDEX = _REPO_ROOT / "indexes" / "local" / "index.json"
 FAKE_HARNESS = _REPO_ROOT / "tests" / "fake_research_harness.py"
 

@@ -442,7 +442,7 @@ def ingest_source(source: str, title: str = "", tags: str = "") -> str:
     is_url = source.strip().startswith(("http://", "https://"))
 
     if is_url:
-        from research_harness import fetch_content
+        from scholar_agent.engine.research_harness import fetch_content
         result = fetch_content(source.strip())
         if result["retrieval_status"] == "failed":
             return json.dumps({"error": f"Failed to fetch URL: {result.get('failure_reason', 'unknown')}"})
@@ -500,7 +500,7 @@ def build_graph() -> str:
 
     Returns the path to the generated graph.html file.
     """
-    from build_graph import build_graph_data, generate_html
+    from scholar_agent.engine.build_graph import build_graph_data, generate_html
 
     index_path, _refreshed, refresh_error = _ensure_index_ready()
     if not index_path.exists():

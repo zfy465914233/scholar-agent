@@ -22,6 +22,34 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+# ── Repo root resolution ──────────────────────────────────────────
+
+_REPO_ROOT: Path | None = None
+
+
+def get_repo_root() -> Path:
+    """Return the project repository root directory.
+
+    Walks up from this file until it finds ``pyproject.toml``.
+    Cached after first call.
+    """
+    global _REPO_ROOT
+    if _REPO_ROOT is not None:
+        return _REPO_ROOT
+    candidate = Path(__file__).resolve().parent
+    for _ in range(10):
+        if (candidate / "pyproject.toml").exists():
+            _REPO_ROOT = candidate
+            return candidate
+        parent = candidate.parent
+        if parent == candidate:
+            break
+        candidate = parent
+    # Fallback: assume src layout → up 3 levels from engine/
+    _REPO_ROOT = Path(__file__).resolve().parents[3]
+    return _REPO_ROOT
+
+
 # ── Frontmatter parsing ────────────────────────────────────────────
 
 def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:

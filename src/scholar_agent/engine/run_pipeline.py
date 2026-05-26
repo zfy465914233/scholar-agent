@@ -18,7 +18,7 @@ from pathlib import Path
 import sys
 
 ENGINE_DIR = Path(__file__).resolve().parent
-DEFAULT_INDEX = Path(__file__).resolve().parents[2] / "indexes" / "local" / "index.json"
+DEFAULT_INDEX = Path(__file__).resolve().parents[3] / "indexes" / "local" / "index.json"
 
 logger = logging.getLogger(__name__)
 

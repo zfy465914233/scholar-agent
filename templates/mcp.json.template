@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "scholar-agent": {
-      "command": "uv",
-      "args": ["run", "--with", "fastmcp", "fastmcp", "run", "scholar-agent/mcp_server.py"],
+      "command": "scholar-agent",
+      "args": ["serve-mcp"],
       "env": {
         "SCHOLAR_ACADEMIC": "1"
       }
