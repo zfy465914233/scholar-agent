@@ -415,47 +415,47 @@ class TestDailyWorkflow(unittest.TestCase):
 
 class TestParseArxivId(unittest.TestCase):
     def test_raw_id(self) -> None:
-        from mcp_server import _parse_arxiv_id
+        from scholar_agent.server import _parse_arxiv_id
         self.assertEqual("2510.24701", _parse_arxiv_id("2510.24701"))
 
     def test_versioned_id(self) -> None:
-        from mcp_server import _parse_arxiv_id
+        from scholar_agent.server import _parse_arxiv_id
         self.assertEqual("2510.24701", _parse_arxiv_id("2510.24701v2"))
 
     def test_abs_url(self) -> None:
-        from mcp_server import _parse_arxiv_id
+        from scholar_agent.server import _parse_arxiv_id
         self.assertEqual("2510.24701", _parse_arxiv_id("https://arxiv.org/abs/2510.24701"))
 
     def test_pdf_url(self) -> None:
-        from mcp_server import _parse_arxiv_id
+        from scholar_agent.server import _parse_arxiv_id
         self.assertEqual("2510.24701", _parse_arxiv_id("https://arxiv.org/pdf/2510.24701.pdf"))
 
     def test_invalid_input(self) -> None:
-        from mcp_server import _parse_arxiv_id
+        from scholar_agent.server import _parse_arxiv_id
         self.assertIsNone(_parse_arxiv_id("not-an-arxiv-id"))
         self.assertIsNone(_parse_arxiv_id("https://example.com/paper"))
 
 
 class TestSanitizeTitle(unittest.TestCase):
     def test_basic_title(self) -> None:
-        from mcp_server import _sanitize_title
+        from scholar_agent.server import _sanitize_title
         self.assertEqual("Attention_Is_All_You_Need", _sanitize_title("Attention Is All You Need"))
 
     def test_special_chars(self) -> None:
-        from mcp_server import _sanitize_title
+        from scholar_agent.server import _sanitize_title
         result = _sanitize_title("A Survey of NLP: Models, Methods & Applications")
         self.assertNotIn(":", result)
         self.assertNotIn(",", result)
         self.assertNotIn("&", result)
 
     def test_long_title_truncated(self) -> None:
-        from mcp_server import _sanitize_title
+        from scholar_agent.server import _sanitize_title
         long_title = "A" * 200
         result = _sanitize_title(long_title)
         self.assertLessEqual(len(result), 120)
 
     def test_empty_returns_untitled(self) -> None:
-        from mcp_server import _sanitize_title
+        from scholar_agent.server import _sanitize_title
         self.assertEqual("untitled", _sanitize_title(""))
         self.assertEqual("untitled", _sanitize_title("   "))
 
