@@ -1,18 +1,16 @@
 """Tests for the shared common.py utilities."""
 
 import json
-import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+_ROOT = Path(__file__).resolve().parents[1]
 
-from common import extract_entities, extract_wiki_links, load_json, normalize_date, now_iso, parse_frontmatter, resolve_link_target, safe_slug, slugify, write_json
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine.common import extract_entities, extract_wiki_links, load_json, normalize_date, now_iso, parse_frontmatter, resolve_link_target, safe_slug, slugify, write_json
 
 
 class ParseFrontmatterTest(unittest.TestCase):

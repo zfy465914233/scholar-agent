@@ -5,21 +5,20 @@ from pathlib import Path
 from unittest.mock import patch
 import unittest
 
+_ROOT = Path(__file__).resolve().parents[1]
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
-from search_providers.base import ProviderResult, SearchCandidate
-from normalizers.evidence_normalizer import normalize_candidate
-from search_providers.self_hosted_provider import AcademicProvider
-from search_pipeline import (
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine.search_providers.base import ProviderResult, SearchCandidate
+from scholar_agent.engine.normalizers.evidence_normalizer import normalize_candidate
+from scholar_agent.engine.search_providers.self_hosted_provider import AcademicProvider
+from scholar_agent.engine.search_pipeline import (
     canonicalize_url,
     candidate_identity,
     run_search_pipeline,
 )
-import research_harness
+from scholar_agent.engine import research_harness
 
 
 class AcademicProviderTest(unittest.TestCase):
@@ -104,7 +103,7 @@ class AcademicProviderTest(unittest.TestCase):
         self.assertEqual(merged_urls, evidence_urls)
 
     def test_evidence_schema_exposes_optional_provenance_contract(self) -> None:
-        schema_path = ROOT / "schemas" / "evidence.schema.json"
+        schema_path = _ROOT / "schemas" / "evidence.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
         provenance = schema["properties"].get("provenance")
@@ -124,8 +123,8 @@ class AcademicProviderTest(unittest.TestCase):
     def test_academic_provider_returns_provider_result_shaped_output(self) -> None:
         provider = AcademicProvider()
         with (
-            patch("search_providers.self_hosted_provider.search_openalex") as mock_openalex,
-            patch("search_providers.self_hosted_provider.search_semanticscholar") as mock_semanticscholar,
+            patch("scholar_agent.engine.search_providers.self_hosted_provider.search_openalex") as mock_openalex,
+            patch("scholar_agent.engine.search_providers.self_hosted_provider.search_semanticscholar") as mock_semanticscholar,
         ):
             mock_openalex.return_value = [
                 {
@@ -163,8 +162,8 @@ class AcademicProviderTest(unittest.TestCase):
     def test_academic_provider_stops_after_reaching_limit(self) -> None:
         provider = AcademicProvider()
         with (
-            patch("search_providers.self_hosted_provider.search_openalex") as mock_openalex,
-            patch("search_providers.self_hosted_provider.search_semanticscholar") as mock_semanticscholar,
+            patch("scholar_agent.engine.search_providers.self_hosted_provider.search_openalex") as mock_openalex,
+            patch("scholar_agent.engine.search_providers.self_hosted_provider.search_semanticscholar") as mock_semanticscholar,
         ):
             mock_openalex.return_value = [
                 {
@@ -228,7 +227,7 @@ class AcademicProviderTest(unittest.TestCase):
             published_at="2026-01-01",
         )
 
-        with patch("normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
             evidence = normalize_candidate(candidate, fetched_text="")
 
         self.assertEqual("markov chain", evidence["query"])
@@ -258,7 +257,7 @@ class AcademicProviderTest(unittest.TestCase):
             published_at=None,
         )
 
-        with patch("normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
             evidence = normalize_candidate(candidate, fetched_text="")
 
         self.assertTrue(evidence["url"].startswith("urn:scholar-agent:candidate:"))
@@ -291,7 +290,7 @@ class AcademicProviderTest(unittest.TestCase):
             published_at=None,
         )
 
-        with patch("normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
             first_evidence = normalize_candidate(first, fetched_text="")
             second_evidence = normalize_candidate(second, fetched_text="")
 
@@ -310,7 +309,7 @@ class AcademicProviderTest(unittest.TestCase):
             "published_at": datetime(2026, 4, 3, 12, 30, tzinfo=timezone.utc),
         }
 
-        with patch("normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
             evidence = normalize_candidate(candidate, fetched_text="", retrieval_status="succeeded")
 
         self.assertEqual("2026-04-03", evidence["published_at"])
@@ -326,7 +325,7 @@ class AcademicProviderTest(unittest.TestCase):
             "published_at": "   ",
         }
 
-        with patch("normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
             evidence = normalize_candidate(candidate, fetched_text="")
 
         self.assertIsNone(evidence["published_at"])
@@ -341,7 +340,7 @@ class AcademicProviderTest(unittest.TestCase):
             "published_at": "not-a-date",
         }
 
-        with patch("normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
             evidence = normalize_candidate(candidate, fetched_text="")
 
         self.assertIsNone(evidence["published_at"])
@@ -353,7 +352,7 @@ class AcademicProviderTest(unittest.TestCase):
                 research_harness.run_discovery("markov chain", "quick", None)
 
     def test_parse_args_accepts_external_candidates_path(self) -> None:
-        batch_path = ROOT / "tests" / "fixtures" / "external_candidates.json"
+        batch_path = _ROOT / "tests" / "fixtures" / "external_candidates.json"
         with patch.object(
             sys,
             "argv",

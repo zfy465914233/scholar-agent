@@ -1,17 +1,15 @@
 """Tests for the build_graph.py visualization module."""
 
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+_ROOT = Path(__file__).resolve().parents[1]
 
-from build_graph import build_graph_data, generate_html
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine.build_graph import build_graph_data, generate_html
 
 
 class BuildGraphDataTest(unittest.TestCase):

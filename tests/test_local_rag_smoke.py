@@ -1,19 +1,20 @@
 import json
 import subprocess
-import sys
 from pathlib import Path
 import unittest
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 
-ROOT = Path(__file__).resolve().parents[1]
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 
 
 class LocalRagSmokeTest(unittest.TestCase):
     def test_seed_cards_can_be_indexed_and_retrieved_end_to_end(self) -> None:
         index_result = subprocess.run(
-            [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
-            cwd=ROOT,
+            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            cwd=_ROOT,
             capture_output=True,
             text=True,
         )
@@ -26,14 +27,14 @@ class LocalRagSmokeTest(unittest.TestCase):
         retrieve_result = subprocess.run(
             [
                 sys.executable,
-                "scripts/local_retrieve.py",
+                "scholar_agent/engine/local_retrieve.py",
                 "Markov chain stochastic process",
                 "--index",
                 str(INDEX_PATH),
                 "--limit",
                 "2",
             ],
-            cwd=ROOT,
+            cwd=_ROOT,
             capture_output=True,
             text=True,
         )

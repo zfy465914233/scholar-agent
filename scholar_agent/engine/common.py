@@ -1,0 +1,240 @@
+"""Shared utilities for Scholar Agent scripts.
+
+Consolidates duplicated patterns across the codebase:
+  - parse_frontmatter: YAML frontmatter parsing (was in 3 files)
+  - slugify / safe_slug: text slugification (was in 3 files)
+  - load_json / write_json: safe JSON I/O (was in 10+ files)
+  - normalize_date: date normalization (was in 2 files)
+  - now_iso: UTC timestamp (was in 2 files)
+  - logging setup helpers
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import unicodedata
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+# ── Frontmatter parsing ────────────────────────────────────────────
+
+def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
+    """Parse YAML-like frontmatter from a markdown string.
+
+    Returns (metadata_dict, body_text).
+    Handles scalar values and list values (``  - item`` syntax).
+    """
+    if not raw.startswith("---\n") and not raw.startswith("---\r\n"):
+        return {}, raw
+
+    # Normalize line endings for consistent splitting
+    normalized = raw.replace("\r\n", "\n")
+    parts = normalized.split("\n---\n", 1)
+    if len(parts) != 2:
+        return {}, raw
+
+    lines = parts[0].splitlines()[1:]  # skip opening ---
+    metadata: dict[str, Any] = {}
+    current_key: str | None = None
+    current_list: list[str] | None = None
+
+    for line in lines:
+        if not line.strip():
+            continue
+
+        # List item under a key (indented with 2 spaces)
+        if line.startswith("  - ") and current_key is not None and current_list is not None:
+            current_list.append(line[4:].strip())
+            continue
+
+        # Also support unindented list items (some markdown styles)
+        if line.startswith("- ") and current_key is not None and current_list is not None:
+            current_list.append(line[2:].strip())
+            continue
+
+        if ":" not in line:
+            continue
+
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip().strip("'\"")
+
+        if not value:
+            current_key = key
+            current_list = []
+            metadata[key] = current_list
+        else:
+            current_key = None
+            current_list = None
+            metadata[key] = value
+
+    return metadata, parts[1].strip()
+
+
+# ── Slugification ──────────────────────────────────────────────────
+
+def sanitize_title(title: str) -> str:
+    """Convert a paper title to a filesystem-safe directory/filename.
+
+    Replaces unsafe characters with underscores, collapses whitespace,
+    and truncates to 120 chars.  Used by both ``generate_note`` and
+    ``download_paper`` so they produce the same subfolder name.
+    """
+    s = unicodedata.normalize("NFKC", title.strip())
+    s = re.sub(r"[:/\\?*|\"<>,;&%#@!()]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = s.replace(" ", "_")
+    if len(s) > 120:
+        s = s[:120].rstrip("_")
+    return s or "untitled"
+
+
+def slugify(text: str, fallback: str = "untitled") -> str:
+    """Convert text to a URL-safe slug.
+
+    Args:
+        text: Input text.
+        fallback: Value returned when the result would be empty.
+    """
+    normalized_text = unicodedata.normalize("NFKC", text).strip().lower()
+    normalized_text = re.sub(r"[^\w\s-]+", " ", normalized_text, flags=re.UNICODE)
+    normalized = re.sub(r"[_\s-]+", "-", normalized_text, flags=re.UNICODE).strip("-")
+    return normalized or fallback
+
+
+def safe_slug(text: str) -> str:
+    """Like slugify but also strips path separators and dots to prevent traversal."""
+    slug = slugify(text, fallback="untitled")
+    # Belt-and-suspenders: strip anything that could form a path component
+    slug = slug.replace(".", "").replace("/", "").replace("\\", "")
+    return slug or "untitled"
+
+
+# ── JSON I/O ───────────────────────────────────────────────────────
+
+def load_json(path: Path) -> dict[str, Any]:
+    """Load JSON from a file with error handling.
+
+    Returns empty dict on failure and prints a warning to stderr.
+    """
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("failed to load JSON from %s: %s", path, exc)
+        return {}
+
+
+def write_json(path: Path, data: Any, indent: int = 2) -> None:
+    """Write JSON to a file, creating parent directories as needed."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=indent) + "\n",
+        encoding="utf-8",
+    )
+
+
+# ── Date / time helpers ────────────────────────────────────────────
+
+def normalize_date(value: Any) -> str | None:
+    """Normalize a date value to ISO format.
+
+    Accepts datetime objects, date strings in common formats, or None.
+    Returns None for unparseable or empty input.
+    """
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    text = text.replace("/", "-")
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            parsed = datetime.strptime(text[:19], fmt)
+            return (
+                parsed.date().isoformat()
+                if "T" not in fmt and " " not in fmt
+                else parsed.replace(tzinfo=timezone.utc).isoformat()
+            )
+        except ValueError:
+            continue
+    return text
+
+
+def now_iso() -> str:
+    """Current UTC time in ISO format."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ── Wiki-link extraction ──────────────────────────────────────────
+
+_WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def extract_wiki_links(text: str) -> list[str]:
+    """Extract [[card-id]] wiki-links from markdown text.
+
+    Returns a deduplicated list of link targets (card IDs or slugs).
+    """
+    return list(dict.fromkeys(_WIKI_LINK_RE.findall(text)))
+
+
+def resolve_link_target(target: str, all_ids: set[str]) -> str | None:
+    """Resolve a wiki-link target to a doc_id.
+
+    Tries exact match first, then partial match (target is a substring
+    of a doc_id). Returns None if no match is found.
+    """
+    if target in all_ids:
+        return target
+    for did in all_ids:
+        if target in did:
+            return did
+    return None
+
+
+# ── Entity extraction ─────────────────────────────────────────────
+
+_CAPITALIZED_PHRASE = re.compile(
+    r"\b([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)+)\b"
+)
+_BACKTICK_TERM = re.compile(r"`([^`]{2,40})`")
+_STOP_ENTITIES = {
+    "Research Note", "Knowledge Note", "Method Note", "Supporting Claims", "Missing Evidence",
+    "Suggested Next Steps", "Visual Aids", "Source Images",
+    "Concrete Example", "Expected Output", "Question", "Answer",
+    "Uncertainty", "Inferences", "See Also", "Key Findings",
+    "Related Work", "Further Reading", "Open Questions",
+}
+
+
+def extract_entities(text: str) -> list[str]:
+    """Extract potential entity names from text using heuristics.
+
+    Extracts:
+    - Capitalized multi-word phrases (e.g. "Andrej Karpathy", "Monte Carlo")
+    - Backtick-enclosed technical terms (e.g. `XGBoost`, `BM25`)
+
+    Returns deduplicated list of entity strings.
+    """
+    entities: list[str] = []
+    seen: set[str] = set()
+
+    for match in _CAPITALIZED_PHRASE.findall(text):
+        normalized = match.strip()
+        if normalized not in _STOP_ENTITIES and normalized.lower() not in seen:
+            seen.add(normalized.lower())
+            entities.append(normalized)
+
+    for match in _BACKTICK_TERM.findall(text):
+        normalized = match.strip()
+        if normalized.lower() not in seen and not normalized.startswith(("/", ".", "#")):
+            seen.add(normalized.lower())
+            entities.append(normalized)
+
+    return entities

@@ -8,21 +8,19 @@ from pathlib import Path
 import tempfile
 import shutil
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
+_ROOT = Path(__file__).resolve().parents[1]
 
-import sys
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+ENGINE = _ROOT / "scholar_agent" / "engine"
 
-from local_index import (
+
+from scholar_agent.engine.local_index import (
     build_index,
     build_index_incremental,
     _load_manifest,
     _save_manifest,
     _build_manifest,
 )
-from cache_helper import get, put, invalidate, clear_all, cache_stats, MAX_ENTRIES
+from scholar_agent.engine.cache_helper import get, put, invalidate, clear_all, cache_stats, MAX_ENTRIES
 
 
 class IncrementalIndexTest(unittest.TestCase):

@@ -1,18 +1,17 @@
 import json
 import subprocess
-import sys
 from pathlib import Path
 import unittest
 
+_ROOT = Path(__file__).resolve().parents[1]
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
 
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+ENGINE = _ROOT / "scholar_agent" / "engine"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 
-from local_index import build_backlinks
+
+from scholar_agent.engine.local_index import build_backlinks
+import sys
 
 
 class LocalIndexTest(unittest.TestCase):
@@ -20,8 +19,8 @@ class LocalIndexTest(unittest.TestCase):
         INDEX_PATH.unlink(missing_ok=True)
 
     def test_local_index_builder_creates_json_index_from_knowledge_cards(self) -> None:
-        command = [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        command = [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
 
         self.assertEqual(
             0,
@@ -80,11 +79,11 @@ class BuildBacklinksTest(unittest.TestCase):
     def test_index_includes_backlinks(self) -> None:
         """Integration: full index build should populate backlinks."""
         command = [
-            sys.executable, "scripts/local_index.py",
+            sys.executable, "scholar_agent/engine/local_index.py",
             "--knowledge-root", "tests/fixtures",
             "--output", str(INDEX_PATH),
         ]
-        subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
         payload = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
         for doc in payload["documents"]:
             self.assertIn("backlinks", doc)

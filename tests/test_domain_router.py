@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """Tests for _propose_new_major_domain and infer_domain_decision domain_override."""
 
-import sys
 import os
 import tempfile
 import shutil
 from pathlib import Path
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
-from domain_router import _propose_new_major_domain, infer_domain_decision
+from scholar_agent.engine.domain_router import _propose_new_major_domain, infer_domain_decision
 
 
 class TestProposeNewMajorDomain:

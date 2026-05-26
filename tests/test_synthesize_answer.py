@@ -8,13 +8,14 @@ Tests cover:
 
 import json
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
+import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
+_ROOT = Path(__file__).resolve().parents[1]
+
+ENGINE = _ROOT / "scholar_agent" / "engine"
 
 SAMPLE_PROMPT_BUNDLE = {
     "system_prompt": "Answer using the provided evidence context.",
@@ -43,10 +44,10 @@ SAMPLE_PROMPT_BUNDLE = {
 
 def _run_script(args: list[str], stdin_data: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(SCRIPTS / "synthesize_answer.py")] + args,
+        [sys.executable, str(ENGINE / "synthesize_answer.py")] + args,
         capture_output=True,
         text=True,
-        cwd=SCRIPTS,
+        cwd=ENGINE,
         input=stdin_data,
     )
 

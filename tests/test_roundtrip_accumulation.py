@@ -1,13 +1,14 @@
 import json
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 import unittest
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 
-ROOT = Path(__file__).resolve().parents[1]
-FAKE_HARNESS = ROOT / "tests" / "fake_research_harness.py"
+FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 
 
 class RoundTripAccumulationTest(unittest.TestCase):
@@ -56,13 +57,13 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             build_index_result = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "scripts" / "local_index.py"),
+                    str(_ROOT / "scripts" / "local_index.py"),
                     "--knowledge-root",
                     str(knowledge_root),
                     "--output",
                     str(index_path),
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )
@@ -71,7 +72,7 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             answer_result = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "scripts" / "build_answer_context.py"),
+                    str(_ROOT / "scripts" / "build_answer_context.py"),
                     "what is a markov chain",
                     "--mode",
                     "mixed",
@@ -80,7 +81,7 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
                     "--research-script",
                     str(FAKE_HARNESS),
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )
@@ -90,13 +91,13 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             distill_result = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "scripts" / "distill_knowledge.py"),
+                    str(_ROOT / "scripts" / "distill_knowledge.py"),
                     "--answer-context",
                     str(answer_context_path),
                     "--output",
                     str(draft_path),
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )
@@ -105,13 +106,13 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             promote_result = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "scripts" / "promote_draft.py"),
+                    str(_ROOT / "scripts" / "promote_draft.py"),
                     "--draft",
                     str(draft_path),
                     "--knowledge-root",
                     str(knowledge_root),
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )
@@ -120,13 +121,13 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             rebuild_index_result = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "scripts" / "local_index.py"),
+                    str(_ROOT / "scripts" / "local_index.py"),
                     "--knowledge-root",
                     str(knowledge_root),
                     "--output",
                     str(index_path),
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )
@@ -135,14 +136,14 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             retrieve_result = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "scripts" / "local_retrieve.py"),
+                    str(_ROOT / "scripts" / "local_retrieve.py"),
                     "distilled markov chain",
                     "--index",
                     str(index_path),
                     "--limit",
                     "5",
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )

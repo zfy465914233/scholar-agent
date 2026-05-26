@@ -1,13 +1,14 @@
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 import unittest
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 
-ROOT = Path(__file__).resolve().parents[1]
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
-FAKE_HARNESS = ROOT / "tests" / "fake_research_harness.py"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
+FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 
 
 def _make_draft(path: Path, query: str) -> None:
@@ -52,8 +53,8 @@ def _make_draft(path: Path, query: str) -> None:
 class PromoteDraftTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
-            cwd=ROOT,
+            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            cwd=_ROOT,
             capture_output=True,
             text=True,
         )
@@ -75,7 +76,7 @@ class PromoteDraftTest(unittest.TestCase):
             answer_result = subprocess.run(
                 [
                     sys.executable,
-                    "scripts/build_answer_context.py",
+                    "scholar_agent/engine/build_answer_context.py",
                     "what is a markov chain",
                     "--mode",
                     "mixed",
@@ -84,7 +85,7 @@ class PromoteDraftTest(unittest.TestCase):
                     "--research-script",
                     str(FAKE_HARNESS),
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )
@@ -94,13 +95,13 @@ class PromoteDraftTest(unittest.TestCase):
             distill_result = subprocess.run(
                 [
                     sys.executable,
-                    "scripts/distill_knowledge.py",
+                    "scholar_agent/engine/distill_knowledge.py",
                     "--answer-context",
                     str(answer_context_path),
                     "--output",
                     str(draft_path),
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )
@@ -109,13 +110,13 @@ class PromoteDraftTest(unittest.TestCase):
             promote_result = subprocess.run(
                 [
                     sys.executable,
-                    "scripts/promote_draft.py",
+                    "scholar_agent/engine/promote_draft.py",
                     "--draft",
                     str(draft_path),
                     "--knowledge-root",
                     str(promoted_root),
                 ],
-                cwd=ROOT,
+                cwd=_ROOT,
                 capture_output=True,
                 text=True,
             )
@@ -153,13 +154,13 @@ class PromoteDraftTest(unittest.TestCase):
                 promote_result = subprocess.run(
                     [
                         sys.executable,
-                        "scripts/promote_draft.py",
+                        "scholar_agent/engine/promote_draft.py",
                         "--draft",
                         str(draft_path),
                         "--knowledge-root",
                         str(knowledge_root),
                     ],
-                    cwd=ROOT,
+                    cwd=_ROOT,
                     capture_output=True,
                     text=True,
                 )

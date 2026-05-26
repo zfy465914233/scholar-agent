@@ -19,11 +19,11 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+_ROOT = Path(__file__).resolve().parents[1]
+
 # ---------------------------------------------------------------------------
 # Ensure imports resolve from the scripts/ directory
 # ---------------------------------------------------------------------------
-sys.path.insert(0, "/Users/zhoufangyi/scholar-agent/scripts")
-sys.path.insert(0, "/Users/zhoufangyi/scholar-agent")
 
 # ============================================================================
 # Results collector
@@ -608,7 +608,7 @@ def test_v11() -> None:
     _section("V11: MCP Server Tool Validation")
 
     # Read the mcp_server.py source for static analysis
-    mcp_path = "/Users/zhoufangyi/scholar-agent/mcp_server.py"
+    mcp_path = str(_REPO_ROOT / "mcp_server.py")
     with open(mcp_path, "r", encoding="utf-8") as f:
         source = f.read()
 

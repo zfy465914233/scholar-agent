@@ -14,10 +14,8 @@ from typing import Callable, Sequence
 # Ensure scripts/ is importable (needed when running as a standalone entry point)
 _ROOT = Path(__file__).resolve().parents[1]
 _SCRIPTS = _ROOT / "scripts"
-if str(_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS))
 
-from scripts import scholar_config
+from scholar_agent.engine import scholar_config
 
 from scholar_agent.config.loader import resolve_config
 from scholar_agent.config.manager import initialize_user_home, migrate_to_user_home

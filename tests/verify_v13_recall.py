@@ -1,8 +1,7 @@
 """V13: Search recall quality — verify query construction logic."""
 import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
-from academic.arxiv_search import collect_hot_papers, _CATEGORY_PHRASES
+from scholar_agent.engine.academic.arxiv_search import collect_hot_papers, _CATEGORY_PHRASES
 
 # ============================================================
 # Test 1: Query phrase construction from config domains

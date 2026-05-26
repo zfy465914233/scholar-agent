@@ -1,19 +1,17 @@
 """Tests for multi-perspective research and contradiction detection."""
 
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+_ROOT = Path(__file__).resolve().parents[1]
 
-from research_harness import PERSPECTIVES, run_multi_perspective
-from close_knowledge_loop import check_contradictions
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine.research_harness import PERSPECTIVES, run_multi_perspective
+from scholar_agent.engine.close_knowledge_loop import check_contradictions
 
 
 class MultiPerspectiveTest(unittest.TestCase):

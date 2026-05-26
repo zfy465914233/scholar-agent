@@ -2,13 +2,14 @@
 
 import json
 import subprocess
-import sys
 import unittest
 from pathlib import Path
+import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-KNOWLEDGE_ROOT = ROOT / "knowledge"
+_ROOT = Path(__file__).resolve().parents[1]
+
+ENGINE = _ROOT / "scholar_agent" / "engine"
+KNOWLEDGE_ROOT = _ROOT / "knowledge"
 
 
 class CardValidationTest(unittest.TestCase):
@@ -27,7 +28,7 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())
@@ -42,7 +43,7 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         fields = json.loads(result.stdout.strip())
@@ -61,7 +62,7 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("1", result.stdout.strip())
@@ -79,7 +80,7 @@ class LifecycleTransitionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         parts = result.stdout.strip().split(" ", 1)
@@ -95,7 +96,7 @@ class LifecycleTransitionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("True", result.stdout.strip())
@@ -109,7 +110,7 @@ class LifecycleTransitionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("True", result.stdout.strip())
@@ -130,7 +131,7 @@ class DuplicateDetectionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         parts = result.stdout.strip().split(" ")
@@ -149,7 +150,7 @@ class DuplicateDetectionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())
@@ -160,7 +161,7 @@ class GovernanceCLITest(unittest.TestCase):
 
     def test_scan_command(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "knowledge_governance.py"), "scan"],
+            [sys.executable, str(ENGINE / "knowledge_governance.py"), "scan"],
             capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -168,7 +169,7 @@ class GovernanceCLITest(unittest.TestCase):
 
     def test_validate_command(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "knowledge_governance.py"), "validate", "-v"],
+            [sys.executable, str(ENGINE / "knowledge_governance.py"), "validate", "-v"],
             capture_output=True, text=True,
         )
         # May return 1 if there are errors, but should not crash
@@ -176,7 +177,7 @@ class GovernanceCLITest(unittest.TestCase):
 
     def test_duplicates_command(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "knowledge_governance.py"), "duplicates"],
+            [sys.executable, str(ENGINE / "knowledge_governance.py"), "duplicates"],
             capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -184,7 +185,7 @@ class GovernanceCLITest(unittest.TestCase):
 
     def test_transitions_command(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "knowledge_governance.py"), "transitions"],
+            [sys.executable, str(ENGINE / "knowledge_governance.py"), "transitions"],
             capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -193,7 +194,7 @@ class GovernanceCLITest(unittest.TestCase):
 
     def test_lint_command(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "knowledge_governance.py"), "lint", "--stale-days", "365"],
+            [sys.executable, str(ENGINE / "knowledge_governance.py"), "lint", "--stale-days", "365"],
             capture_output=True, text=True,
         )
         # lint returns 1 if issues found, but should not crash

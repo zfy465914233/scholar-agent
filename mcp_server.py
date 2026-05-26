@@ -52,10 +52,8 @@ from pathlib import Path
 # Ensure scripts/ is importable
 ROOT = Path(__file__).resolve().parent
 SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
-from close_knowledge_loop import (
+from scholar_agent.engine.close_knowledge_loop import (
     build_knowledge_card,
     infer_domain,
     quality_score_answer_data,
@@ -63,10 +61,10 @@ from close_knowledge_loop import (
     QUALITY_THRESHOLD_SAVE_RESEARCH,
     QUALITY_THRESHOLD_CAPTURE_ANSWER,
 )
-from close_knowledge_loop import reindex as _reindex
-from common import sanitize_title
-from scholar_config import get_knowledge_dir, get_index_path, get_research_interests, load_config
-from local_retrieve import retrieve
+from scholar_agent.engine.close_knowledge_loop import reindex as _reindex
+from scholar_agent.engine.common import sanitize_title
+from scholar_agent.engine.scholar_config import get_knowledge_dir, get_index_path, get_research_interests, load_config
+from scholar_agent.engine.local_retrieve import retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -623,7 +621,7 @@ if SCHOLAR_ACADEMIC:
             config_path: Optional path to a YAML config file for research interests
                 and scoring weights.
         """
-        from academic.arxiv_search import search_and_score, _load_config
+        from scholar_agent.engine.academic.arxiv_search import search_and_score, _load_config
 
         # Clamp parameters to safe ranges
         max_results = max(1, min(max_results, 500))
@@ -705,8 +703,8 @@ if SCHOLAR_ACADEMIC:
             top_n: Number of top-scored papers to return (default 10).
             config_path: Optional path to a YAML config file for scoring weights.
         """
-        from academic.conf_search import search_and_score_conferences, _CONF_CATALOG
-        from academic.arxiv_search import _load_config
+        from scholar_agent.engine.academic.conf_search import search_and_score_conferences, _CONF_CATALOG
+        from scholar_agent.engine.academic.arxiv_search import _load_config
 
         if year <= 0:
             year = datetime.now().year
@@ -801,8 +799,8 @@ if SCHOLAR_ACADEMIC:
             pdf_path: Optional local PDF file path. If omitted and paper_json contains
                 an arxiv_id, auto-detects the local PDF in paper-notes/.
         """
-        from academic.paper_analyzer import generate_note
-        from academic.note_linker import discover_related_notes
+        from scholar_agent.engine.academic.paper_analyzer import generate_note
+        from scholar_agent.engine.academic.note_linker import discover_related_notes
 
         try:
             paper = json.loads(paper_json)
@@ -846,8 +844,9 @@ if SCHOLAR_ACADEMIC:
         if language not in ("zh", "en"):
             language = "zh"
 
-        # Parse images
+        # Parse images — auto-extract when caller didn't provide them
         images = None
+        auto_extracted_images: list[dict] = []
         if images_json and images_json.strip():
             try:
                 images = json.loads(images_json)
@@ -855,6 +854,23 @@ if SCHOLAR_ACADEMIC:
                     images = None
             except json.JSONDecodeError:
                 images = None
+        elif detected_pdf or paper.get("arxiv_id"):
+            # Auto-extract images when no explicit images_json provided
+            try:
+                from scholar_agent.engine.academic.image_extractor import extract_paper_images as _extract_imgs
+                arxiv_id = paper.get("arxiv_id", "")
+                img_dir = str(out_path / "images")
+                auto_extracted_images = _extract_imgs(
+                    arxiv_id, img_dir, pdf_path=detected_pdf,
+                )
+                if auto_extracted_images:
+                    images = auto_extracted_images
+                    logger.info(
+                        "Auto-extracted %d images for %s",
+                        len(auto_extracted_images), paper.get("title", ""),
+                    )
+            except Exception as exc:
+                logger.warning("Auto image extraction failed: %s", exc)
 
         try:
             note_path = generate_note(
@@ -869,7 +885,7 @@ if SCHOLAR_ACADEMIC:
         pdf_text = ""
         if detected_pdf and os.path.isfile(detected_pdf):
             try:
-                from academic.image_extractor import extract_pdf_text
+                from scholar_agent.engine.academic.image_extractor import extract_pdf_text
                 pdf_text = extract_pdf_text(detected_pdf)
             except Exception:
                 pdf_text = ""
@@ -878,7 +894,7 @@ if SCHOLAR_ACADEMIC:
         fill_result = None
         if pdf_text:
             try:
-                from academic.paper_analyzer import fill_note_from_pdf
+                from scholar_agent.engine.academic.paper_analyzer import fill_note_from_pdf
                 fill_result = fill_note_from_pdf(note_path, pdf_text)
                 logger.info("Auto-fill result: %s", fill_result)
             except Exception as exc:
@@ -888,7 +904,7 @@ if SCHOLAR_ACADEMIC:
         # Quality check on the generated note
         quality_check = {"has_issues": False, "issues": [], "placeholder_count": 0}
         try:
-            from academic.paper_analyzer import check_note_quality
+            from scholar_agent.engine.academic.paper_analyzer import check_note_quality
             quality_check = check_note_quality(note_path)
         except Exception:
             pass
@@ -915,6 +931,10 @@ if SCHOLAR_ACADEMIC:
             "pdf_text": pdf_text,
             "quality_check": quality_check,
             "instructions": instructions,
+            "images": [
+                {"filename": img.get("filename", ""), "section": img.get("section", "")}
+                for img in (images or [])
+            ],
         }
         if fill_result:
             result_payload["fill_result"] = fill_result
@@ -982,7 +1002,7 @@ if SCHOLAR_ACADEMIC:
         paper_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            from academic.image_extractor import download_arxiv_pdf
+            from scholar_agent.engine.academic.image_extractor import download_arxiv_pdf
             # download_arxiv_pdf saves as {arxiv_id}.pdf, rename to title-based name
             local_path = download_arxiv_pdf(arxiv_id, str(paper_dir))
             if not local_path:
@@ -1024,7 +1044,7 @@ if SCHOLAR_ACADEMIC:
                 paper-notes/{title_or_id}/images/ under the knowledge root.
             pdf_path: Optional local PDF file path for extraction fallback.
         """
-        from academic.image_extractor import extract_paper_images as _extract
+        from scholar_agent.engine.academic.image_extractor import extract_paper_images as _extract
 
         if not paper_id or not paper_id.strip():
             return json.dumps({"error": "paper_id must not be empty"})
@@ -1171,8 +1191,8 @@ if SCHOLAR_ACADEMIC:
             config_path: Optional YAML config path for research interests.
             dual_track: Use dual-track mode: 2 conference + 2 arXiv (default true).
         """
-        from academic.daily_workflow import generate_daily_recommendations, build_daily_note
-        from academic.arxiv_search import _load_config
+        from scholar_agent.engine.academic.daily_workflow import generate_daily_recommendations, build_daily_note
+        from scholar_agent.engine.academic.arxiv_search import _load_config
 
         top_n = max(1, min(top_n, 50))
         if language not in ("zh", "en"):
@@ -1290,7 +1310,7 @@ if SCHOLAR_ACADEMIC:
             notes_dir: Directory of paper notes. Defaults to paper-notes/
                 under the knowledge root.
         """
-        from academic.note_linker import build_keyword_index, apply_wiki_links
+        from scholar_agent.engine.academic.note_linker import build_keyword_index, apply_wiki_links
 
         if not notes_dir or not notes_dir.strip():
             notes_dir = str(get_knowledge_dir().parent / "paper-notes")

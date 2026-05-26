@@ -2,20 +2,17 @@
 
 import json
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+_ROOT = Path(__file__).resolve().parents[1]
 
-import scholar_config
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine import scholar_config
 from mcp_server import query_knowledge, save_research, list_knowledge, capture_answer
-from close_knowledge_loop import (
+from scholar_agent.engine.close_knowledge_loop import (
+import sys
     quality_score_answer_data,
     QUALITY_THRESHOLD_SAVE_RESEARCH,
     QUALITY_THRESHOLD_CAPTURE_ANSWER,
@@ -23,12 +20,12 @@ from close_knowledge_loop import (
 
 # Force config to always resolve to scholar-agent's own directories
 # regardless of cwd, so tests don't leak files into parent projects.
-_TEST_INDEX = ROOT / "indexes" / "local" / "index.json"
-_TEST_KNOWLEDGE = ROOT / "tests" / "fixtures"
+_TEST_INDEX = _ROOT / "indexes" / "local" / "index.json"
+_TEST_KNOWLEDGE = _ROOT / "tests" / "fixtures"
 scholar_config._config_cache = {
     "knowledge_dir": str(_TEST_KNOWLEDGE),
     "index_path": str(_TEST_INDEX),
-    "scholar_dir": str(ROOT),
+    "scholar_dir": str(_ROOT),
 }
 
 
@@ -42,18 +39,18 @@ def _build_index() -> None:
     scholar_config._config_cache = {
         "knowledge_dir": str(_TEST_KNOWLEDGE),
         "index_path": str(_TEST_INDEX),
-        "scholar_dir": str(ROOT),
+        "scholar_dir": str(_ROOT),
     }
     _TEST_INDEX.parent.mkdir(parents=True, exist_ok=True)
     stale_marker = _TEST_INDEX.with_suffix(_TEST_INDEX.suffix + ".stale")
     if stale_marker.exists():
         stale_marker.unlink()
     subprocess.run(
-        [sys.executable, str(SCRIPTS / "local_index.py"),
+        [sys.executable, str(ENGINE / "local_index.py"),
          "--knowledge-root", str(_TEST_KNOWLEDGE),
          "--full-rebuild",
          "--output", str(_TEST_INDEX)],
-        capture_output=True, text=True, cwd=ROOT,
+        capture_output=True, text=True, cwd=_ROOT,
     )
 
 

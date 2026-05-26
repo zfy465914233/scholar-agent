@@ -12,6 +12,7 @@ dependencies = [
     "jsonschema>=4.23,<5",
     "fastmcp>=2.0",
     "PyMuPDF>=1.24.0",
+    "requests>=2.28",
 ]
 
 [project.optional-dependencies]
@@ -45,7 +46,7 @@ where = ["."]
 include = ["scripts*", "scholar_agent*"]
 
 [tool.setuptools.package-data]
-scholar_agent = ["../schemas/**", "../templates/**", "../.scholar.example.json", "../config/**"]
+scholar_agent = ["../schemas/**", "../templates/**", "../.scholar.example.json", "../config/**", "skills/**", "validation/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

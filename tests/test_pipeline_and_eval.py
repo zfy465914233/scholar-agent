@@ -2,21 +2,22 @@
 
 import json
 import subprocess
-import sys
 import unittest
 from pathlib import Path
+import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
-FAKE_HARNESS = ROOT / "tests" / "fake_research_harness.py"
+_ROOT = Path(__file__).resolve().parents[1]
+
+ENGINE = _ROOT / "scholar_agent" / "engine"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
+FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 
 
 def _ensure_index() -> None:
     if INDEX_PATH.exists():
         return
     result = subprocess.run(
-        [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
+        [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(_ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
         capture_output=True,
         text=True,
     )
@@ -33,7 +34,7 @@ class PipelineDryRunTest(unittest.TestCase):
     def test_pipeline_dry_run_local_led(self) -> None:
         result = subprocess.run(
             [
-                sys.executable, str(SCRIPTS / "run_pipeline.py"),
+                sys.executable, str(ENGINE / "run_pipeline.py"),
                 "what is a markov chain",
                 "--mode", "auto",
                 "--index", str(INDEX_PATH),
@@ -56,7 +57,7 @@ class PipelineDryRunTest(unittest.TestCase):
     def test_pipeline_dry_run_web_led(self) -> None:
         result = subprocess.run(
             [
-                sys.executable, str(SCRIPTS / "run_pipeline.py"),
+                sys.executable, str(ENGINE / "run_pipeline.py"),
                 "latest SOTA quantization methods",
                 "--mode", "auto",
                 "--index", str(INDEX_PATH),
@@ -73,7 +74,7 @@ class PipelineDryRunTest(unittest.TestCase):
     def test_pipeline_keep_intermediate(self) -> None:
         result = subprocess.run(
             [
-                sys.executable, str(SCRIPTS / "run_pipeline.py"),
+                sys.executable, str(ENGINE / "run_pipeline.py"),
                 "what is a markov chain",
                 "--mode", "local-led",
                 "--index", str(INDEX_PATH),
@@ -99,7 +100,7 @@ class EvalRunnerTest(unittest.TestCase):
 
     def test_eval_dry_run_all(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "run_eval.py"), "--dry-run"],
+            [sys.executable, str(ENGINE / "run_eval.py"), "--dry-run"],
             capture_output=True,
             text=True,
         )
@@ -114,7 +115,7 @@ class EvalRunnerTest(unittest.TestCase):
 
     def test_eval_dry_run_single_category(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "run_eval.py"), "--dry-run", "--category", "definition"],
+            [sys.executable, str(ENGINE / "run_eval.py"), "--dry-run", "--category", "definition"],
             capture_output=True,
             text=True,
         )
@@ -126,7 +127,7 @@ class EvalRunnerTest(unittest.TestCase):
 
     def test_eval_by_category_breakdown(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "run_eval.py"), "--dry-run"],
+            [sys.executable, str(ENGINE / "run_eval.py"), "--dry-run"],
             capture_output=True,
             text=True,
         )

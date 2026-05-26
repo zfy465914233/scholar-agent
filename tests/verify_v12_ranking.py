@@ -4,18 +4,14 @@ Constructs 10 diverse mock papers with known properties, runs PaperScorer.rank()
 and verifies the ranking order, score spread, dimension behavior, and edge cases.
 """
 
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+_ROOT = Path(__file__).resolve().parents[1]
 
-from academic.scoring import PaperScorer, _CEILING
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine.academic.scoring import PaperScorer, _CEILING
 
 # Reproduce _norm for analysis
 def _norm(v: float) -> float:

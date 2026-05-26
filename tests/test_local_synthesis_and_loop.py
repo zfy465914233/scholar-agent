@@ -3,15 +3,16 @@
 import json
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
+import sys
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-ANSWER_SCHEMA_PATH = ROOT / "schemas" / "answer.schema.json"
-RESEARCH_NOTE_TEMPLATE = ROOT / "templates" / "knowledge.md"
+_ROOT = Path(__file__).resolve().parents[1]
+
+ENGINE = _ROOT / "scholar_agent" / "engine"
+ANSWER_SCHEMA_PATH = _ROOT / "schemas" / "answer.schema.json"
+RESEARCH_NOTE_TEMPLATE = _ROOT / "templates" / "knowledge.md"
 
 
 class LocalAnswerSynthesisTest(unittest.TestCase):
@@ -38,10 +39,10 @@ class LocalAnswerSynthesisTest(unittest.TestCase):
             answer_path.write_text(json.dumps(local_answer))
 
             result = subprocess.run(
-                [sys.executable, str(SCRIPTS / "synthesize_answer.py"),
+                [sys.executable, str(ENGINE / "synthesize_answer.py"),
                  "--prompt-bundle", str(bundle_path),
                  "--local-answer", str(answer_path)],
-                capture_output=True, text=True, cwd=SCRIPTS,
+                capture_output=True, text=True, cwd=ENGINE,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             output = json.loads(result.stdout)
@@ -59,12 +60,12 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
         cls._tmpdir = tempfile.TemporaryDirectory()
         cls.knowledge_root = Path(cls._tmpdir.name) / "knowledge"
         cls.index_path = Path(cls._tmpdir.name) / "indexes" / "local" / "index.json"
-        shutil.copytree(ROOT / "tests" / "fixtures", cls.knowledge_root)
+        shutil.copytree(_ROOT / "tests" / "fixtures", cls.knowledge_root)
 
         # Build an isolated index so tests never rewrite the active project index.
         subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(cls.knowledge_root), "--output", str(cls.index_path)],
-            capture_output=True, text=True, cwd=ROOT,
+            [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(cls.knowledge_root), "--output", str(cls.index_path)],
+            capture_output=True, text=True, cwd=_ROOT,
         )
 
     @classmethod
@@ -86,12 +87,12 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             answer_path.write_text(json.dumps(answer))
 
             result = subprocess.run(
-                [sys.executable, str(SCRIPTS / "close_knowledge_loop.py"),
+                [sys.executable, str(ENGINE / "close_knowledge_loop.py"),
                  "--query", "test loop closing query",
                  "--answer", str(answer_path),
                  "--knowledge-root", str(self.knowledge_root),
                  "--index-output", str(self.index_path)],
-                capture_output=True, text=True, cwd=ROOT,
+                capture_output=True, text=True, cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             self.assertIn("Knowledge card written", result.stderr)
@@ -121,8 +122,8 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
                 pass
             # Reindex without the test card
             subprocess.run(
-                [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, cwd=ROOT,
+                [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
+                capture_output=True, text=True, cwd=_ROOT,
             )
 
     def test_close_loop_card_has_all_sections(self) -> None:
@@ -143,12 +144,12 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             answer_path.write_text(json.dumps(answer))
 
             result = subprocess.run(
-                [sys.executable, str(SCRIPTS / "close_knowledge_loop.py"),
+                [sys.executable, str(ENGINE / "close_knowledge_loop.py"),
                  "--query", "test schema validation query",
                  "--answer", str(answer_path),
                  "--knowledge-root", str(self.knowledge_root),
                  "--index-output", str(self.index_path)],
-                capture_output=True, text=True, cwd=ROOT,
+                capture_output=True, text=True, cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
 
@@ -174,8 +175,8 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             # Clean up
             card_path.unlink()
             subprocess.run(
-                [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, cwd=ROOT,
+                [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
+                capture_output=True, text=True, cwd=_ROOT,
             )
 
     def test_close_loop_warns_on_invalid_answer(self) -> None:
@@ -187,12 +188,12 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             answer_path.write_text(json.dumps(answer))
 
             result = subprocess.run(
-                [sys.executable, str(SCRIPTS / "close_knowledge_loop.py"),
+                [sys.executable, str(ENGINE / "close_knowledge_loop.py"),
                  "--query", "test invalid schema query",
                  "--answer", str(answer_path),
                  "--knowledge-root", str(self.knowledge_root),
                  "--index-output", str(self.index_path)],
-                capture_output=True, text=True, cwd=ROOT,
+                capture_output=True, text=True, cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             self.assertIn("Schema warning", result.stderr)
@@ -208,8 +209,8 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             if card_path and card_path.exists():
                 card_path.unlink()
             subprocess.run(
-                [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, cwd=ROOT,
+                [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
+                capture_output=True, text=True, cwd=_ROOT,
             )
 
 

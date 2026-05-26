@@ -1,14 +1,12 @@
-import sys
 from pathlib import Path
 import unittest
 
+_ROOT = Path(__file__).resolve().parents[1]
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
-from inputs.external_candidates import parse_external_candidate_batch
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine.inputs.external_candidates import parse_external_candidate_batch
 
 
 class ExternalCandidateBatchTest(unittest.TestCase):

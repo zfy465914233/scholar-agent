@@ -1,18 +1,19 @@
 import json
 import subprocess
-import sys
 from pathlib import Path
 import unittest
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 
-ROOT = Path(__file__).resolve().parents[1]
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 
 
 class LocalRetrieveTest(unittest.TestCase):
     def setUp(self) -> None:
-        build_command = [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
-        build_result = subprocess.run(build_command, cwd=ROOT, capture_output=True, text=True)
+        build_command = [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
+        build_result = subprocess.run(build_command, cwd=_ROOT, capture_output=True, text=True)
         if build_result.returncode != 0:
             self.fail(
                 f"failed to build local index for retrieval test: "
@@ -22,14 +23,14 @@ class LocalRetrieveTest(unittest.TestCase):
     def test_local_retrieve_returns_ranked_citation_friendly_results(self) -> None:
         command = [
             sys.executable,
-            "scripts/local_retrieve.py",
+            "scholar_agent/engine/local_retrieve.py",
             "what is a markov chain",
             "--index",
             str(INDEX_PATH),
             "--limit",
             "3",
         ]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
 
         self.assertEqual(
             0,

@@ -2,13 +2,13 @@
 
 import json
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
+_ROOT = Path(__file__).resolve().parents[1]
+
+ENGINE = _ROOT / "scholar_agent" / "engine"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 
 
 class BM25UnitTest(unittest.TestCase):
@@ -17,7 +17,7 @@ class BM25UnitTest(unittest.TestCase):
     def test_bm25_ranks_relevant_docs_higher(self) -> None:
         result = subprocess.run(
             [sys.executable, "-c", """
-from bm25 import BM25
+from scholar_agent.engine.bm25 import BM25
 
 docs = [
     {"doc_id": "a", "search_text": "Markov chains are stochastic processes"},
@@ -30,7 +30,7 @@ import json as _j; print(_j.dumps([r[0] for r in results]))
 """],
             capture_output=True,
             text=True,
-            cwd=SCRIPTS,
+            cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         indices = json.loads(result.stdout.strip())
@@ -40,7 +40,7 @@ import json as _j; print(_j.dumps([r[0] for r in results]))
     def test_bm25_handles_empty_query(self) -> None:
         result = subprocess.run(
             [sys.executable, "-c", """
-from bm25 import BM25
+from scholar_agent.engine.bm25 import BM25
 docs = [{"doc_id": "a", "search_text": "test content"}]
 bm25 = BM25(docs)
 results = bm25.score("")
@@ -48,7 +48,7 @@ print(len(results))
 """],
             capture_output=True,
             text=True,
-            cwd=SCRIPTS,
+            cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())
@@ -56,14 +56,15 @@ print(len(results))
     def test_bm25_handles_empty_corpus(self) -> None:
         result = subprocess.run(
             [sys.executable, "-c", """
-from bm25 import BM25
+from scholar_agent.engine.bm25 import BM25
+import sys
 bm25 = BM25([])
 results = bm25.score("test query")
 print(len(results))
 """],
             capture_output=True,
             text=True,
-            cwd=SCRIPTS,
+            cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())
@@ -75,15 +76,15 @@ class BM25CLIIntegrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
-            capture_output=True, text=True, cwd=ROOT,
+            [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(_ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
+            capture_output=True, text=True, cwd=_ROOT,
         )
 
     def test_bm25_retrieves_example_card(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_retrieve.py"), "what is a markov chain",
+            [sys.executable, str(ENGINE / "local_retrieve.py"), "what is a markov chain",
              "--index", str(INDEX_PATH)],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -95,19 +96,19 @@ class BM25CLIIntegrationTest(unittest.TestCase):
 
     def test_bm25_weight_parameter(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_retrieve.py"), "markov chain",
+            [sys.executable, str(ENGINE / "local_retrieve.py"), "markov chain",
              "--index", str(INDEX_PATH), "--bm25-weight", "0.8"],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
 
     def test_no_embedding_index_falls_back_to_bm25(self) -> None:
         """When embedding index path doesn't exist, should still return BM25 results."""
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_retrieve.py"), "markov chain",
+            [sys.executable, str(ENGINE / "local_retrieve.py"), "markov chain",
              "--index", str(INDEX_PATH),
              "--embedding-index", "/nonexistent/embeddings.json"],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -121,16 +122,16 @@ class BM25ScoreQualityTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_index.py"), "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
-            capture_output=True, text=True, cwd=ROOT,
+            [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(_ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
+            capture_output=True, text=True, cwd=_ROOT,
         )
 
     def test_definition_query_ranks_definition_first(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_retrieve.py"),
+            [sys.executable, str(ENGINE / "local_retrieve.py"),
              "what is a markov chain definition",
              "--index", str(INDEX_PATH), "--limit", "3"],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -138,10 +139,10 @@ class BM25ScoreQualityTest(unittest.TestCase):
 
     def test_scores_decrease_with_rank(self) -> None:
         result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "local_retrieve.py"),
+            [sys.executable, str(ENGINE / "local_retrieve.py"),
              "markov chain stationary distribution",
              "--index", str(INDEX_PATH), "--limit", "5"],
-            capture_output=True, text=True, cwd=SCRIPTS,
+            capture_output=True, text=True, cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)

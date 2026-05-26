@@ -8,18 +8,14 @@ Verifies the _norm function inside PaperScorer._evaluate:
   - Recommendation score sanity
 """
 
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+_ROOT = Path(__file__).resolve().parents[1]
 
-from academic.scoring import PaperScorer, _CEILING
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine.academic.scoring import PaperScorer, _CEILING
 
 # ---------------------------------------------------------------------------
 # Reproduce the _norm function (copied from scoring.py for isolated testing)

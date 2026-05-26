@@ -1,19 +1,20 @@
 import json
 import subprocess
-import sys
 from pathlib import Path
 import unittest
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 
-ROOT = Path(__file__).resolve().parents[1]
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 
 
 class DomainSeedCardsTest(unittest.TestCase):
     def setUp(self) -> None:
         build_result = subprocess.run(
-            [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
-            cwd=ROOT,
+            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            cwd=_ROOT,
             capture_output=True,
             text=True,
         )
@@ -31,14 +32,14 @@ class DomainSeedCardsTest(unittest.TestCase):
     def test_example_cards_are_retrievable(self) -> None:
         command = [
             sys.executable,
-            "scripts/local_retrieve.py",
+            "scholar_agent/engine/local_retrieve.py",
             "Markov chain definition",
             "--index",
             str(INDEX_PATH),
             "--limit",
             "5",
         ]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
         self.assertEqual(0, result.returncode, msg=result.stderr)
 
         payload = json.loads(result.stdout)

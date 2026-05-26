@@ -13,14 +13,12 @@ Covers:
 import importlib
 import json
 import os
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 # Ensure scripts/ is on path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
 
 
 def _reload_module():
@@ -486,11 +484,9 @@ class TestBugFixes(unittest.TestCase):
 
     def test_bugA_slugification_matches_download_paper(self):
         """title_to_filename must produce the same slug as _sanitize_title."""
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
         pa = _reload_module()
 
         # Import _sanitize_title from mcp_server
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
         from mcp_server import _sanitize_title
 
         test_titles = [

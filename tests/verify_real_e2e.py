@@ -14,12 +14,13 @@ Tests:
 
 import json
 import os
-import sys
 import traceback
 from datetime import datetime, timedelta
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 # Ensure project scripts are importable
-sys.path.insert(0, "/Users/zhoufangyi/scholar-agent/scripts")
 
 OUTPUT_DIR = "/tmp/scholar_test_notes"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -48,9 +49,9 @@ def safe_json(obj):
 print_sep("LOADING CONFIG")
 
 # Use default config since no YAML exists
-from academic.arxiv_search import _load_config
+from scholar_agent.engine.academic.arxiv_search import _load_config
 
-config_path = "/Users/zhoufangyi/scholar-agent/config/research_interests.yaml"
+config_path = str(_REPO_ROOT / "config" / "research_interests.yaml")
 if os.path.exists(config_path):
     config = _load_config(config_path)
     print(f"Loaded config from: {config_path}")

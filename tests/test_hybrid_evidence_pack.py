@@ -1,20 +1,21 @@
 import json
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 import unittest
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 
-ROOT = Path(__file__).resolve().parents[1]
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 
 
 class HybridEvidencePackTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scripts/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
-            cwd=ROOT,
+            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            cwd=_ROOT,
             capture_output=True,
             text=True,
         )
@@ -59,7 +60,7 @@ class HybridEvidencePackTest(unittest.TestCase):
             "--local-limit",
             "2",
         ]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
         web_path.unlink(missing_ok=True)
 
         self.assertEqual(

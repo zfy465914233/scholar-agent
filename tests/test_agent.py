@@ -1,28 +1,27 @@
 """Tests for the agent control loop (agent.py)."""
 
 import json
-import sys
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
-FAKE_HARNESS = ROOT / "tests" / "fake_research_harness.py"
+_ROOT = Path(__file__).resolve().parents[1]
+
+ENGINE = _ROOT / "scholar_agent" / "engine"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
+FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 
 # Ensure scripts/ is importable
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
-from agent import DomainAgent, Router, Researcher  # noqa: E402
+from scholar_agent.engine.agent import DomainAgent, Router, Researcher  # noqa: E402
 
 
 def _build_index() -> None:
     """Build the test index once."""
     import subprocess
+import sys
     subprocess.run(
-        [sys.executable, str(SCRIPTS / "local_index.py"),
-         "--knowledge-root", str(ROOT / "tests" / "fixtures"),
+        [sys.executable, str(ENGINE / "local_index.py"),
+         "--knowledge-root", str(_ROOT / "tests" / "fixtures"),
          "--output", str(INDEX_PATH)],
         capture_output=True, text=True,
     )

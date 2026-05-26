@@ -1,21 +1,22 @@
 import json
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 import unittest
+import sys
+
+_ROOT = Path(__file__).resolve().parents[1]
 
 
-ROOT = Path(__file__).resolve().parents[1]
-INDEX_PATH = ROOT / "indexes" / "local" / "index.json"
-FAKE_HARNESS = ROOT / "tests" / "fake_research_harness.py"
+INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
+FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 
 
 class ResearchOrchestratorTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scripts/local_index.py", "--knowledge-root", str(ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
-            cwd=ROOT,
+            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", str(_ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
+            cwd=_ROOT,
             capture_output=True,
             text=True,
         )
@@ -28,14 +29,14 @@ class ResearchOrchestratorTest(unittest.TestCase):
     def test_auto_mode_prefers_web_led_for_latest_queries(self) -> None:
         command = [
             sys.executable,
-            "scripts/orchestrate_research.py",
+            "scholar_agent/engine/orchestrate_research.py",
             "latest markov chain tutorial",
             "--index",
             str(INDEX_PATH),
             "--research-script",
             str(FAKE_HARNESS),
         ]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
 
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -46,12 +47,12 @@ class ResearchOrchestratorTest(unittest.TestCase):
     def test_auto_mode_prefers_local_led_for_definition_queries(self) -> None:
         command = [
             sys.executable,
-            "scripts/orchestrate_research.py",
+            "scholar_agent/engine/orchestrate_research.py",
             "what is a markov chain",
             "--index",
             str(INDEX_PATH),
         ]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
 
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -85,7 +86,7 @@ class ResearchOrchestratorTest(unittest.TestCase):
 
         command = [
             sys.executable,
-            "scripts/orchestrate_research.py",
+            "scholar_agent/engine/orchestrate_research.py",
             "what is a markov chain",
             "--mode",
             "local-led",
@@ -94,7 +95,7 @@ class ResearchOrchestratorTest(unittest.TestCase):
             "--web-evidence",
             str(web_path),
         ]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
         web_path.unlink(missing_ok=True)
 
         self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -130,7 +131,7 @@ class ResearchOrchestratorTest(unittest.TestCase):
 
         command = [
             sys.executable,
-            "scripts/orchestrate_research.py",
+            "scholar_agent/engine/orchestrate_research.py",
             "markov chain overview",
             "--mode",
             "mixed",
@@ -139,7 +140,7 @@ class ResearchOrchestratorTest(unittest.TestCase):
             "--web-evidence",
             str(web_path),
         ]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
         web_path.unlink(missing_ok=True)
 
         self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -151,14 +152,14 @@ class ResearchOrchestratorTest(unittest.TestCase):
     def test_web_led_can_generate_web_evidence_via_harness_script(self) -> None:
         command = [
             sys.executable,
-            "scripts/orchestrate_research.py",
+            "scholar_agent/engine/orchestrate_research.py",
             "latest markov chain tutorial",
             "--index",
             str(INDEX_PATH),
             "--research-script",
             str(FAKE_HARNESS),
         ]
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
 
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)

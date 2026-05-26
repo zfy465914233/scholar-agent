@@ -2,26 +2,23 @@
 
 import json
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+_ROOT = Path(__file__).resolve().parents[1]
 
-import scholar_config
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine import scholar_config
 from mcp_server import list_knowledge, query_knowledge, save_research
+import sys
 
-_TEST_INDEX = ROOT / "indexes" / "local" / "index.json"
-_TEST_KNOWLEDGE = ROOT / "tests" / "fixtures"
+_TEST_INDEX = _ROOT / "indexes" / "local" / "index.json"
+_TEST_KNOWLEDGE = _ROOT / "tests" / "fixtures"
 scholar_config._config_cache = {
     "knowledge_dir": str(_TEST_KNOWLEDGE),
     "index_path": str(_TEST_INDEX),
-    "scholar_dir": str(ROOT),
+    "scholar_dir": str(_ROOT),
 }
 
 
@@ -32,10 +29,10 @@ def tearDownModule() -> None:
 def _build_index() -> None:
     _TEST_INDEX.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        [sys.executable, str(SCRIPTS / "local_index.py"),
-         "--knowledge-root", str(ROOT / "tests" / "fixtures"),
+        [sys.executable, str(ENGINE / "local_index.py"),
+         "--knowledge-root", str(_ROOT / "tests" / "fixtures"),
          "--output", str(_TEST_INDEX)],
-        capture_output=True, text=True, cwd=ROOT,
+        capture_output=True, text=True, cwd=_ROOT,
     )
 
 

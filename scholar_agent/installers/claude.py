@@ -1,4 +1,4 @@
-"""Claude Code MCP config generation."""
+"""Claude Code MCP config generation + skill file installation."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 
 from scholar_agent.installers.common import build_stdio_server
+
+_SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills" / "scholar-agent"
 
 
 _SCOPE_LABELS = {
@@ -24,6 +26,29 @@ def build_user_config_fragment(*, profile: str = "default", toolset: str = "defa
             "scholar-agent": build_stdio_server(profile=profile, toolset=toolset, academic=academic, scholar_home=scholar_home),
         }
     }
+
+
+def install_skill_files() -> dict[str, object]:
+    """Copy bundled skill files into ~/.claude/skills/scholar-agent/."""
+    target = Path.home() / ".claude" / "skills" / "scholar-agent"
+    if not _SKILLS_DIR.exists():
+        return {"status": "skipped", "reason": "bundled_skills_not_found"}
+
+    # Copy everything except __pycache__
+    copied: list[str] = []
+    for src_file in _SKILLS_DIR.rglob("*"):
+        if "__pycache__" in src_file.parts:
+            continue
+        rel = src_file.relative_to(_SKILLS_DIR)
+        dst = target / rel
+        if src_file.is_dir():
+            dst.mkdir(parents=True, exist_ok=True)
+        else:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(src_file), str(dst))
+            copied.append(str(rel))
+
+    return {"status": "ok", "host": "claude", "skill_files": copied, "target": str(target)}
 
 
 def install_user_config(
@@ -54,15 +79,18 @@ def install_user_config(
         "scholar-agent",
         json.dumps(server_payload, ensure_ascii=False),
     ]
-    # add-json is upsert — no need to remove first.  Skipping the
-    # remove-then-add dance avoids leaving the user with no config if add fails.
     completed = _run_claude_command(command, scope=scope, cwd=cwd, check=True)
+
+    # Also install skill files
+    skill_result = install_skill_files()
+
     return {
         "status": "ok",
         "host": "claude",
         "scope": scope,
         "server_name": "scholar-agent",
         "stdout": completed.stdout.strip(),
+        "skills": skill_result,
     }
 
 

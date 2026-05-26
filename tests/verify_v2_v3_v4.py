@@ -11,12 +11,9 @@ import re
 from datetime import datetime, timezone, timedelta
 
 # Ensure project root and scripts/ are importable
-_project = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, _project)
-sys.path.insert(0, os.path.join(_project, "scripts"))
 
-from academic.scoring import PaperScorer
-from academic.arxiv_search import _slugify
+from scholar_agent.engine.academic.scoring import PaperScorer
+from scholar_agent.engine.academic.arxiv_search import _slugify
 
 
 # ========================================================================

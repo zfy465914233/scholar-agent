@@ -2,20 +2,16 @@
 
 import json
 import os
-import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+_ROOT = Path(__file__).resolve().parents[1]
 
-import scholar_config
+ENGINE = _ROOT / "scholar_agent" / "engine"
+
+from scholar_agent.engine import scholar_config  # noqa: F401 — needed for config side effects
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +21,7 @@ import scholar_config
 class TestScoring(unittest.TestCase):
 
     def setUp(self):
-        from academic.scoring import score_papers
+        from scholar_agent.engine.academic.scoring import score_papers
         self.score_papers = score_papers
         self.config = {
             "research_domains": {
@@ -117,7 +113,7 @@ class TestScoring(unittest.TestCase):
 class TestPaperAnalyzer(unittest.TestCase):
 
     def setUp(self):
-        from academic.paper_analyzer import generate_note, title_to_filename
+        from scholar_agent.engine.academic.paper_analyzer import generate_note, title_to_filename
         self.generate_note = generate_note
         self.title_to_filename = title_to_filename
 
@@ -206,13 +202,13 @@ class TestPaperAnalyzer(unittest.TestCase):
 class TestImageExtractor(unittest.TestCase):
 
     def test_discover_source_images_empty_dir(self):
-        from academic.image_extractor import _discover_source_images
+        from scholar_agent.engine.academic.image_extractor import _discover_source_images
         with tempfile.TemporaryDirectory() as tmp:
             figs = _discover_source_images(tmp)
             self.assertEqual(figs, [])
 
     def test_discover_source_images_with_images(self):
-        from academic.image_extractor import _discover_source_images
+        from scholar_agent.engine.academic.image_extractor import _discover_source_images
         with tempfile.TemporaryDirectory() as tmp:
             fig_dir = os.path.join(tmp, "figures")
             os.makedirs(fig_dir)
@@ -243,7 +239,7 @@ class TestImageExtractor(unittest.TestCase):
 class TestNoteLinker(unittest.TestCase):
 
     def test_discover_related_notes_shared_keywords(self):
-        from academic.note_linker import discover_related_notes
+        from scholar_agent.engine.academic.note_linker import discover_related_notes
         paper = {
             "title": "LLM Reasoning",
             "domain_keywords": ["LLM", "reasoning"],
@@ -268,7 +264,7 @@ class TestNoteLinker(unittest.TestCase):
         self.assertIn("Another-LLM-Paper", related)
 
     def test_discover_related_notes_no_self_link(self):
-        from academic.note_linker import discover_related_notes
+        from scholar_agent.engine.academic.note_linker import discover_related_notes
         paper = {
             "title": "My Paper",
             "domain_keywords": ["LLM"],
@@ -280,7 +276,7 @@ class TestNoteLinker(unittest.TestCase):
         self.assertEqual(related, [])
 
     def test_build_keyword_index_extracts_acronyms(self):
-        from academic.note_linker import build_keyword_index
+        from scholar_agent.engine.academic.note_linker import build_keyword_index
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "BLIP-2_Visual_Reasoning.md"
             note.write_text(
@@ -293,7 +289,7 @@ class TestNoteLinker(unittest.TestCase):
             self.assertEqual(index["blip-2"], "BLIP-2_Visual_Reasoning")
 
     def test_apply_wiki_links_skips_frontmatter(self):
-        from academic.note_linker import apply_wiki_links
+        from scholar_agent.engine.academic.note_linker import apply_wiki_links
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "test.md"
             note.write_text(
@@ -311,7 +307,7 @@ class TestNoteLinker(unittest.TestCase):
             self.assertEqual(count, 1)
 
     def test_apply_wiki_links_skips_code_blocks(self):
-        from academic.note_linker import apply_wiki_links
+        from scholar_agent.engine.academic.note_linker import apply_wiki_links
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "test.md"
             note.write_text(
@@ -328,7 +324,7 @@ class TestNoteLinker(unittest.TestCase):
             self.assertIn("[[BLIP_Note|BLIP]]", content)
 
     def test_apply_wiki_links_skips_existing_wikilinks(self):
-        from academic.note_linker import apply_wiki_links
+        from scholar_agent.engine.academic.note_linker import apply_wiki_links
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "test.md"
             note.write_text(
@@ -348,7 +344,7 @@ class TestNoteLinker(unittest.TestCase):
 class TestDailyWorkflow(unittest.TestCase):
 
     def test_get_analyzed_paper_ids_from_frontmatter(self):
-        from academic.daily_workflow import get_analyzed_paper_ids
+        from scholar_agent.engine.academic.daily_workflow import get_analyzed_paper_ids
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "paper1.md"
             note.write_text(
@@ -365,7 +361,7 @@ class TestDailyWorkflow(unittest.TestCase):
             self.assertIn("2401.67890", ids)
 
     def test_filter_already_analyzed(self):
-        from academic.daily_workflow import filter_already_analyzed
+        from scholar_agent.engine.academic.daily_workflow import filter_already_analyzed
         papers = [
             {"arxiv_id": "2401.11111", "title": "A"},
             {"arxiv_id": "2401.22222", "title": "B"},
@@ -378,7 +374,7 @@ class TestDailyWorkflow(unittest.TestCase):
         self.assertEqual(filtered, 2)
 
     def test_build_daily_note_zh_has_frontmatter(self):
-        from academic.daily_workflow import build_daily_note
+        from scholar_agent.engine.academic.daily_workflow import build_daily_note
         with tempfile.TemporaryDirectory() as tmp:
             papers = [
                 {
@@ -399,7 +395,7 @@ class TestDailyWorkflow(unittest.TestCase):
             self.assertIn("TOP", content)
 
     def test_build_daily_note_en(self):
-        from academic.daily_workflow import build_daily_note
+        from scholar_agent.engine.academic.daily_workflow import build_daily_note
         with tempfile.TemporaryDirectory() as tmp:
             papers = [
                 {
@@ -466,7 +462,7 @@ class TestSanitizeTitle(unittest.TestCase):
 
 class TestDownloadArxivPdf(unittest.TestCase):
     def test_caches_existing_pdf(self) -> None:
-        from academic.image_extractor import download_arxiv_pdf
+        from scholar_agent.engine.academic.image_extractor import download_arxiv_pdf
         with tempfile.TemporaryDirectory() as tmp:
             arxiv_id = "2510.99999"
             # Create a dummy PDF
@@ -482,7 +478,7 @@ class TestDownloadArxivPdf(unittest.TestCase):
                 self.assertEqual(b"%PDF-1.4 dummy content", f.read())
 
     def test_creates_output_dir(self) -> None:
-        from academic.image_extractor import download_arxiv_pdf
+        from scholar_agent.engine.academic.image_extractor import download_arxiv_pdf
         with tempfile.TemporaryDirectory() as tmp:
             nested_dir = os.path.join(tmp, "nested", "dir")
             # The function should create the directory
@@ -541,7 +537,7 @@ class TestExtractPdfText(unittest.TestCase):
 
 class TestCheckNoteQuality(unittest.TestCase):
     def test_detects_unfilled_placeholders(self) -> None:
-        from academic.paper_analyzer import check_note_quality
+        from scholar_agent.engine.academic.paper_analyzer import check_note_quality
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "test.md"
             note.write_text(
@@ -556,7 +552,7 @@ class TestCheckNoteQuality(unittest.TestCase):
             self.assertTrue(any("unfilled" in i for i in result["issues"]))
 
     def test_detects_duplicate_sections(self) -> None:
-        from academic.paper_analyzer import check_note_quality
+        from scholar_agent.engine.academic.paper_analyzer import check_note_quality
         with tempfile.TemporaryDirectory() as tmp:
             dup = "A" * 100
             note = Path(tmp) / "test.md"
@@ -571,7 +567,7 @@ class TestCheckNoteQuality(unittest.TestCase):
             self.assertTrue(any("identical" in i for i in result["issues"]))
 
     def test_passes_good_note(self) -> None:
-        from academic.paper_analyzer import check_note_quality
+        from scholar_agent.engine.academic.paper_analyzer import check_note_quality
         with tempfile.TemporaryDirectory() as tmp:
             note = Path(tmp) / "test.md"
             note.write_text(
