@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-ENGINE = _ROOT / "scholar_agent" / "engine"
+ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 from scholar_agent.engine.research_harness import PERSPECTIVES, run_multi_perspective
 from scholar_agent.engine.close_knowledge_loop import check_contradictions

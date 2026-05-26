@@ -8,7 +8,7 @@ import sys
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-ENGINE = _ROOT / "scholar_agent" / "engine"
+ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 

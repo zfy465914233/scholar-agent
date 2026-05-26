@@ -8,7 +8,7 @@ import unittest
 _ROOT = Path(__file__).resolve().parents[1]
 
 
-ENGINE = _ROOT / "scholar_agent" / "engine"
+ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 from scholar_agent.engine.search_providers.base import ProviderResult, SearchCandidate
 from scholar_agent.engine.normalizers.evidence_normalizer import normalize_candidate

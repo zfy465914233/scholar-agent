@@ -38,15 +38,12 @@ Issues = "https://github.com/zfy465914233/scholar-agent/issues"
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-py-modules = ["mcp_server", "setup_mcp"]
-
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["scripts*", "scholar_agent*"]
+where = ["src"]
+include = ["scholar_agent*"]
 
 [tool.setuptools.package-data]
-scholar_agent = ["../schemas/**", "../templates/**", "../.scholar.example.json", "../config/**", "skills/**", "validation/**"]
+scholar_agent = ["../../schemas/**", "../../templates/**", "../../.scholar.example.json", "../../config/**", "skills/**", "validation/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

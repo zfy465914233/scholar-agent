@@ -120,8 +120,7 @@ def _probe_local_score(query: str, index_path: Path | None = None) -> float | No
     if index_path is None or not index_path.exists():
         return None
     try:
-        from local_retrieve import retrieve_bm25
-import sys
+        from scholar_agent.engine.local_retrieve import retrieve_bm25
         payload = json.loads(index_path.read_text(encoding="utf-8"))
         documents = payload.get("documents", [])
         if not documents:

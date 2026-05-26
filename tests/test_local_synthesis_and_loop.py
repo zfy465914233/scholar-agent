@@ -10,7 +10,7 @@ import sys
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-ENGINE = _ROOT / "scholar_agent" / "engine"
+ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 ANSWER_SCHEMA_PATH = _ROOT / "schemas" / "answer.schema.json"
 RESEARCH_NOTE_TEMPLATE = _ROOT / "templates" / "knowledge.md"
 

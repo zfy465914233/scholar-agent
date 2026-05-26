@@ -51,6 +51,39 @@ _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".pdf", ".eps", ".svg"}
 _RASTER_EXTS = {".png", ".jpg", ".jpeg"}
 _NOISE_NAMES = {"logo", "icon", "badge", "banner", "watermark"}
 
+# Keywords for heuristic section classification of images
+_FRAMEWORK_KEYWORDS = {
+    "framework", "architecture", "model", "pipeline", "overview",
+    "system", "flowchart", "diagram", "network", "structure",
+    "schema", "overview", "conceptual", "block", "flow",
+}
+_RESULTS_KEYWORDS = {
+    "result", "comparison", "ablation", "performance", "table",
+    "plot", "accuracy", "benchmark", "curve", "chart",
+    "heatmap", "scatter", "histogram", "confusion", "precision",
+    "recall", "f1", "roc", "loss", "training", "convergence",
+}
+
+
+def _classify_image_section(filename: str, index: int, total: int) -> str:
+    """Classify an image as 'framework' or 'results' using filename + position.
+
+    Priority: filename keyword match > positional fallback.
+    """
+    stem = Path(filename).stem.lower()
+    tokens = set(stem.replace("_", " ").replace("-", " ").split())
+
+    if tokens & _FRAMEWORK_KEYWORDS:
+        return "framework"
+    if tokens & _RESULTS_KEYWORDS:
+        return "results"
+
+    # Positional fallback: first half → framework, second half → results
+    if total <= 1:
+        return "framework"
+    split = (total + 1) // 2
+    return "framework" if index < split else "results"
+
 
 # ---------------------------------------------------------------------------
 # HTTP helper
@@ -282,7 +315,7 @@ def _pull_embedded_images(
 
     # Phase 3: save only the selected images
     result: list[dict[str, Any]] = []
-    for c in top:
+    for idx, c in enumerate(top):
         fname = f"p{c['page']}_img{c['seq']}.{c['ext']}"
         dest = os.path.join(output_dir, fname)
         with open(dest, "wb") as fh:
@@ -295,6 +328,7 @@ def _pull_embedded_images(
             "height": c["height"],
             "format": c["ext"],
             "origin": "pdf-extraction",
+            "section": _classify_image_section(fname, idx, len(top)),
         })
 
     return result
@@ -316,7 +350,8 @@ def extract_paper_images(
     with tempfile.TemporaryDirectory() as scratch:
         # Stage 1: selective source extraction + glob discovery
         if paper_id and _pull_source_tarball(paper_id, scratch):
-            for entry in _discover_source_images(scratch):
+            source_entries = _discover_source_images(scratch)
+            for idx, entry in enumerate(source_entries):
                 dest = os.path.join(output_dir, entry["filename"])
                 shutil.copy2(entry["path"], dest)
                 collected.append({
@@ -325,6 +360,9 @@ def extract_paper_images(
                     "byte_size": os.path.getsize(dest),
                     "format": os.path.splitext(entry["filename"])[1][1:].lower(),
                     "origin": entry.get("origin", "arxiv-tarball"),
+                    "section": _classify_image_section(
+                        entry["filename"], idx, len(source_entries),
+                    ),
                 })
 
         # Stage 2: PDF fallback when source yields too few

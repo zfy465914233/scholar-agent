@@ -8,7 +8,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-ENGINE = _ROOT / "scholar_agent" / "engine"
+ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 from scholar_agent.engine.common import extract_entities, extract_wiki_links, load_json, normalize_date, now_iso, parse_frontmatter, resolve_link_target, safe_slug, slugify, write_json
 

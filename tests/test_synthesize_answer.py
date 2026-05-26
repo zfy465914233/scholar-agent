@@ -15,7 +15,7 @@ import sys
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-ENGINE = _ROOT / "scholar_agent" / "engine"
+ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 SAMPLE_PROMPT_BUNDLE = {
     "system_prompt": "Answer using the provided evidence context.",

@@ -23,6 +23,64 @@ logger = logging.getLogger(__name__)
 # Backward-compatible alias used by note_linker.py
 title_to_filename = sanitize_title
 
+# ---------------------------------------------------------------------------
+# Math depth detection
+# ---------------------------------------------------------------------------
+
+_MATH_HEAVY_DOMAINS = {
+    "运筹优化", "运筹优化与库存规划", "库存规划", "供应链优化",
+    "供应链", "supply-chain", "newsvendor",
+    "统计推断", "概率论", "信息论", "控制论", "优化理论",
+    "计量经济学", "数学物理", "博弈论",
+    "quantitative-finance", "量化金融",
+    "operations-research", "optimization", "control-theory",
+    "statistics", "probability", "information-theory",
+    "econometrics", "mathematical-physics", "game-theory",
+    "bayesian", "reinforcement-learning",
+}
+
+_MATH_HEAVY_KEYWORDS = re.compile(
+    r"(?:derivation|推导|proof|证明|theorem|定理|lemma|引理|proposition|"
+    r"命题|corollary|推论|optimality|最优|convergence|收敛|"
+    r"convex|凸|bound|上界|下界|gradient|梯度|"
+    r"Lagrangian|拉格朗日|KKT|Bellman|贝尔曼|"
+    r"posterior|后验|prior|先验|likelihood|似然|"
+    r"expectation|期望|variance|方差|estimator|估计量|"
+    r"minimiza|maximiza|minimize|maximize|"
+    r"objective function|目标函数|loss function|损失函数|"
+    r"closed.form|解析解|analytical solution)",
+    re.IGNORECASE,
+)
+
+_LATEX_MARKERS = re.compile(
+    r"(?:\$\$.*?\$\\$|\$[^$]+\$|\\begin\{equation|\\end\{equation|"
+    r"\\frac\{|\\sum_|\\int_|\\prod_|\\mathbb\{|\\mathcal\{|\\boldsymbol)",
+    re.DOTALL,
+)
+
+
+def detect_math_depth(abstract: str, domain: str, pdf_text: str = "") -> str:
+    """Detect whether a paper needs heavy, light, or no math treatment.
+
+    Returns one of: "heavy", "light", "none".
+    """
+    text = f"{abstract} {pdf_text[:2000]}"
+
+    domain_match = any(
+        kw in domain.lower() for kw in _MATH_HEAVY_DOMAINS
+    )
+
+    keyword_hits = len(_MATH_HEAVY_KEYWORDS.findall(text))
+    latex_hits = len(_LATEX_MARKERS.findall(text))
+
+    if domain_match and (keyword_hits >= 3 or latex_hits >= 2):
+        return "heavy"
+    if keyword_hits >= 2 or latex_hits >= 1:
+        return "light"
+    if domain_match:
+        return "light"
+    return "none"
+
 
 def _yaml_escape(s: str) -> str:
     """Escape a string for safe embedding in YAML double-quoted values."""
@@ -112,7 +170,7 @@ _ZH_SECTIONS = {
 
 ### 核心思想
 
-<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新，避免公式，让非专业读者也能理解 -->
+{math_instruction_core}
 
 ### 整体框架
 
@@ -125,16 +183,7 @@ _ZH_SECTIONS = {
 
 ### 模块详解
 
-<!-- LLM: 对每个核心模块分别描述：
-#### 模块1：[名称]
-- **功能**：[该模块的作用]
-- **输入/输出**：[数据流]
-- **关键技术**：[使用的技术或算法]
-- **数学公式**：（如有，用 LaTeX：$...$ 行内，$$...$$ 块级）
-
-#### 模块2：[名称]
-...（以此类推）
--->
+{math_instruction_details}
 """,
 
     "experiments": """\
@@ -338,7 +387,7 @@ _EN_SECTIONS = {
 
 ### Core Idea
 
-<!-- LLM: Explain the core innovation in plain language (1-2 paragraphs), avoiding formulas, accessible to non-specialists -->
+{math_instruction_core}
 
 ### Overall Framework
 
@@ -351,16 +400,7 @@ _EN_SECTIONS = {
 
 ### Module Details
 
-<!-- LLM: For each core module:
-#### Module 1: [Name]
-- **Function**: [what it does]
-- **Input/Output**: [data flow]
-- **Key Techniques**: [algorithms or techniques used]
-- **Math** (if any): Use LaTeX — $...$ inline, $$...$$ block
-
-#### Module 2: [Name]
-...(and so on)
--->
+{math_instruction_details}
 """,
 
     "experiments": """\
@@ -532,6 +572,7 @@ def _generate_zh_note(
     related_papers: list[str] | None = None,
     images: list[dict[str, Any]] | None = None,
     local_pdf_rel: str = "",
+    math_depth: str = "none",
 ) -> str:
     """Generate Chinese deep-analysis markdown note."""
     # --- Tags ---
@@ -569,6 +610,63 @@ def _generate_zh_note(
     framework_imgs = _format_image_refs(images, "framework")
     results_imgs = _format_image_refs(images, "results")
 
+    # --- Math instructions based on depth ---
+    if math_depth == "heavy":
+        math_instruction_core = (
+            "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新。"
+            "在通俗解释之后，**必须**给出核心数学公式的直觉解释，"
+            "用 $...$ 行内 LaTeX 引用关键符号。不要跳过数学本质。 -->"
+        )
+        math_instruction_details = (
+            "<!-- LLM: 对每个核心模块分别描述：\n"
+            "#### 模块1：[名称]\n"
+            "- **功能**：[该模块的作用]\n"
+            "- **输入/输出**：[数据流]\n"
+            "- **关键技术**：[使用的技术或算法]\n"
+            "- **数学公式（必须）**：用 LaTeX 完整写出该模块涉及的核心公式。"
+            " $...$ 行内，$$...$$ 块级。必须包含符号定义和推导思路。\n\n"
+            "#### 模块2：[名称]\n"
+            "...（以此类推，每个含数学的模块都必须有公式）\n"
+            "-->\n\n"
+            "### 符号定义\n\n"
+            "<!-- LLM: 用表格统一列出所有核心数学符号：\n"
+            "| 符号 | 含义 | 定义域/约束 |\n"
+            "|:--|:--|:--|\n"
+            "| $\\alpha$ | 学习率 | $\\alpha > 0$ |\n"
+            "| ... | ... | ... |\n"
+            "-->"
+        )
+    elif math_depth == "light":
+        math_instruction_core = (
+            "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新，"
+            "在关键处用 $...$ 行内 LaTeX 标注核心公式 -->"
+        )
+        math_instruction_details = (
+            "<!-- LLM: 对每个核心模块分别描述：\n"
+            "#### 模块1：[名称]\n"
+            "- **功能**：[该模块的作用]\n"
+            "- **输入/输出**：[数据流]\n"
+            "- **关键技术**：[使用的技术或算法]\n"
+            "- **数学公式**：如有，用 LaTeX：$...$ 行内，$$...$$ 块级\n\n"
+            "#### 模块2：[名称]\n"
+            "...（以此类推）\n"
+            "-->"
+        )
+    else:
+        math_instruction_core = (
+            "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新 -->"
+        )
+        math_instruction_details = (
+            "<!-- LLM: 对每个核心模块分别描述：\n"
+            "#### 模块1：[名称]\n"
+            "- **功能**：[该模块的作用]\n"
+            "- **输入/输出**：[数据流]\n"
+            "- **关键技术**：[使用的技术或算法]\n\n"
+            "#### 模块2：[名称]\n"
+            "...（以此类推）\n"
+            "-->"
+        )
+
     # --- Build note ---
     parts: list[str] = []
 
@@ -580,6 +678,7 @@ authors: "{_yaml_escape(authors)}"
 domain: "{domain}"
 date: "{date}"
 status: skeleton
+math_depth: "{math_depth}"
 tags:
 {tags_yaml}
 related_papers:{related_yaml}
@@ -612,6 +711,8 @@ updated: "{date}"
     parts.append(_ZH_SECTIONS["research_questions"])
     parts.append(_ZH_SECTIONS["method"].format(
         framework_images=framework_imgs + "\n" if framework_imgs else "",
+        math_instruction_core=math_instruction_core,
+        math_instruction_details=math_instruction_details,
     ))
     parts.append(_ZH_SECTIONS["experiments"].format(
         results_images=results_imgs + "\n" if results_imgs else "",
@@ -668,6 +769,7 @@ def _generate_en_note(
     related_papers: list[str] | None = None,
     images: list[dict[str, Any]] | None = None,
     local_pdf_rel: str = "",
+    math_depth: str = "none",
 ) -> str:
     """Generate English deep-analysis markdown note."""
     # --- Tags ---
@@ -704,6 +806,64 @@ def _generate_en_note(
     framework_imgs = _format_image_refs(images, "framework")
     results_imgs = _format_image_refs(images, "results")
 
+    # --- Math instructions based on depth ---
+    if math_depth == "heavy":
+        math_instruction_core = (
+            "<!-- LLM: Explain the core innovation in plain language (1-2 paragraphs). "
+            "After the intuitive explanation, you MUST provide the intuition behind "
+            "the core mathematical formulas, using $...$ inline LaTeX for key symbols. "
+            "Do not skip the mathematical essence. -->"
+        )
+        math_instruction_details = (
+            "<!-- LLM: For each core module:\n"
+            "#### Module 1: [Name]\n"
+            "- **Function**: [what it does]\n"
+            "- **Input/Output**: [data flow]\n"
+            "- **Key Techniques**: [algorithms or techniques used]\n"
+            "- **Math (REQUIRED)**: Write the core formulas in LaTeX — $...$ inline, "
+            "$$...$$ block. Must include symbol definitions and derivation logic.\n\n"
+            "#### Module 2: [Name]\n"
+            "...(and so on — every math-heavy module must include formulas)\n"
+            "-->\n\n"
+            "### Symbol Definitions\n\n"
+            "<!-- LLM: List all core mathematical symbols in a table:\n"
+            "| Symbol | Meaning | Domain/Constraint |\n"
+            "|:--|:--|:--|\n"
+            "| $\\alpha$ | Learning rate | $\\alpha > 0$ |\n"
+            "| ... | ... | ... |\n"
+            "-->"
+        )
+    elif math_depth == "light":
+        math_instruction_core = (
+            "<!-- LLM: Explain the core innovation in plain language (1-2 paragraphs), "
+            "annotating key formulas with $...$ inline LaTeX where appropriate -->"
+        )
+        math_instruction_details = (
+            "<!-- LLM: For each core module:\n"
+            "#### Module 1: [Name]\n"
+            "- **Function**: [what it does]\n"
+            "- **Input/Output**: [data flow]\n"
+            "- **Key Techniques**: [algorithms or techniques used]\n"
+            "- **Math** (if any): Use LaTeX — $...$ inline, $$...$$ block\n\n"
+            "#### Module 2: [Name]\n"
+            "...(and so on)\n"
+            "-->"
+        )
+    else:
+        math_instruction_core = (
+            "<!-- LLM: Explain the core innovation in plain language (1-2 paragraphs) -->"
+        )
+        math_instruction_details = (
+            "<!-- LLM: For each core module:\n"
+            "#### Module 1: [Name]\n"
+            "- **Function**: [what it does]\n"
+            "- **Input/Output**: [data flow]\n"
+            "- **Key Techniques**: [algorithms or techniques used]\n\n"
+            "#### Module 2: [Name]\n"
+            "...(and so on)\n"
+            "-->"
+        )
+
     # --- Build note ---
     parts: list[str] = []
 
@@ -715,6 +875,7 @@ authors: "{_yaml_escape(authors)}"
 domain: "{domain}"
 date: "{date}"
 status: skeleton
+math_depth: "{math_depth}"
 tags:
 {tags_yaml}
 related_papers:{related_yaml}
@@ -747,6 +908,8 @@ updated: "{date}"
     parts.append(_EN_SECTIONS["research_questions"])
     parts.append(_EN_SECTIONS["method"].format(
         framework_images=framework_imgs + "\n" if framework_imgs else "",
+        math_instruction_core=math_instruction_core,
+        math_instruction_details=math_instruction_details,
     ))
     parts.append(_EN_SECTIONS["experiments"].format(
         results_images=results_imgs + "\n" if results_imgs else "",
@@ -855,17 +1018,21 @@ def generate_note(
         except ValueError:
             local_pdf_rel = local_pdf_path  # fallback to absolute on cross-drive
 
+    # Detect math depth from abstract and domain
+    paper_abstract = abstract or ""
+    math_depth = detect_math_depth(paper_abstract, domain)
+
     if language == "zh":
         content = _generate_zh_note(
             paper_id, title, authors, domain, date, scores, abstract,
             arxiv_id, affiliations, conference, pdf_url, related, images,
-            local_pdf_rel=local_pdf_rel,
+            local_pdf_rel=local_pdf_rel, math_depth=math_depth,
         )
     else:
         content = _generate_en_note(
             paper_id, title, authors, domain, date, scores, abstract,
             arxiv_id, affiliations, conference, pdf_url, related, images,
-            local_pdf_rel=local_pdf_rel,
+            local_pdf_rel=local_pdf_rel, math_depth=math_depth,
         )
 
     filename = title_to_filename(title)
@@ -1054,8 +1221,10 @@ def _call_llm_anthropic(api_url: str, api_key: str, model: str,
     base = api_url.rstrip("/")
     if base.endswith("/messages"):
         url = base
-    else:
+    elif base.endswith("/v1"):
         url = base + "/messages"
+    else:
+        url = base + "/v1/messages"
     payload = {
         "model": model,
         "max_tokens": 8192,
@@ -1069,7 +1238,7 @@ def _call_llm_anthropic(api_url: str, api_key: str, model: str,
     }
     req = Request(url, data=_json.dumps(payload).encode("utf-8"),
                   headers=headers, method="POST")
-    with urlopen(req, timeout=180) as response:
+    with urlopen(req, timeout=300) as response:
         data = _json.loads(response.read().decode("utf-8"))
 
     # Handle API error responses

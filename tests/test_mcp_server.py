@@ -2,17 +2,17 @@
 
 import json
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-ENGINE = _ROOT / "scholar_agent" / "engine"
+ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 from scholar_agent.engine import scholar_config
-from mcp_server import query_knowledge, save_research, list_knowledge, capture_answer
+from scholar_agent.server import query_knowledge, save_research, list_knowledge, capture_answer
 from scholar_agent.engine.close_knowledge_loop import (
-import sys
     quality_score_answer_data,
     QUALITY_THRESHOLD_SAVE_RESEARCH,
     QUALITY_THRESHOLD_CAPTURE_ANSWER,

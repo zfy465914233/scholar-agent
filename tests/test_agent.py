@@ -6,7 +6,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-ENGINE = _ROOT / "scholar_agent" / "engine"
+ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 
@@ -18,7 +18,7 @@ from scholar_agent.engine.agent import DomainAgent, Router, Researcher  # noqa: 
 def _build_index() -> None:
     """Build the test index once."""
     import subprocess
-import sys
+    import sys
     subprocess.run(
         [sys.executable, str(ENGINE / "local_index.py"),
          "--knowledge-root", str(_ROOT / "tests" / "fixtures"),
