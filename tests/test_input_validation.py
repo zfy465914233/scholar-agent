@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -10,8 +11,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 from scholar_agent.engine import scholar_config
-from mcp_server import list_knowledge, query_knowledge, save_research
-import sys
+from scholar_agent.server import list_knowledge, query_knowledge, save_research
 
 _TEST_INDEX = _ROOT / "indexes" / "local" / "index.json"
 _TEST_KNOWLEDGE = _ROOT / "tests" / "fixtures"

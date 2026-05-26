@@ -11,8 +11,8 @@ Use this skill when you need to decide or review where knowledge cards should be
 
 Always read these files first:
 
-- `schemas/domain_routing_guide.md`
-- `schemas/domain_routing_policy.json`
+- `src/scholar_agent/schemas/domain_routing_guide.md`
+- `src/scholar_agent/schemas/domain_routing_policy.json`
 
 ## Goal
 

@@ -486,8 +486,7 @@ class TestBugFixes(unittest.TestCase):
         """title_to_filename must produce the same slug as _sanitize_title."""
         pa = _reload_module()
 
-        # Import _sanitize_title from mcp_server
-        from mcp_server import _sanitize_title
+        from scholar_agent.server import _sanitize_title
 
         test_titles = [
             "Survey of Data-driven Newsvendor: Unified Analysis and Spectrum",

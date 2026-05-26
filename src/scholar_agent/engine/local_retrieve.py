@@ -99,7 +99,7 @@ def retrieve_hybrid(
     emb_scores: dict[str, float] = {}
     if embedding_index is not None:
         try:
-            from embedding_retrieve import retrieve_by_embedding
+            from scholar_agent.engine.embedding_retrieve import retrieve_by_embedding
             emb_results = retrieve_by_embedding(query, embedding_index, k=limit * 3)
             emb_scores = {doc_id: score for doc_id, score in emb_results}
         except Exception as exc:

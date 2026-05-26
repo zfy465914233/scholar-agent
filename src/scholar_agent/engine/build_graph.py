@@ -4,8 +4,8 @@ Reads the JSON index, extracts nodes (cards) and edges (wiki-links/backlinks),
 and generates a self-contained HTML file using vis.js for visualization.
 
 Usage:
-  python scripts/build_graph.py
-  python scripts/build_graph.py --index indexes/local/index.json --output graph.html
+  python -m scholar_agent.engine.build_graph
+  python -m scholar_agent.engine.build_graph --index indexes/local/index.json --output graph.html
 """
 
 from __future__ import annotations

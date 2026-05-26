@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--research-script",
         type=Path,
-        default=Path("scripts/research_harness.py"),
+        default=Path(__file__).resolve().parent / "research_harness.py",
         help="Script used to generate web evidence when needed.",
     )
     parser.add_argument("--local-limit", type=int, default=5, help="Maximum local evidence items.")

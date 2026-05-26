@@ -204,31 +204,34 @@ PDF 文本和图片提取由 PyMuPDF 处理（`pip install -e .` 会自动安装
 
 ```
 scholar-agent/
-├── mcp_server.py              # MCP 服务器（14 个工具）
-├── setup_mcp.py               # 嵌入已有项目
 ├── pyproject.toml             # 包配置
 ├── .scholar.example.json      # 带注释的配置示例
-├── schemas/                   # 答案 + 证据 JSON schema
-├── templates/                 # 配置与 MCP 注册模板
-├── skills/                    # Claude Code 斜杠命令技能
-├── scholar_agent/             # Python 包（CLI、安装器、配置）
-│   ├── cli.py                 # CLI 入口
+├── src/scholar_agent/
+│   ├── __init__.py
+│   ├── server.py              # MCP 服务器（14 个工具）
+│   ├── cli.py                 # CLI 入口 (scholar-agent 命令)
+│   ├── engine/                # 核心业务逻辑
+│   │   ├── academic/          # 学术研究模块
+│   │   │   ├── arxiv_search.py    # arXiv + Semantic Scholar 搜索
+│   │   │   ├── conf_search.py     # 顶会论文搜索（DBLP）
+│   │   │   ├── paper_analyzer.py  # 深度分析笔记生成
+│   │   │   ├── scoring.py         # 四维论文评分引擎
+│   │   │   ├── image_extractor.py # PDF 图表提取
+│   │   │   ├── note_linker.py     # Wiki-link 发现 + 关键词链接
+│   │   │   └── daily_workflow.py  # 每日推荐管线
+│   │   ├── search_providers/  # 可插拔搜索后端
+│   │   ├── scholar_config.py  # 配置读取
+│   │   ├── local_index.py     # BM25 索引构建
+│   │   ├── local_retrieve.py  # 知识检索
+│   │   ├── close_knowledge_loop.py # 知识卡片构建 + 质量门控
+│   │   └── ...                # 研究、合成、治理、图谱
+│   ├── schemas/               # JSON schemas + 路由策略
+│   ├── templates/             # 论文分析模板（中/英）
+│   ├── config_data/           # 默认配置文件
+│   ├── config/                # 配置加载、路径、用户配置
 │   ├── installers/            # Claude/VSCode/OpenCode 的 MCP 注册
-│   └── config/                # 配置加载、路径、用户配置
-├── scripts/
-│   ├── academic/              # 学术研究模块
-│   │   ├── arxiv_search.py    # arXiv + Semantic Scholar 搜索
-│   │   ├── conf_search.py     # 顶会论文搜索（DBLP）
-│   │   ├── paper_analyzer.py  # 深度分析笔记生成
-│   │   ├── scoring.py         # 四维论文评分引擎
-│   │   ├── image_extractor.py # PDF 图表提取
-│   │   ├── note_linker.py     # Wiki-link 发现 + 关键词链接
-│   │   └── daily_workflow.py  # 每日推荐管线
-│   ├── scholar_config.py       # 配置读取
-│   ├── local_index.py         # BM25 索引构建
-│   ├── local_retrieve.py      # 知识检索
-│   ├── close_knowledge_loop.py # 知识卡片构建 + 质量门控
-│   └── ...                    # 研究、合成、治理、图谱
+│   ├── skills/                # Claude Code 技能定义
+│   └── validation/            # 笔记校验 + 归一化脚本
 └── tests/                     # 266 个测试
 ```
 

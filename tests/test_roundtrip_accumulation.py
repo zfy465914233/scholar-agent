@@ -57,7 +57,7 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             build_index_result = subprocess.run(
                 [
                     sys.executable,
-                    str(_ROOT / "scripts" / "local_index.py"),
+                    str(_ROOT / "src" / "scholar_agent" / "engine" / "local_index.py"),
                     "--knowledge-root",
                     str(knowledge_root),
                     "--output",
@@ -72,7 +72,7 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             answer_result = subprocess.run(
                 [
                     sys.executable,
-                    str(_ROOT / "scripts" / "build_answer_context.py"),
+                    str(_ROOT / "src" / "scholar_agent" / "engine" / "build_answer_context.py"),
                     "what is a markov chain",
                     "--mode",
                     "mixed",
@@ -91,7 +91,7 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             distill_result = subprocess.run(
                 [
                     sys.executable,
-                    str(_ROOT / "scripts" / "distill_knowledge.py"),
+                    str(_ROOT / "src" / "scholar_agent" / "engine" / "distill_knowledge.py"),
                     "--answer-context",
                     str(answer_context_path),
                     "--output",
@@ -106,7 +106,7 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             promote_result = subprocess.run(
                 [
                     sys.executable,
-                    str(_ROOT / "scripts" / "promote_draft.py"),
+                    str(_ROOT / "src" / "scholar_agent" / "engine" / "promote_draft.py"),
                     "--draft",
                     str(draft_path),
                     "--knowledge-root",
@@ -121,7 +121,7 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             rebuild_index_result = subprocess.run(
                 [
                     sys.executable,
-                    str(_ROOT / "scripts" / "local_index.py"),
+                    str(_ROOT / "src" / "scholar_agent" / "engine" / "local_index.py"),
                     "--knowledge-root",
                     str(knowledge_root),
                     "--output",
@@ -136,7 +136,7 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
             retrieve_result = subprocess.run(
                 [
                     sys.executable,
-                    str(_ROOT / "scripts" / "local_retrieve.py"),
+                    str(_ROOT / "src" / "scholar_agent" / "engine" / "local_retrieve.py"),
                     "distilled markov chain",
                     "--index",
                     str(index_path),

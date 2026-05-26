@@ -287,7 +287,7 @@ def write_index(
 
     if build_embedding_index:
         try:
-            from embedding_retrieve import build_embedding_index as build_emb
+            from scholar_agent.engine.embedding_retrieve import build_embedding_index as build_emb
             emb_index = build_emb(payload.get("documents", []))
             valid = sum(1 for e in emb_index["embeddings"] if e)
             total = len(emb_index["doc_ids"])

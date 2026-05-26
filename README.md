@@ -200,31 +200,34 @@ Copy `.env.example` to `.env` and configure:
 
 ```
 scholar-agent/
-├── mcp_server.py              # MCP server (14 tools)
-├── setup_mcp.py               # Embed into existing projects
 ├── pyproject.toml             # Package configuration
 ├── .scholar.example.json      # Example config with comments
-├── schemas/                   # Answer + evidence JSON schemas
-├── templates/                 # Config & MCP templates for setup
-├── skills/                    # Claude Code slash-command skills
-├── scholar_agent/             # Python package (CLI, installers, config)
-│   ├── cli.py                 # CLI entry points
+├── src/scholar_agent/
+│   ├── __init__.py
+│   ├── server.py              # MCP server (14 tools)
+│   ├── cli.py                 # CLI entry point (scholar-agent command)
+│   ├── engine/                # Core business logic
+│   │   ├── academic/          # Academic research modules
+│   │   │   ├── arxiv_search.py    # arXiv + Semantic Scholar search
+│   │   │   ├── conf_search.py     # Conference paper search (DBLP)
+│   │   │   ├── paper_analyzer.py  # Deep-analysis note generation
+│   │   │   ├── scoring.py         # 4-dim paper scoring engine
+│   │   │   ├── image_extractor.py # Figure extraction from PDFs
+│   │   │   ├── note_linker.py     # Wiki-link discovery + keyword linking
+│   │   │   └── daily_workflow.py  # Daily recommendation pipeline
+│   │   ├── search_providers/  # Pluggable search backends
+│   │   ├── scholar_config.py  # Configuration reader
+│   │   ├── local_index.py     # BM25 index builder
+│   │   ├── local_retrieve.py  # Knowledge retrieval
+│   │   ├── close_knowledge_loop.py # Knowledge card builder + quality gates
+│   │   └── ...                # Research, synthesis, governance, graph
+│   ├── schemas/               # JSON schemas + routing policy
+│   ├── templates/             # Paper analysis templates (zh/en)
+│   ├── config_data/           # Default configuration files
+│   ├── config/                # Config loading, paths, profiles
 │   ├── installers/            # MCP registration for Claude/VSCode/OpenCode
-│   └── config/                # Config loading, paths, profiles
-├── scripts/
-│   ├── academic/              # Academic research modules
-│   │   ├── arxiv_search.py    # arXiv + Semantic Scholar search
-│   │   ├── conf_search.py     # Conference paper search (DBLP)
-│   │   ├── paper_analyzer.py  # Deep-analysis note generation
-│   │   ├── scoring.py         # 4-dim paper scoring engine
-│   │   ├── image_extractor.py # Figure extraction from PDFs
-│   │   ├── note_linker.py     # Wiki-link discovery + keyword linking
-│   │   └── daily_workflow.py  # Daily recommendation pipeline
-│   ├── scholar_config.py       # Configuration reader
-│   ├── local_index.py         # BM25 index builder
-│   ├── local_retrieve.py      # Knowledge retrieval
-│   ├── close_knowledge_loop.py # Knowledge card builder + quality gates
-│   └── ...                    # Research, synthesis, governance, graph
+│   ├── skills/                # Claude Code skill definition
+│   └── validation/            # Note validation + normalization scripts
 └── tests/                     # 266 tests
 ```
 

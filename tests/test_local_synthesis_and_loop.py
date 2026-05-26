@@ -11,8 +11,8 @@ import sys
 _ROOT = Path(__file__).resolve().parents[1]
 
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
-ANSWER_SCHEMA_PATH = _ROOT / "schemas" / "answer.schema.json"
-RESEARCH_NOTE_TEMPLATE = _ROOT / "templates" / "knowledge.md"
+ANSWER_SCHEMA_PATH = _ROOT / "src" / "scholar_agent" / "schemas" / "answer.schema.json"
+RESEARCH_NOTE_TEMPLATE = _ROOT / "tests" / "fixtures" / "template-knowledge.md"
 
 
 class LocalAnswerSynthesisTest(unittest.TestCase):

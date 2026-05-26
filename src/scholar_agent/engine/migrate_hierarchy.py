@@ -4,8 +4,8 @@ Moves 14 operations-research sub-folders under a new operations-research/ parent
 updates topic frontmatter on all cards.
 
 Usage:
-    python scripts/migrate_hierarchy.py --knowledge-root ../knowledge --dry-run
-    python scripts/migrate_hierarchy.py --knowledge-root ../knowledge
+    python -m scholar_agent.engine.migrate_hierarchy --knowledge-root ../knowledge --dry-run
+    python -m scholar_agent.engine.migrate_hierarchy --knowledge-root ../knowledge
 """
 
 from __future__ import annotations

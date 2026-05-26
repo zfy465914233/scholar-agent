@@ -66,7 +66,7 @@ class Router:
         Falls back to subprocess if import fails (e.g. when scripts/ not on sys.path).
         """
         try:
-            from orchestrate_research import classify_route
+            from scholar_agent.engine.orchestrate_research import classify_route
             return classify_route(query, index_path)
         except ImportError:
             logger.debug("Falling back to subprocess for route classification")
@@ -110,9 +110,9 @@ class Researcher:
         Uses in-process calls when possible, subprocess fallback otherwise.
         """
         try:
-            from orchestrate_research import classify_route, build_decision, generate_web_evidence
-            from build_evidence_pack import build_evidence_pack
-            from build_answer_context import build_answer_context
+            from scholar_agent.engine.orchestrate_research import classify_route, build_decision, generate_web_evidence
+            from scholar_agent.engine.build_evidence_pack import build_evidence_pack
+            from scholar_agent.engine.build_answer_context import build_answer_context
             import tempfile
 
             warnings: list[str] = []
@@ -179,7 +179,7 @@ class Synthesizer:
         Uses in-process call when possible, subprocess fallback otherwise.
         """
         try:
-            from render_answer_bundle import render_user_prompt, SYSTEM_PROMPT
+            from scholar_agent.engine.render_answer_bundle import render_user_prompt, SYSTEM_PROMPT
             user_prompt = render_user_prompt(answer_context)
             return {
                 "system_prompt": SYSTEM_PROMPT,
@@ -244,7 +244,7 @@ class Curator:
             return None
 
         try:
-            from distill_knowledge import build_markdown
+            from scholar_agent.engine.distill_knowledge import build_markdown
             markdown = build_markdown(answer_context)
             return {"markdown": markdown, "status": "draft"}
         except ImportError:

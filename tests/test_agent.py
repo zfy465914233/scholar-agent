@@ -1,6 +1,7 @@
 """Tests for the agent control loop (agent.py)."""
 
 import json
+import sys
 import unittest
 from pathlib import Path
 
