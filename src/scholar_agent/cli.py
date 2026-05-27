@@ -694,6 +694,7 @@ def _run_init(
     index_built = False
     try:
         from scholar_agent.engine.local_index import write_index
+        from scholar_agent.engine.scholar_config import load_config
         knowledge_dir = Path(load_config()["knowledge_dir"])
         index_path = Path(load_config()["index_path"])
         write_index(knowledge_dir, index_path)
