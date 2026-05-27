@@ -181,7 +181,7 @@ def query_knowledge(query: str, limit: int = 5) -> str:
 
 
 @tool
-def save_research(query: str, answer_json: str, domain: str = "") -> str:
+def save_research(query: str, answer_json: str, domain: str = "", language: str = "zh") -> str:
     """Save structured research results as a knowledge card in the local knowledge base.
 
     The answer_json must conform to schemas/answer.schema.json:
@@ -205,6 +205,8 @@ def save_research(query: str, answer_json: str, domain: str = "") -> str:
     - DO NOT use this tool for trivial facts or one-sentence answers — those are not worth persisting.
     - ALWAYS include a "sources" array with the URLs you referenced during research.
       These are written to the card's frontmatter source_refs for provenance tracking.
+    - When language="zh" (default), the entire answer field MUST be written in Chinese (中文).
+      When language="en", write in English.
 
     When to include visual_aids (auto-judge by topic):
     - Processes / workflows / data flow → mermaid flowchart or sequence diagram
@@ -240,6 +242,8 @@ def save_research(query: str, answer_json: str, domain: str = "") -> str:
         domain: Optional domain/folder name for the card (e.g. "quant-backtest").
             When provided, the card is placed directly under knowledge/<domain>/
             and all auto-routing (AI, folder matching, heuristic) is skipped.
+        language: Language for the card content — "zh" (Chinese, default) or "en" (English).
+            When "zh", the answer, claims, inferences, and all other text fields MUST be in Chinese.
     """
     # Validate query — reject path traversal sequences only
     if not query or not query.strip():
@@ -274,6 +278,8 @@ def save_research(query: str, answer_json: str, domain: str = "") -> str:
 
     # Build knowledge card
     try:
+        # Pass language to answer_data so build_knowledge_card can write it to frontmatter
+        answer_data["language"] = language
         domain_kw = {"domain_override": domain.strip()} if domain and domain.strip() else {}
         card_path = build_knowledge_card(
             query, answer_data, None, get_knowledge_dir(),
@@ -422,7 +428,7 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
 
 
 @tool
-def ingest_source(source: str, title: str = "", tags: str = "") -> str:
+def ingest_source(source: str, title: str = "", tags: str = "", language: str = "zh") -> str:
     """Ingest a URL or raw text into the knowledge base as a draft card.
 
     For URLs: fetches the page content, extracts text, and saves as a card.
@@ -433,8 +439,12 @@ def ingest_source(source: str, title: str = "", tags: str = "") -> str:
 
     Args:
         source: A URL (starting with http:// or https://) or raw text/markdown.
+            When providing raw text and language="zh", the text MUST be in Chinese (中文).
         title: Optional title for the card. Auto-detected from URL pages.
         tags: Comma-separated tags for the card (optional).
+        language: Language for the card content — "zh" (Chinese, default) or "en" (English).
+            When "zh" and providing raw text, ensure the content is in Chinese.
+            For URL sources, the content language is determined by the original page.
     """
     if not source or not source.strip():
         return json.dumps({"error": "source must not be empty"})
@@ -465,6 +475,7 @@ def ingest_source(source: str, title: str = "", tags: str = "") -> str:
         "uncertainty": ["Ingested source — not yet verified or synthesized"],
         "missing_evidence": ["Cross-reference with other sources needed"],
         "suggested_next_steps": ["Verify key claims", "Link to related cards"],
+        "language": language,
     }
 
     if tags and tags.strip():

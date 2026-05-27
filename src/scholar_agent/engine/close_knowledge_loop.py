@@ -39,6 +39,20 @@ DEFAULT_KNOWLEDGE_ROOT = get_knowledge_dir()
 DEFAULT_INDEX = get_index_path()
 
 
+def _normalize_answer_markdown(text: str) -> str:
+    """Ensure markdown headers are on their own lines with proper spacing."""
+    if not text:
+        return text
+    # Ensure ## / ### headers start on their own line (preceded by newline)
+    import re
+    text = re.sub(r'(?<!\n)(#{1,6}\s)', r'\n\1', text)
+    # Ensure a blank line before headers
+    text = re.sub(r'([^\n])\n(#{1,6}\s)', r'\1\n\n\2', text)
+    # Collapse 3+ consecutive blank lines into 2
+    text = re.sub(r'\n{4,}', '\n\n\n', text)
+    return text
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Close the knowledge loop.")
     parser.add_argument("--query", required=True, help="The original query.")
@@ -393,7 +407,7 @@ def build_knowledge_card(
             source_urls = [str(s) for s in ans_sources if s]
 
     # Extract structured content — answer_data itself is the structured dict
-    main_answer = answer_data.get("answer", str(answer_data))
+    main_answer = _normalize_answer_markdown(answer_data.get("answer", str(answer_data)))
     claims = answer_data.get("supporting_claims", [])
     inferences = answer_data.get("inferences", [])
     uncertainties = answer_data.get("uncertainty", [])
@@ -455,11 +469,13 @@ def build_knowledge_card(
         for url in source_urls[:10]:
             lines.append(f"  - {url}")
     card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
+    card_language = answer_data.get("language", "zh")
     lines.extend([
         "confidence: draft",
         f"updated_at: {now}",
         "origin: web_research_with_synthesis",
         "review_status: draft",
+        f'language: "{card_language}"',
         "---",
         "",
         f"# {note_label} — {query}",
@@ -522,16 +538,14 @@ def build_knowledge_card(
     lines.extend(["", "---", ""])
 
     # --- Body sections ---
-    lines.extend([
-        "## 问题",
-        "",
-        query,
-        "",
-        "## 回答",
-        "",
-        main_answer,
-        "",
-    ])
+    lines.append("## 问题")
+    lines.append("")
+    lines.append(query)
+    lines.append("")
+    lines.append("## 回答")
+    lines.append("")
+    lines.extend(main_answer.splitlines())
+    lines.append("")
     _append_visual_aids(lines, va_by_section.get("answer", []))
 
     if claims:
