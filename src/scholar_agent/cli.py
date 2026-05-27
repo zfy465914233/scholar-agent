@@ -489,7 +489,7 @@ def _run_doctor(output_format: str) -> int:
     _print_payload(payload, output_format, text_formatter=_format_doctor_text)
     checks = payload.get("checks", [])
     has_problem = any(
-        not isinstance(c, dict) or not c.get("exists", True)
+        not isinstance(c, dict) or (not c.get("exists", True) and c.get("check") != "index")
         for c in checks
     )
     deps = payload.get("dependencies", {})
@@ -683,7 +683,12 @@ def _run_init(
     # Detect old data directory and suggest migration
     if output_format == "text":
         old_home = Path.home() / "scholar-agent"
-        if old_home.exists() and old_home != user_home:
+        if (
+            old_home.exists()
+            and old_home != user_home
+            and not (old_home / ".git").exists()
+            and not (old_home / "pyproject.toml").exists()
+        ):
             print()
             print(f"Note: Found old data directory at {old_home}/")
             print(f"  New data directory is {user_home}/")

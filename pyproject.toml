@@ -22,6 +22,9 @@ academic = [
 embedding = [
     "sentence-transformers>=3.0",
 ]
+dev = [
+    "pytest>=7.0",
+]
 all = [
     "scholar-agent[academic,embedding]",
 ]
