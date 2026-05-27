@@ -442,7 +442,7 @@ def search_conferences_multi_year(
 
     Returns papers ranked by impact: influentialCitationCount / (years_since + 1).
     """
-    from academic.scoring import PaperScorer
+    from scholar_agent.engine.academic.scoring import PaperScorer
 
     now_year = __import__("datetime").datetime.now().year
     if years is None:

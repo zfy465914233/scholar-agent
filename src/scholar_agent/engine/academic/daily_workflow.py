@@ -105,7 +105,7 @@ def _generate_track_conference(
     max_enrich: int = 100,
 ) -> dict[str, Any]:
     """Track 1: top conference papers ranked by citation impact."""
-    from academic.conf_search import search_conferences_multi_year
+    from scholar_agent.engine.academic.conf_search import search_conferences_multi_year
 
     candidates = search_conferences_multi_year(
         config=config,
@@ -140,8 +140,8 @@ def _generate_track_arxiv_innovation(
     target_date: datetime | None = None,
 ) -> dict[str, Any]:
     """Track 2: arXiv innovation papers — heuristic + LLM batch scoring."""
-    from academic.arxiv_search import query_arxiv
-    from academic.innovation_scorer import innovation_pre_filter, innovation_llm_batch_score
+    from scholar_agent.engine.academic.arxiv_search import query_arxiv
+    from scholar_agent.engine.academic.innovation_scorer import innovation_pre_filter, innovation_llm_batch_score
 
     cats = categories or ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
     now = target_date or datetime.now()
@@ -249,7 +249,7 @@ def _generate_single_track(
     date_str: str,
 ) -> dict[str, Any]:
     """Original single-track behavior (backward compatible)."""
-    from academic.arxiv_search import search_and_score
+    from scholar_agent.engine.academic.arxiv_search import search_and_score
 
     cats = categories or ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
 
