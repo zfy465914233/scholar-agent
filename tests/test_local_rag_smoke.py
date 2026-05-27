@@ -13,7 +13,7 @@ INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 class LocalRagSmokeTest(unittest.TestCase):
     def test_seed_cards_can_be_indexed_and_retrieved_end_to_end(self) -> None:
         index_result = subprocess.run(
-            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
             text=True,
@@ -27,7 +27,7 @@ class LocalRagSmokeTest(unittest.TestCase):
         retrieve_result = subprocess.run(
             [
                 sys.executable,
-                "scholar_agent/engine/local_retrieve.py",
+                "-m", "scholar_agent.engine.local_retrieve",
                 "Markov chain stochastic process",
                 "--index",
                 str(INDEX_PATH),

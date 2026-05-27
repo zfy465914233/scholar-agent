@@ -21,7 +21,7 @@ class MultiPerspectiveTest(unittest.TestCase):
         self.assertIn("contrarian", PERSPECTIVES)
         self.assertTrue(len(PERSPECTIVES) >= 4)
 
-    @patch("research_harness.run_discovery")
+    @patch("scholar_agent.engine.research_harness.run_discovery")
     def test_run_returns_per_perspective(self, mock_discovery: MagicMock) -> None:
         mock_discovery.return_value = [{"url": "https://example.com", "title": "test"}]
         results = run_multi_perspective("transformers", perspectives=["academic", "technical"], limit_per_perspective=1)
@@ -32,7 +32,7 @@ class MultiPerspectiveTest(unittest.TestCase):
             for item in evidence_list:
                 self.assertIn("perspective", item)
 
-    @patch("research_harness.run_discovery")
+    @patch("scholar_agent.engine.research_harness.run_discovery")
     def test_handles_discovery_failure(self, mock_discovery: MagicMock) -> None:
         mock_discovery.side_effect = RuntimeError("No search results")
         results = run_multi_perspective("test", perspectives=["academic"])
@@ -51,7 +51,7 @@ class ContradictionDetectionTest(unittest.TestCase):
         result = check_contradictions("test", [], index_path)
         self.assertEqual([], result)
 
-    @patch("close_knowledge_loop.bm25_retrieve")
+    @patch("scholar_agent.engine.close_knowledge_loop.bm25_retrieve")
     def test_returns_related_cards(self, mock_retrieve: MagicMock) -> None:
         tmpdir = tempfile.mkdtemp()
         index_path = Path(tmpdir) / "index.json"
@@ -66,7 +66,7 @@ class ContradictionDetectionTest(unittest.TestCase):
         self.assertEqual(1, len(result))
         self.assertEqual("card-1", result[0]["card_id"])
 
-    @patch("close_knowledge_loop.bm25_retrieve")
+    @patch("scholar_agent.engine.close_knowledge_loop.bm25_retrieve")
     def test_retrieve_exception_returns_empty(self, mock_retrieve: MagicMock) -> None:
         tmpdir = tempfile.mkdtemp()
         index_path = Path(tmpdir) / "index.json"
@@ -75,7 +75,7 @@ class ContradictionDetectionTest(unittest.TestCase):
         result = check_contradictions("test", [{"claim": "x"}], index_path)
         self.assertEqual([], result)
 
-    @patch("close_knowledge_loop.bm25_retrieve")
+    @patch("scholar_agent.engine.close_knowledge_loop.bm25_retrieve")
     def test_empty_claims_still_triggers(self, mock_retrieve: MagicMock) -> None:
         """Issue 2: contradiction detection should work even without claims."""
         tmpdir = tempfile.mkdtemp()
@@ -88,7 +88,7 @@ class ContradictionDetectionTest(unittest.TestCase):
         self.assertEqual(1, len(result))
         mock_retrieve.assert_called_once()
 
-    @patch("close_knowledge_loop.bm25_retrieve")
+    @patch("scholar_agent.engine.close_knowledge_loop.bm25_retrieve")
     def test_index_path_passthrough(self, mock_retrieve: MagicMock) -> None:
         """Issue 1: build_knowledge_card should forward index_path to check_contradictions."""
         tmpdir = tempfile.mkdtemp()
@@ -96,7 +96,7 @@ class ContradictionDetectionTest(unittest.TestCase):
         custom_index.parent.mkdir(parents=True, exist_ok=True)
         custom_index.write_text("{}", encoding="utf-8")
         mock_retrieve.return_value = {"results": []}
-        from close_knowledge_loop import build_knowledge_card
+        from scholar_agent.engine.close_knowledge_loop import build_knowledge_card
         kr = Path(tmpdir) / "knowledge"
         kr.mkdir()
         answer_data = {"answer": "test answer"}

@@ -14,7 +14,7 @@ INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 class HybridEvidencePackTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
             text=True,
@@ -51,7 +51,7 @@ class HybridEvidencePackTest(unittest.TestCase):
 
         command = [
             sys.executable,
-            "scripts/build_evidence_pack.py",
+            "-m", "scholar_agent.engine.build_evidence_pack",
             "what is a markov chain",
             "--index",
             str(INDEX_PATH),
@@ -60,7 +60,7 @@ class HybridEvidencePackTest(unittest.TestCase):
             "--local-limit",
             "2",
         ]
-        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True)
         web_path.unlink(missing_ok=True)
 
         self.assertEqual(

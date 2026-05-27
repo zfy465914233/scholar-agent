@@ -42,7 +42,7 @@ class LocalAnswerSynthesisTest(unittest.TestCase):
                 [sys.executable, str(ENGINE / "synthesize_answer.py"),
                  "--prompt-bundle", str(bundle_path),
                  "--local-answer", str(answer_path)],
-                capture_output=True, text=True, cwd=ENGINE,
+                capture_output=True, text=True,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             output = json.loads(result.stdout)

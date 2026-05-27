@@ -170,12 +170,12 @@ class CacheHelperTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmpdir = Path(tempfile.mkdtemp())
         # Monkey-patch CACHE_DIR for isolation
-        import cache_helper
+        from scholar_agent.engine import cache_helper
         self._original_cache_dir = cache_helper.CACHE_DIR
         cache_helper.CACHE_DIR = self.tmpdir
 
     def tearDown(self) -> None:
-        import cache_helper
+        from scholar_agent.engine import cache_helper
         cache_helper.CACHE_DIR = self._original_cache_dir
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -200,7 +200,7 @@ class CacheHelperTest(unittest.TestCase):
         self.assertGreater(stats["bytes"], 0)
 
     def test_eviction_on_excess(self) -> None:
-        import cache_helper
+        from scholar_agent.engine import cache_helper
         old_max = cache_helper.MAX_ENTRIES
         cache_helper.MAX_ENTRIES = 3
         try:

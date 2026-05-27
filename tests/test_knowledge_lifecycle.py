@@ -17,7 +17,7 @@ class CardValidationTest(unittest.TestCase):
 
     def test_validate_valid_card(self) -> None:
         code = (
-            "from knowledge_lifecycle import validate_card; "
+            "from scholar_agent.engine.knowledge_lifecycle import validate_card; "
             "issues = validate_card({"
             "'id': 'test', 'title': 'Test', 'type': 'knowledge', "
             "'topic': 'test', 'confidence': 'confirmed', 'updated_at': '2026-04-02', "
@@ -28,14 +28,14 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())
 
     def test_validate_missing_required_field(self) -> None:
         code = (
-            "from knowledge_lifecycle import validate_card; "
+            "from scholar_agent.engine.knowledge_lifecycle import validate_card; "
             "issues = validate_card({'id': 'test'}); "
             "errors = [i for i in issues if i.severity == 'error']; "
             "fields = [e.field for e in errors]; "
@@ -43,7 +43,7 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         fields = json.loads(result.stdout.strip())
@@ -52,7 +52,7 @@ class CardValidationTest(unittest.TestCase):
 
     def test_validate_invalid_type(self) -> None:
         code = (
-            "from knowledge_lifecycle import validate_card; "
+            "from scholar_agent.engine.knowledge_lifecycle import validate_card; "
             "issues = validate_card({"
             "'id': 't', 'title': 'T', 'type': 'invalid', "
             "'topic': 't', 'confidence': 'confirmed', 'updated_at': '2026-04-02'"
@@ -62,7 +62,7 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("1", result.stdout.strip())
@@ -73,14 +73,14 @@ class LifecycleTransitionTest(unittest.TestCase):
 
     def test_valid_transition_draft_to_reviewed(self) -> None:
         code = (
-            "from knowledge_lifecycle import transition_card, LifecycleState; "
+            "from scholar_agent.engine.knowledge_lifecycle import transition_card, LifecycleState; "
             "meta = {'confidence': 'draft', 'review_status': 'draft'}; "
             "updated, error = transition_card(meta, LifecycleState.REVIEWED); "
             "print(error, updated.get('review_status'))"
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         parts = result.stdout.strip().split(" ", 1)
@@ -89,28 +89,28 @@ class LifecycleTransitionTest(unittest.TestCase):
 
     def test_invalid_transition_trusted_to_draft(self) -> None:
         code = (
-            "from knowledge_lifecycle import transition_card, LifecycleState; "
+            "from scholar_agent.engine.knowledge_lifecycle import transition_card, LifecycleState; "
             "meta = {'review_status': 'trusted'}; "
             "updated, error = transition_card(meta, LifecycleState.DRAFT); "
             "print(error is not None)"
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("True", result.stdout.strip())
 
     def test_deprecated_is_terminal(self) -> None:
         code = (
-            "from knowledge_lifecycle import transition_card, LifecycleState; "
+            "from scholar_agent.engine.knowledge_lifecycle import transition_card, LifecycleState; "
             "meta = {'review_status': 'deprecated'}; "
             "updated, error = transition_card(meta, LifecycleState.DRAFT); "
             "print(error is not None)"
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("True", result.stdout.strip())
@@ -121,7 +121,7 @@ class DuplicateDetectionTest(unittest.TestCase):
 
     def test_detect_identical_id(self) -> None:
         code = (
-            "from knowledge_lifecycle import detect_duplicates; "
+            "from scholar_agent.engine.knowledge_lifecycle import detect_duplicates; "
             "cards = ["
             "{'id': 'a', 'title': 'Card A', 'topic': 'test', 'type': 'definition'}, "
             "{'id': 'a', 'title': 'Card A', 'topic': 'test', 'type': 'definition'}"
@@ -131,7 +131,7 @@ class DuplicateDetectionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         parts = result.stdout.strip().split(" ")
@@ -140,7 +140,7 @@ class DuplicateDetectionTest(unittest.TestCase):
 
     def test_no_duplicates(self) -> None:
         code = (
-            "from knowledge_lifecycle import detect_duplicates; "
+            "from scholar_agent.engine.knowledge_lifecycle import detect_duplicates; "
             "cards = ["
             "{'id': 'a', 'title': 'Card A', 'topic': 'math', 'type': 'definition'}, "
             "{'id': 'b', 'title': 'Card B', 'topic': 'physics', 'type': 'method'}"
@@ -150,7 +150,7 @@ class DuplicateDetectionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())

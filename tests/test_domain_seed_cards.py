@@ -13,7 +13,7 @@ INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 class DomainSeedCardsTest(unittest.TestCase):
     def setUp(self) -> None:
         build_result = subprocess.run(
-            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
             text=True,
@@ -32,14 +32,14 @@ class DomainSeedCardsTest(unittest.TestCase):
     def test_example_cards_are_retrievable(self) -> None:
         command = [
             sys.executable,
-            "scholar_agent/engine/local_retrieve.py",
+            "-m", "scholar_agent.engine.local_retrieve",
             "Markov chain definition",
             "--index",
             str(INDEX_PATH),
             "--limit",
             "5",
         ]
-        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True)
         self.assertEqual(0, result.returncode, msg=result.stderr)
 
         payload = json.loads(result.stdout)

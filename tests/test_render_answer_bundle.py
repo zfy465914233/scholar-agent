@@ -14,7 +14,7 @@ FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 class RenderAnswerBundleTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
             text=True,
@@ -29,7 +29,7 @@ class RenderAnswerBundleTest(unittest.TestCase):
         answer_result = subprocess.run(
             [
                 sys.executable,
-                "scholar_agent/engine/build_answer_context.py",
+                "-m", "scholar_agent.engine.build_answer_context",
                 "what is a markov chain",
                 "--mode",
                 "mixed",
@@ -47,7 +47,7 @@ class RenderAnswerBundleTest(unittest.TestCase):
         bundle_result = subprocess.run(
             [
                 sys.executable,
-                "scholar_agent/engine/render_answer_bundle.py",
+                "-m", "scholar_agent.engine.render_answer_bundle",
                 "--answer-context-json",
                 "-",
             ],

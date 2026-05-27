@@ -53,7 +53,7 @@ def _make_draft(path: Path, query: str) -> None:
 class PromoteDraftTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
             text=True,
@@ -76,7 +76,7 @@ class PromoteDraftTest(unittest.TestCase):
             answer_result = subprocess.run(
                 [
                     sys.executable,
-                    "scholar_agent/engine/build_answer_context.py",
+                    "-m", "scholar_agent.engine.build_answer_context",
                     "what is a markov chain",
                     "--mode",
                     "mixed",
@@ -95,7 +95,7 @@ class PromoteDraftTest(unittest.TestCase):
             distill_result = subprocess.run(
                 [
                     sys.executable,
-                    "scholar_agent/engine/distill_knowledge.py",
+                    "-m", "scholar_agent.engine.distill_knowledge",
                     "--answer-context",
                     str(answer_context_path),
                     "--output",
@@ -110,7 +110,7 @@ class PromoteDraftTest(unittest.TestCase):
             promote_result = subprocess.run(
                 [
                     sys.executable,
-                    "scholar_agent/engine/promote_draft.py",
+                    "-m", "scholar_agent.engine.promote_draft",
                     "--draft",
                     str(draft_path),
                     "--knowledge-root",
@@ -154,7 +154,7 @@ class PromoteDraftTest(unittest.TestCase):
                 promote_result = subprocess.run(
                     [
                         sys.executable,
-                        "scholar_agent/engine/promote_draft.py",
+                        "-m", "scholar_agent.engine.promote_draft",
                         "--draft",
                         str(draft_path),
                         "--knowledge-root",

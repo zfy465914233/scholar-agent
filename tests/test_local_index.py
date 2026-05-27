@@ -19,8 +19,8 @@ class LocalIndexTest(unittest.TestCase):
         INDEX_PATH.unlink(missing_ok=True)
 
     def test_local_index_builder_creates_json_index_from_knowledge_cards(self) -> None:
-        command = [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
-        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
+        command = [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
+        result = subprocess.run(command, capture_output=True, text=True)
 
         self.assertEqual(
             0,
@@ -79,11 +79,11 @@ class BuildBacklinksTest(unittest.TestCase):
     def test_index_includes_backlinks(self) -> None:
         """Integration: full index build should populate backlinks."""
         command = [
-            sys.executable, "scholar_agent/engine/local_index.py",
+            sys.executable, "-m", "scholar_agent.engine.local_index",
             "--knowledge-root", "tests/fixtures",
             "--output", str(INDEX_PATH),
         ]
-        subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
+        subprocess.run(command, capture_output=True, text=True)
         payload = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
         for doc in payload["documents"]:
             self.assertIn("backlinks", doc)

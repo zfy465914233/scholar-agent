@@ -21,7 +21,7 @@ def _build_index() -> None:
     import subprocess
     import sys
     subprocess.run(
-        [sys.executable, str(ENGINE / "local_index.py"),
+        [sys.executable, "-m", "scholar_agent.engine.local_index",
          "--knowledge-root", str(_ROOT / "tests" / "fixtures"),
          "--output", str(INDEX_PATH)],
         capture_output=True, text=True,

@@ -103,7 +103,7 @@ class AcademicProviderTest(unittest.TestCase):
         self.assertEqual(merged_urls, evidence_urls)
 
     def test_evidence_schema_exposes_optional_provenance_contract(self) -> None:
-        schema_path = _ROOT / "schemas" / "evidence.schema.json"
+        schema_path = _ROOT / "src" / "scholar_agent" / "schemas" / "evidence.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
         provenance = schema["properties"].get("provenance")

@@ -15,7 +15,7 @@ FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 class AnswerContextTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
             text=True,
@@ -29,7 +29,7 @@ class AnswerContextTest(unittest.TestCase):
     def test_answer_context_separates_direct_support_inference_and_uncertainty(self) -> None:
         command = [
             sys.executable,
-            "scholar_agent/engine/build_answer_context.py",
+            "-m", "scholar_agent.engine.build_answer_context",
             "what is a markov chain",
             "--index",
             str(INDEX_PATH),
@@ -38,7 +38,7 @@ class AnswerContextTest(unittest.TestCase):
             "--research-script",
             str(FAKE_HARNESS),
         ]
-        result = subprocess.run(command, cwd=_ROOT, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True)
 
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -71,7 +71,7 @@ class AnswerContextTest(unittest.TestCase):
             build_index = subprocess.run(
                 [
                     sys.executable,
-                    "scholar_agent/engine/local_index.py",
+                    "-m", "scholar_agent.engine.local_index",
                     "--knowledge-root",
                     str(empty_knowledge),
                     "--output",
@@ -86,7 +86,7 @@ class AnswerContextTest(unittest.TestCase):
             result = subprocess.run(
                 [
                     sys.executable,
-                    "scholar_agent/engine/build_answer_context.py",
+                    "-m", "scholar_agent.engine.build_answer_context",
                     "what is qpe",
                     "--mode",
                     "local-led",
@@ -131,7 +131,7 @@ class AnswerContextTest(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                "scholar_agent/engine/build_answer_context.py",
+                "-m", "scholar_agent.engine.build_answer_context",
                 "what is a markov chain",
                 "--mode",
                 "local-led",

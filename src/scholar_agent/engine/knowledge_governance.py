@@ -25,7 +25,7 @@ from scholar_agent.engine.knowledge_lifecycle import (
 )
 from scholar_agent.engine.common import resolve_link_target
 
-DEFAULT_KNOWLEDGE_ROOT = ROOT / "knowledge"
+DEFAULT_KNOWLEDGE_ROOT = Path.cwd() / "knowledge"
 
 
 def cmd_validate(knowledge_root: Path, verbose: bool = False) -> int:

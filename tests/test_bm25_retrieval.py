@@ -85,7 +85,7 @@ class BM25CLIIntegrationTest(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(ENGINE / "local_retrieve.py"), "what is a markov chain",
              "--index", str(INDEX_PATH)],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -99,7 +99,7 @@ class BM25CLIIntegrationTest(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(ENGINE / "local_retrieve.py"), "markov chain",
              "--index", str(INDEX_PATH), "--bm25-weight", "0.8"],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
 
@@ -109,7 +109,7 @@ class BM25CLIIntegrationTest(unittest.TestCase):
             [sys.executable, str(ENGINE / "local_retrieve.py"), "markov chain",
              "--index", str(INDEX_PATH),
              "--embedding-index", "/nonexistent/embeddings.json"],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -132,7 +132,7 @@ class BM25ScoreQualityTest(unittest.TestCase):
             [sys.executable, str(ENGINE / "local_retrieve.py"),
              "what is a markov chain definition",
              "--index", str(INDEX_PATH), "--limit", "3"],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -143,7 +143,7 @@ class BM25ScoreQualityTest(unittest.TestCase):
             [sys.executable, str(ENGINE / "local_retrieve.py"),
              "markov chain stationary distribution",
              "--index", str(INDEX_PATH), "--limit", "5"],
-            capture_output=True, text=True, cwd=ENGINE,
+            capture_output=True, text=True,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)

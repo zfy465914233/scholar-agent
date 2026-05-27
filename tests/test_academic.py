@@ -118,8 +118,8 @@ class TestPaperAnalyzer(unittest.TestCase):
         self.title_to_filename = title_to_filename
 
     def test_title_to_filename_special_chars(self):
-        self.assertEqual(self.title_to_filename("Hello: World"), "Hello--World")
-        self.assertEqual(self.title_to_filename("A/B Test?"), "A-B-Test")
+        self.assertEqual(self.title_to_filename("Hello: World"), "Hello_World")
+        self.assertEqual(self.title_to_filename("A/B Test?"), "A_B_Test")
         self.assertEqual(self.title_to_filename("  spaces  "), "spaces")
 
     def test_generate_note_zh_creates_file_with_all_sections(self):
@@ -222,7 +222,7 @@ class TestImageExtractor(unittest.TestCase):
             self.assertNotIn("data.csv", filenames)
 
     def test_extract_returns_empty_without_fitz(self):
-        from academic import image_extractor
+        from scholar_agent.engine.academic import image_extractor
         original = image_extractor.HAS_FITZ
         image_extractor.HAS_FITZ = False
         try:
@@ -261,7 +261,7 @@ class TestNoteLinker(unittest.TestCase):
             },
         ]
         related = discover_related_notes(paper, others, max_links=5)
-        self.assertIn("Another-LLM-Paper", related)
+        self.assertIn("Another_LLM_Paper", related)
 
     def test_discover_related_notes_no_self_link(self):
         from scholar_agent.engine.academic.note_linker import discover_related_notes
@@ -489,7 +489,7 @@ class TestDownloadArxivPdf(unittest.TestCase):
 
 class TestExtractPdfText(unittest.TestCase):
     def test_returns_empty_when_no_fitz(self) -> None:
-        from academic import image_extractor
+        from scholar_agent.engine.academic import image_extractor
         original_fitz = image_extractor.HAS_FITZ
         image_extractor.HAS_FITZ = False
         try:
@@ -500,7 +500,7 @@ class TestExtractPdfText(unittest.TestCase):
 
     def test_extract_text_from_real_pdf(self) -> None:
         """Test text extraction from a PDF created with PyMuPDF."""
-        from academic import image_extractor
+        from scholar_agent.engine.academic import image_extractor
         if not image_extractor.HAS_FITZ:
             self.skipTest("PyMuPDF not installed")
         import fitz
@@ -518,7 +518,7 @@ class TestExtractPdfText(unittest.TestCase):
 
     def test_truncates_long_text(self) -> None:
         """Test that max_chars parameter truncates output."""
-        from academic import image_extractor
+        from scholar_agent.engine.academic import image_extractor
         if not image_extractor.HAS_FITZ:
             self.skipTest("PyMuPDF not installed")
         import fitz

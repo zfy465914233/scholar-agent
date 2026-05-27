@@ -14,7 +14,7 @@ FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 class DistillKnowledgeTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "scholar_agent/engine/local_index.py", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
             text=True,
@@ -33,7 +33,7 @@ class DistillKnowledgeTest(unittest.TestCase):
             answer_result = subprocess.run(
                 [
                     sys.executable,
-                    "scholar_agent/engine/build_answer_context.py",
+                    "-m", "scholar_agent.engine.build_answer_context",
                     "what is a markov chain",
                     "--mode",
                     "mixed",
@@ -52,7 +52,7 @@ class DistillKnowledgeTest(unittest.TestCase):
             distill_result = subprocess.run(
                 [
                     sys.executable,
-                    "scholar_agent/engine/distill_knowledge.py",
+                    "-m", "scholar_agent.engine.distill_knowledge",
                     "--answer-context",
                     str(answer_context_path),
                     "--output",

@@ -23,7 +23,7 @@ from unittest.mock import MagicMock, patch
 
 def _reload_module():
     """Reload paper_analyzer to pick up env var changes."""
-    import academic.paper_analyzer as pa
+    import scholar_agent.engine.academic.paper_analyzer as pa
     importlib.reload(pa)
     return pa
 
@@ -152,7 +152,7 @@ class TestCallLlmAnthropic(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             result = pa._call_llm_anthropic(
                 "https://api.anthropic.com", "key", "model", "sys", "user"
             )
@@ -168,7 +168,7 @@ class TestCallLlmAnthropic(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(RuntimeError) as ctx:
                 pa._call_llm_anthropic(
                     "https://api.anthropic.com", "key", "model", "sys", "user"
@@ -185,7 +185,7 @@ class TestCallLlmAnthropic(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(KeyError) as ctx:
                 pa._call_llm_anthropic(
                     "https://proxy.example.com", "key", "model", "sys", "user"
@@ -205,7 +205,7 @@ class TestCallLlmAnthropic(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             result = pa._call_llm_anthropic(
                 "https://api.anthropic.com", "key", "model", "sys", "user"
             )
@@ -224,7 +224,7 @@ class TestCallLlmOpenai(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             result = pa._call_llm_openai(
                 "https://api.openai.com/v1", "key", "model", "sys", "user"
             )
@@ -240,7 +240,7 @@ class TestCallLlmOpenai(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(RuntimeError) as ctx:
                 pa._call_llm_openai(
                     "https://api.openai.com/v1", "key", "model", "sys", "user"
@@ -257,7 +257,7 @@ class TestCallLlmOpenai(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(KeyError) as ctx:
                 pa._call_llm_openai(
                     "https://proxy.example.com/v1", "key", "model", "sys", "user"
@@ -274,7 +274,7 @@ class TestCallLlmOpenai(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response) as mock_urlopen:
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response) as mock_urlopen:
             pa._call_llm_openai(
                 "https://api.example.com/v1/chat/completions", "key", "model", "sys", "user"
             )
@@ -373,7 +373,7 @@ class TestFillNoteFromPdf(unittest.TestCase):
             f.write("---\nstatus: skeleton\n---\n\n## Test\n<!-- LLM: fill this -->\n")
             f.flush()
 
-            with patch("academic.paper_analyzer.urlopen", side_effect=mock_urlopen):
+            with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", side_effect=mock_urlopen):
                 result = pa.fill_note_from_pdf(f.name, "pdf text")
 
         self.assertEqual(result["status"], "ok")
@@ -469,7 +469,7 @@ class TestIntegration(unittest.TestCase):
             mock_response.__enter__ = lambda s: s
             mock_response.__exit__ = lambda s, *a: None
 
-            with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+            with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
                 result = pa.fill_note_from_pdf(note_path, "fake pdf text for testing")
 
             self.assertEqual(result["status"], "ok")
@@ -513,7 +513,7 @@ class TestBugFixes(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response):
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(KeyError) as ctx:
                 pa._call_llm_openai(
                     "https://api.openai.com/v1", "key", "model", "sys", "user"
@@ -530,7 +530,7 @@ class TestBugFixes(unittest.TestCase):
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
-        with patch("academic.paper_analyzer.urlopen", return_value=mock_response) as mock_urlopen:
+        with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response) as mock_urlopen:
             pa._call_llm_anthropic(
                 "https://api.anthropic.com/v1/messages", "key", "model", "sys", "user"
             )

@@ -171,7 +171,7 @@ def run_evaluation(cases: list[BenchmarkCase], dry_run: bool = False) -> dict:
     route_correct = sum(1 for r in results if r["scores"]["route_correct"])
     retrieval_hit = sum(1 for r in results if r["scores"]["retrieval_hit"])
     min_citations_met = sum(1 for r in results if r["scores"]["min_citations_met"])
-    answer_present = sum(1 for r in results if r["scores"]["answer_present"])
+    answer_present = sum(1 for r in results if r["scores"].get("answer_present", False))
     errors = sum(1 for r in results if r["status"] == "error")
 
     # Per-category breakdown
