@@ -451,17 +451,17 @@ def build_knowledge_card(
         section = va.get("after_section") or None
         va_by_section.setdefault(section, []).append(va)
 
-    # Build frontmatter — json.dumps produces valid YAML double-quoted strings
+    # Build frontmatter — use ensure_ascii=False to preserve Chinese characters
     lines = [
         "---",
-        f"id: {json.dumps(card_id)}",
-        f"title: {json.dumps(f'{note_label} — {query}')}",
+        f"id: {json.dumps(card_id, ensure_ascii=False)}",
+        f"title: {json.dumps(f'{note_label} — {query}', ensure_ascii=False)}",
         f"type: {card_type}",
         f"domain: {major_domain}",
         "tags:",
     ]
     if topic:
-        lines.insert(len(lines) - 1, f"topic: {json.dumps(topic)}")
+        lines.insert(len(lines) - 1, f"topic: {json.dumps(topic, ensure_ascii=False)}")
     for tag in base_tags:
         lines.append(f"  - {tag}")
     if source_urls:

@@ -108,6 +108,14 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
         key, value = line.split(":", 1)
         key = key.strip()
         value = value.strip().strip("'\"")
+        # Decode \uXXXX unicode escapes (from json.dumps with ensure_ascii)
+        if value and "\\u" in value:
+            import re
+            value = re.sub(
+                r'\\u([0-9a-fA-F]{4})',
+                lambda m: chr(int(m.group(1), 16)),
+                value,
+            )
 
         if not value:
             current_key = key
