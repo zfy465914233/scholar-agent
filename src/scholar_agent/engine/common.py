@@ -57,12 +57,13 @@ def get_package_data_path(*parts: str) -> Path:
     """Return a path to a bundled data file within the scholar_agent package.
 
     Looks for the file at ``_PKG_DATA_DIR / parts`` first (pip-installed),
-    then falls back to ``get_repo_root() / parts`` (development mode).
+    then falls back to ``get_repo_root() / "src" / "scholar_agent" / parts``
+    (development mode with src layout).
     """
     pkg_path = _PKG_DATA_DIR.joinpath(*parts)
     if pkg_path.exists():
         return pkg_path
-    return get_repo_root().joinpath(*parts)
+    return get_repo_root().joinpath("src", "scholar_agent", *parts)
 
 
 # ── Frontmatter parsing ────────────────────────────────────────────

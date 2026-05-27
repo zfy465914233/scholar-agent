@@ -25,4 +25,4 @@ def fixtures_dir() -> Path:
 
 @pytest.fixture
 def schemas_dir() -> Path:
-    return ROOT / "schemas"
+    return ROOT / "src" / "scholar_agent" / "schemas"

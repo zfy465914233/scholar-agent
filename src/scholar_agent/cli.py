@@ -698,8 +698,8 @@ def _run_init(
         index_path = Path(load_config()["index_path"])
         write_index(knowledge_dir, index_path)
         index_built = True
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"  Warning: index build skipped ({exc})")
 
     # Step 3: Register MCP with host(s)
     register_results: list[dict[str, object]] = []

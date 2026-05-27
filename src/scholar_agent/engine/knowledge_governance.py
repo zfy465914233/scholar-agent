@@ -24,8 +24,9 @@ from scholar_agent.engine.knowledge_lifecycle import (
     VALID_TRANSITIONS,
 )
 from scholar_agent.engine.common import resolve_link_target
+from scholar_agent.engine.scholar_config import get_knowledge_dir
 
-DEFAULT_KNOWLEDGE_ROOT = Path.cwd() / "knowledge"
+DEFAULT_KNOWLEDGE_ROOT = get_knowledge_dir()
 
 
 def cmd_validate(knowledge_root: Path, verbose: bool = False) -> int:

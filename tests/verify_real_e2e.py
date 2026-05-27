@@ -20,8 +20,6 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-# Ensure project scripts are importable
-
 OUTPUT_DIR = "/tmp/scholar_test_notes"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -51,7 +49,7 @@ print_sep("LOADING CONFIG")
 # Use default config since no YAML exists
 from scholar_agent.engine.academic.arxiv_search import _load_config
 
-config_path = str(_REPO_ROOT / "config" / "research_interests.yaml")
+config_path = str(_ROOT / "src" / "scholar_agent" / "config_data" / "config.yaml")
 if os.path.exists(config_path):
     config = _load_config(config_path)
     print(f"Loaded config from: {config_path}")
@@ -71,8 +69,8 @@ for domain, dcfg in config.get("research_domains", {}).items():
 print_sep("TEST A: arXiv SEARCH + SCORING")
 
 try:
-    from academic.arxiv_search import query_arxiv
-    from academic.scoring import score_papers
+    from scholar_agent.engine.academic.arxiv_search import query_arxiv
+    from scholar_agent.engine.academic.scoring import score_papers
 
     now = datetime.now()
     week_ago = now - timedelta(days=7)
@@ -131,7 +129,7 @@ except Exception as e:
 print_sep("TEST B: SEMANTIC SCHOLAR SEARCH")
 
 try:
-    from academic.arxiv_search import query_semantic_scholar
+    from scholar_agent.engine.academic.arxiv_search import query_semantic_scholar
 
     now = datetime.now()
     three_months_ago = now - timedelta(days=90)
@@ -185,7 +183,7 @@ if not paper_for_note:
     print(f"Using fallback paper (no arXiv results for note generation)")
 
 try:
-    from academic.paper_analyzer import generate_note, check_note_quality
+    from scholar_agent.engine.academic.paper_analyzer import generate_note, check_note_quality
 
     print(f"Generating Chinese note for: {paper_for_note.get('title', 'N/A')[:100]}")
     zh_note_path = generate_note(
@@ -290,7 +288,7 @@ except Exception as e:
 print_sep("TEST E: CONFERENCE SEARCH (DBLP)")
 
 try:
-    from academic.conf_search import gather_venue_papers
+    from scholar_agent.engine.academic.conf_search import gather_venue_papers
 
     print("Searching NeurIPS 2024 via DBLP (max 5 papers)...")
     conf_results = gather_venue_papers(2024, venues=["NeurIPS"], max_per_venue=5)
@@ -317,7 +315,7 @@ except Exception as e:
 print_sep("TEST F: FULL SEARCH + SCORE PIPELINE")
 
 try:
-    from academic.arxiv_search import search_and_score
+    from scholar_agent.engine.academic.arxiv_search import search_and_score
 
     print("Running full pipeline: arXiv recent + hot papers, categories=cs.AI+cs.LG, max=10, top=5")
     print("(This may take 30-60 seconds due to S2 API calls...)")
