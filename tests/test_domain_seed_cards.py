@@ -16,7 +16,7 @@ class DomainSeedCardsTest(unittest.TestCase):
             [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         if build_result.returncode != 0:
             self.fail(
@@ -39,7 +39,7 @@ class DomainSeedCardsTest(unittest.TestCase):
             "--limit",
             "5",
         ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(0, result.returncode, msg=result.stderr)
 
         payload = json.loads(result.stdout)

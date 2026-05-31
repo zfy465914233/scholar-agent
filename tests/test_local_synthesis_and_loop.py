@@ -42,7 +42,7 @@ class LocalAnswerSynthesisTest(unittest.TestCase):
                 [sys.executable, str(ENGINE / "synthesize_answer.py"),
                  "--prompt-bundle", str(bundle_path),
                  "--local-answer", str(answer_path)],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8",
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             output = json.loads(result.stdout)
@@ -65,7 +65,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
         # Build an isolated index so tests never rewrite the active project index.
         subprocess.run(
             [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(cls.knowledge_root), "--output", str(cls.index_path)],
-            capture_output=True, text=True, cwd=_ROOT,
+            capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
         )
 
     @classmethod
@@ -92,7 +92,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
                  "--answer", str(answer_path),
                  "--knowledge-root", str(self.knowledge_root),
                  "--index-output", str(self.index_path)],
-                capture_output=True, text=True, cwd=_ROOT,
+                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             self.assertIn("Knowledge card written", result.stderr)
@@ -123,7 +123,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             # Reindex without the test card
             subprocess.run(
                 [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, cwd=_ROOT,
+                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
             )
 
     def test_close_loop_card_has_all_sections(self) -> None:
@@ -149,7 +149,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
                  "--answer", str(answer_path),
                  "--knowledge-root", str(self.knowledge_root),
                  "--index-output", str(self.index_path)],
-                capture_output=True, text=True, cwd=_ROOT,
+                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
 
@@ -176,7 +176,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             card_path.unlink()
             subprocess.run(
                 [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, cwd=_ROOT,
+                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
             )
 
     def test_close_loop_warns_on_invalid_answer(self) -> None:
@@ -193,7 +193,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
                  "--answer", str(answer_path),
                  "--knowledge-root", str(self.knowledge_root),
                  "--index-output", str(self.index_path)],
-                capture_output=True, text=True, cwd=_ROOT,
+                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             self.assertIn("Schema warning", result.stderr)
@@ -210,7 +210,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
                 card_path.unlink()
             subprocess.run(
                 [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, cwd=_ROOT,
+                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
             )
 
 

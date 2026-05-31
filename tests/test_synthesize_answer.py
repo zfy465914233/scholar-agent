@@ -46,7 +46,7 @@ def _run_script(args: list[str], stdin_data: str | None = None) -> subprocess.Co
     return subprocess.run(
         [sys.executable, str(ENGINE / "synthesize_answer.py")] + args,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8",
         cwd=ENGINE,
         input=stdin_data,
     )

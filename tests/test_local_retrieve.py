@@ -13,7 +13,7 @@ INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 class LocalRetrieveTest(unittest.TestCase):
     def setUp(self) -> None:
         build_command = [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
-        build_result = subprocess.run(build_command, capture_output=True, text=True)
+        build_result = subprocess.run(build_command, capture_output=True, text=True, encoding="utf-8")
         if build_result.returncode != 0:
             self.fail(
                 f"failed to build local index for retrieval test: "
@@ -30,7 +30,7 @@ class LocalRetrieveTest(unittest.TestCase):
             "--limit",
             "3",
         ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
 
         self.assertEqual(
             0,

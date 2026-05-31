@@ -71,6 +71,7 @@ def _run(script: str, args: list[str], stdin_data: str | None = None) -> subproc
         [sys.executable, str(ENGINE_DIR / script)] + args,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         input=stdin_data,
     )
     if result.returncode != 0:
@@ -160,6 +161,7 @@ def main() -> int:
             [sys.executable, str(ENGINE_DIR / "local_index.py"), "--output", str(args.index)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
         if build_result.returncode != 0:
             logger.error("Failed to build index: %s", build_result.stderr)

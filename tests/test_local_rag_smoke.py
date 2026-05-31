@@ -16,7 +16,7 @@ class LocalRagSmokeTest(unittest.TestCase):
             [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         self.assertEqual(
             0,
@@ -36,7 +36,7 @@ class LocalRagSmokeTest(unittest.TestCase):
             ],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         self.assertEqual(
             0,

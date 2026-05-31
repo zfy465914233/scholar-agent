@@ -50,7 +50,7 @@ def _build_index() -> None:
          "--knowledge-root", str(_TEST_KNOWLEDGE),
          "--full-rebuild",
          "--output", str(_TEST_INDEX)],
-        capture_output=True, text=True, cwd=_ROOT,
+        capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
     )
 
 

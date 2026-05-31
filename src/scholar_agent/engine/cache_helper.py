@@ -51,12 +51,12 @@ def get(url: str, ttl: int = DEFAULT_TTL) -> Optional[str]:
     if not meta_path.exists() or not content_path.exists():
         return None
     try:
-        meta = json.loads(meta_path.read_text())
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None  # corrupted cache entry
     if time.time() - meta.get("ts", 0) > ttl:
         return None  # expired
-    return content_path.read_text()
+    return content_path.read_text(encoding="utf-8")
 
 
 def put(url: str, markdown: str) -> Path:
@@ -66,8 +66,8 @@ def put(url: str, markdown: str) -> Path:
     k = _key(url)
     meta_path = CACHE_DIR / f"{k}.meta.json"
     content_path = CACHE_DIR / f"{k}.md"
-    meta_path.write_text(json.dumps({"url": url, "ts": time.time()}))
-    content_path.write_text(markdown)
+    meta_path.write_text(json.dumps({"url": url, "ts": time.time()}), encoding="utf-8")
+    content_path.write_text(markdown, encoding="utf-8")
     return content_path
 
 

@@ -17,7 +17,7 @@ class RenderAnswerBundleTest(unittest.TestCase):
             [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -40,7 +40,7 @@ class RenderAnswerBundleTest(unittest.TestCase):
             ],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         self.assertEqual(0, answer_result.returncode, msg=answer_result.stderr)
 
@@ -54,7 +54,7 @@ class RenderAnswerBundleTest(unittest.TestCase):
             cwd=_ROOT,
             input=answer_result.stdout,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         self.assertEqual(0, bundle_result.returncode, msg=bundle_result.stderr)
 

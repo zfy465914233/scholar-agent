@@ -97,7 +97,7 @@ def _build_wheel_artifact(
     build_command.append(str(source_path))
 
     try:
-        build_completed = subprocess.run(build_command, check=True, capture_output=True, text=True)
+        build_completed = subprocess.run(build_command, check=True, capture_output=True, text=True, encoding="utf-8")
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
             f"pip wheel build failed (exit {exc.returncode}):\n{exc.stderr or exc.stdout}"
@@ -133,6 +133,7 @@ def _load_pipx_list(pipx_command_prefix: list[str]) -> dict[str, object] | None:
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
         )
     except subprocess.CalledProcessError:
         return None
@@ -325,13 +326,13 @@ def install_with_pipx(
             uninstall_completed: subprocess.CompletedProcess[str] | None = None
             if uninstall_command is not None:
                 try:
-                    uninstall_completed = subprocess.run(uninstall_command, check=True, capture_output=True, text=True)
+                    uninstall_completed = subprocess.run(uninstall_command, check=True, capture_output=True, text=True, encoding="utf-8")
                 except subprocess.CalledProcessError as exc:
                     raise RuntimeError(
                         f"pipx uninstall failed (exit {exc.returncode}):\n{exc.stderr or exc.stdout}"
                     ) from exc
             try:
-                install_completed = subprocess.run(install_command, check=True, capture_output=True, text=True)
+                install_completed = subprocess.run(install_command, check=True, capture_output=True, text=True, encoding="utf-8")
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(
                     f"pipx install failed (exit {exc.returncode}):\n{exc.stderr or exc.stdout}"
@@ -376,13 +377,13 @@ def install_with_pipx(
     uninstall_completed: subprocess.CompletedProcess[str] | None = None
     if uninstall_command is not None:
         try:
-            uninstall_completed = subprocess.run(uninstall_command, check=True, capture_output=True, text=True)
+            uninstall_completed = subprocess.run(uninstall_command, check=True, capture_output=True, text=True, encoding="utf-8")
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
                 f"pipx uninstall failed (exit {exc.returncode}):\n{exc.stderr or exc.stdout}"
             ) from exc
     try:
-        install_completed = subprocess.run(install_command, check=True, capture_output=True, text=True)
+        install_completed = subprocess.run(install_command, check=True, capture_output=True, text=True, encoding="utf-8")
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
             f"pipx install failed (exit {exc.returncode}):\n{exc.stderr or exc.stdout}"
@@ -498,7 +499,7 @@ def install_standalone(
             install_command.append("--no-deps")
         install_command.append(PACKAGE_NAME)
         try:
-            install_completed = subprocess.run(install_command, check=True, capture_output=True, text=True)
+            install_completed = subprocess.run(install_command, check=True, capture_output=True, text=True, encoding="utf-8")
         except subprocess.CalledProcessError as exc:
             raise RuntimeError(
                 f"pip install failed (exit {exc.returncode}):\n{exc.stderr or exc.stdout}"

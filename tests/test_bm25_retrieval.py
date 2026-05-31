@@ -30,7 +30,7 @@ results = bm25.top_k("Markov chain", k=3)
 import json as _j; print(_j.dumps([r[0] for r in results]))
 """],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -48,7 +48,7 @@ results = bm25.score("")
 print(len(results))
 """],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -64,7 +64,7 @@ results = bm25.score("test query")
 print(len(results))
 """],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             cwd=ENGINE,
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -78,14 +78,14 @@ class BM25CLIIntegrationTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         subprocess.run(
             [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(_ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
-            capture_output=True, text=True, cwd=_ROOT,
+            capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
         )
 
     def test_bm25_retrieves_example_card(self) -> None:
         result = subprocess.run(
             [sys.executable, str(ENGINE / "local_retrieve.py"), "what is a markov chain",
              "--index", str(INDEX_PATH)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -99,7 +99,7 @@ class BM25CLIIntegrationTest(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, str(ENGINE / "local_retrieve.py"), "markov chain",
              "--index", str(INDEX_PATH), "--bm25-weight", "0.8"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
 
@@ -109,7 +109,7 @@ class BM25CLIIntegrationTest(unittest.TestCase):
             [sys.executable, str(ENGINE / "local_retrieve.py"), "markov chain",
              "--index", str(INDEX_PATH),
              "--embedding-index", "/nonexistent/embeddings.json"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -124,7 +124,7 @@ class BM25ScoreQualityTest(unittest.TestCase):
     def setUpClass(cls) -> None:
         subprocess.run(
             [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(_ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
-            capture_output=True, text=True, cwd=_ROOT,
+            capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
         )
 
     def test_definition_query_ranks_definition_first(self) -> None:
@@ -132,7 +132,7 @@ class BM25ScoreQualityTest(unittest.TestCase):
             [sys.executable, str(ENGINE / "local_retrieve.py"),
              "what is a markov chain definition",
              "--index", str(INDEX_PATH), "--limit", "3"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -143,7 +143,7 @@ class BM25ScoreQualityTest(unittest.TestCase):
             [sys.executable, str(ENGINE / "local_retrieve.py"),
              "markov chain stationary distribution",
              "--index", str(INDEX_PATH), "--limit", "5"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)

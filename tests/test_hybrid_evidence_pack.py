@@ -17,7 +17,7 @@ class HybridEvidencePackTest(unittest.TestCase):
             [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -60,7 +60,7 @@ class HybridEvidencePackTest(unittest.TestCase):
             "--local-limit",
             "2",
         ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
         web_path.unlink(missing_ok=True)
 
         self.assertEqual(

@@ -1,6 +1,12 @@
 """Shared test fixtures for scholar-agent."""
 
+import os
+
 from pathlib import Path
+
+# Force UTF-8 mode for all subprocess.run(text=True) calls on Windows (GBK locale).
+# This propagates to child processes via the environment.
+os.environ.setdefault("PYTHONUTF8", "1")
 
 import pytest
 

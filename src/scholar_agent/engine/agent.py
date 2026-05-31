@@ -74,7 +74,7 @@ class Router:
             result = subprocess.run(
                 [sys.executable, str(ENGINE_DIR / "orchestrate_research.py"),
                  query, "--mode", "auto", "--index", str(index_path)],
-                capture_output=True, text=True, cwd=ENGINE_DIR,
+                capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
             )
             if result.returncode != 0:
                 raise ResearchError(f"Router failed: {result.stderr}")
@@ -142,7 +142,7 @@ class Researcher:
             ]
             result = subprocess.run(
                 [sys.executable, str(ENGINE_DIR / "build_answer_context.py")] + args,
-                capture_output=True, text=True, cwd=ENGINE_DIR,
+                capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
             )
             if result.returncode != 0:
                 raise ResearchError(f"Researcher failed: {result.stderr}")
@@ -196,7 +196,7 @@ class Synthesizer:
             ctx_json = json.dumps(answer_context, ensure_ascii=False)
             result = subprocess.run(
                 [sys.executable, str(ENGINE_DIR / "render_answer_bundle.py"), "--answer-context-json", "-"],
-                input=ctx_json, capture_output=True, text=True, cwd=ENGINE_DIR,
+                input=ctx_json, capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
             )
             if result.returncode != 0:
                 raise SynthesisError(f"Synthesizer render failed: {result.stderr}")
@@ -221,7 +221,7 @@ class Synthesizer:
             result = subprocess.run(
                 [sys.executable, str(ENGINE_DIR / "synthesize_answer.py")] + args,
                 input=json.dumps(prompt_bundle, ensure_ascii=False),
-                capture_output=True, text=True, cwd=ENGINE_DIR,
+                capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
             )
             if result.returncode != 0:
                 raise SynthesisError(f"Synthesizer failed: {result.stderr}")
@@ -260,7 +260,7 @@ class Curator:
                 str(draft_path),
                 "--knowledge-root", str(knowledge_root),
             ],
-            capture_output=True, text=True, cwd=ENGINE_DIR,
+            capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
         )
         return result.returncode == 0
 

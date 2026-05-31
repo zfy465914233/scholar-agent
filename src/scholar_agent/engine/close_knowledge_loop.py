@@ -763,7 +763,7 @@ def main() -> int:
     verify = subprocess.run(
         [sys.executable, "-m", "scholar_agent.engine.local_retrieve",
          args.query, "--index", str(args.index_output), "--limit", "3"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8",
     )
     if verify.returncode == 0:
         results = json.loads(verify.stdout)

@@ -3,21 +3,37 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
-from scholar_agent.installers.common import build_stdio_server
+from scholar_agent.installers.common import (
+    build_stdio_server,
+    get_named_server,
+    load_json_file,
+    merge_named_server,
+    remove_named_server,
+    write_json_file,
+)
+
+logger = logging.getLogger(__name__)
 
 _SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills" / "scholar-agent"
-
 
 _SCOPE_LABELS = {
     "user": "User config",
     "project": "Project config",
     "local": "Local config",
 }
+
+
+def _claude_config_path(scope: str, cwd: str | Path | None = None) -> Path:
+    """Return the path to the Claude config file for the given scope."""
+    if scope == "user":
+        return Path.home() / ".claude.json"
+    return Path(cwd) if cwd is not None else Path.cwd() / ".claude.json"
 
 
 def build_user_config_fragment(*, profile: str = "default", toolset: str = "default", academic: bool = True, scholar_home: str | None = None) -> dict[str, object]:
@@ -60,9 +76,6 @@ def install_user_config(
     cwd: str | Path | None = None,
     scholar_home: str | None = None,
 ) -> dict[str, object]:
-    if shutil.which("claude") is None:
-        raise RuntimeError("Claude CLI not found in PATH")
-
     server_payload = build_user_config_fragment(
         profile=profile,
         toolset=toolset,
@@ -70,26 +83,51 @@ def install_user_config(
         scholar_home=scholar_home,
     )["mcpServers"]["scholar-agent"]
 
-    command = [
-        "claude",
-        "mcp",
-        "add-json",
-        "--scope",
-        scope,
-        "scholar-agent",
-        json.dumps(server_payload, ensure_ascii=False),
-    ]
-    completed = _run_claude_command(command, scope=scope, cwd=cwd, check=True)
+    # Try CLI first
+    if shutil.which("claude") is not None:
+        try:
+            command = [
+                "claude",
+                "mcp",
+                "add-json",
+                "--scope",
+                scope,
+                "scholar-agent",
+                json.dumps(server_payload, ensure_ascii=False),
+            ]
+            completed = _run_claude_command(command, scope=scope, cwd=cwd, check=True)
+            skill_result = install_skill_files()
+            return {
+                "status": "ok",
+                "host": "claude",
+                "method": "cli",
+                "scope": scope,
+                "server_name": "scholar-agent",
+                "stdout": completed.stdout.strip(),
+                "skills": skill_result,
+            }
+        except Exception as exc:
+            logger.info("claude mcp add-json failed (%s), falling back to direct write", exc)
 
-    # Also install skill files
+    # Fallback: write .claude.json directly
+    config_path = _claude_config_path(scope, cwd)
+    existing = load_json_file(config_path)
+    merged = merge_named_server(
+        existing,
+        section_key="mcpServers",
+        server_name="scholar-agent",
+        server_payload=server_payload,
+    )
+    write_json_file(config_path, merged)
+
     skill_result = install_skill_files()
-
     return {
         "status": "ok",
         "host": "claude",
+        "method": "direct-write",
         "scope": scope,
         "server_name": "scholar-agent",
-        "stdout": completed.stdout.strip(),
+        "config_path": str(config_path),
         "skills": skill_result,
     }
 
@@ -110,7 +148,7 @@ def _run_claude_command(
 ) -> subprocess.CompletedProcess[str]:
     run_cwd, tempdir = _command_cwd(scope, cwd)
     try:
-        return subprocess.run(command, check=check, capture_output=True, text=True, cwd=str(run_cwd))
+        return subprocess.run(command, check=check, capture_output=True, text=True, encoding="utf-8", cwd=str(run_cwd))
     finally:
         if tempdir is not None:
             tempdir.cleanup()
@@ -132,43 +170,84 @@ def _parse_get_output(output: str) -> dict[str, str]:
 
 
 def get_install_status(*, scope: str = "user", cwd: str | Path | None = None) -> dict[str, object]:
-    if shutil.which("claude") is None:
-        raise RuntimeError("Claude CLI not found in PATH")
+    # Try CLI first
+    if shutil.which("claude") is not None:
+        try:
+            completed = _run_claude_command(["claude", "mcp", "get", "scholar-agent"], scope=scope, cwd=cwd, check=False)
+            parsed = _parse_get_output(completed.stdout)
+            installed = completed.returncode == 0 and parsed.get("scope", "").startswith(_SCOPE_LABELS[scope])
+            return {
+                "status": "ok",
+                "host": "claude",
+                "method": "cli",
+                "scope": scope,
+                "server_name": "scholar-agent",
+                "installed": installed,
+                "details": parsed,
+                "stdout": completed.stdout.strip(),
+                "stderr": completed.stderr.strip(),
+            }
+        except Exception:
+            pass  # fallback
 
-    completed = _run_claude_command(["claude", "mcp", "get", "scholar-agent"], scope=scope, cwd=cwd, check=False)
-    parsed = _parse_get_output(completed.stdout)
-    installed = completed.returncode == 0 and parsed.get("scope", "").startswith(_SCOPE_LABELS[scope])
+    # Fallback: read .claude.json directly
+    config_path = _claude_config_path(scope, cwd)
+    existing = load_json_file(config_path)
+    entry = get_named_server(existing, section_key="mcpServers", server_name="scholar-agent")
     return {
         "status": "ok",
         "host": "claude",
+        "method": "direct-read",
         "scope": scope,
         "server_name": "scholar-agent",
-        "installed": installed,
-        "details": parsed,
-        "stdout": completed.stdout.strip(),
-        "stderr": completed.stderr.strip(),
+        "installed": entry is not None,
+        "config_path": str(config_path),
     }
 
 
 def uninstall_user_config(*, scope: str = "user", cwd: str | Path | None = None) -> dict[str, object]:
-    if shutil.which("claude") is None:
-        raise RuntimeError("Claude CLI not found in PATH")
+    # Try CLI first
+    if shutil.which("claude") is not None:
+        try:
+            completed = _run_claude_command(
+                ["claude", "mcp", "remove", "scholar-agent", "-s", scope],
+                scope=scope,
+                cwd=cwd,
+                check=False,
+            )
+            combined_output = "\n".join(part for part in (completed.stdout.strip(), completed.stderr.strip()) if part)
+            removed = completed.returncode == 0
+            missing = "No MCP server found" in combined_output
+            if removed or missing:
+                return {
+                    "status": "ok" if removed else "noop",
+                    "host": "claude",
+                    "method": "cli",
+                    "scope": scope,
+                    "server_name": "scholar-agent",
+                    "removed": removed,
+                    "stdout": completed.stdout.strip(),
+                    "stderr": completed.stderr.strip(),
+                }
+        except Exception:
+            pass  # fallback
 
-    completed = _run_claude_command(
-        ["claude", "mcp", "remove", "scholar-agent", "-s", scope],
-        scope=scope,
-        cwd=cwd,
-        check=False,
+    # Fallback: remove from .claude.json directly
+    config_path = _claude_config_path(scope, cwd)
+    existing = load_json_file(config_path)
+    merged, did_remove = remove_named_server(
+        existing,
+        section_key="mcpServers",
+        server_name="scholar-agent",
     )
-    combined_output = "\n".join(part for part in (completed.stdout.strip(), completed.stderr.strip()) if part)
-    removed = completed.returncode == 0
-    missing = "No MCP server found" in combined_output
+    if did_remove:
+        write_json_file(config_path, merged)
     return {
-        "status": "ok" if removed else "noop" if missing else "error",
+        "status": "ok" if did_remove else "noop",
         "host": "claude",
+        "method": "direct-write",
         "scope": scope,
         "server_name": "scholar-agent",
-        "removed": removed,
-        "stdout": completed.stdout.strip(),
-        "stderr": completed.stderr.strip(),
+        "removed": did_remove,
+        "config_path": str(config_path),
     }

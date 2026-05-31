@@ -32,7 +32,7 @@ def _build_index() -> None:
         [sys.executable, str(ENGINE / "local_index.py"),
          "--knowledge-root", str(_ROOT / "tests" / "fixtures"),
          "--output", str(_TEST_INDEX)],
-        capture_output=True, text=True, cwd=_ROOT,
+        capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
     )
 
 

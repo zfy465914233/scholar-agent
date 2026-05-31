@@ -179,7 +179,7 @@ def generate_web_evidence(query: str, research_script: Path) -> tuple[Path | Non
         "--output",
         str(output_path),
     ]
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
     if result.returncode != 0:
         output_path.unlink(missing_ok=True)
         return None, f"research harness failed: stdout={result.stdout!r} stderr={result.stderr!r}"

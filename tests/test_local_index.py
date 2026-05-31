@@ -20,7 +20,7 @@ class LocalIndexTest(unittest.TestCase):
 
     def test_local_index_builder_creates_json_index_from_knowledge_cards(self) -> None:
         command = [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
 
         self.assertEqual(
             0,
@@ -83,7 +83,7 @@ class BuildBacklinksTest(unittest.TestCase):
             "--knowledge-root", "tests/fixtures",
             "--output", str(INDEX_PATH),
         ]
-        subprocess.run(command, capture_output=True, text=True)
+        subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
         payload = json.loads(INDEX_PATH.read_text(encoding="utf-8"))
         for doc in payload["documents"]:
             self.assertIn("backlinks", doc)

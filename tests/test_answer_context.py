@@ -18,7 +18,7 @@ class AnswerContextTest(unittest.TestCase):
             [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -38,7 +38,7 @@ class AnswerContextTest(unittest.TestCase):
             "--research-script",
             str(FAKE_HARNESS),
         ]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
 
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -79,7 +79,7 @@ class AnswerContextTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8",
             )
             self.assertEqual(0, build_index.returncode, msg=build_index.stderr)
 
@@ -95,7 +95,7 @@ class AnswerContextTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8",
             )
 
             self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -142,7 +142,7 @@ class AnswerContextTest(unittest.TestCase):
             ],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         web_path.unlink(missing_ok=True)
 

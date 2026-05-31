@@ -17,7 +17,7 @@ class DistillKnowledgeTest(unittest.TestCase):
             [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
             cwd=_ROOT,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -44,7 +44,7 @@ class DistillKnowledgeTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8",
             )
             self.assertEqual(0, answer_result.returncode, msg=answer_result.stderr)
             answer_context_path.write_text(answer_result.stdout, encoding="utf-8")
@@ -60,7 +60,7 @@ class DistillKnowledgeTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8",
             )
 
             self.assertEqual(0, distill_result.returncode, msg=distill_result.stderr)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 
@@ -21,8 +22,8 @@ def build_shared_env(*, profile: str, toolset: str, academic: bool, scholar_home
 def build_stdio_server(*, profile: str, toolset: str, academic: bool, scholar_home: str | None = None) -> dict[str, object]:
     return {
         "type": "stdio",
-        "command": "scholar-agent",
-        "args": ["serve-mcp"],
+        "command": sys.executable,
+        "args": ["-m", "scholar_agent.cli", "serve-mcp"],
         "env": build_shared_env(profile=profile, toolset=toolset, academic=academic, scholar_home=scholar_home),
     }
 
@@ -30,7 +31,7 @@ def build_stdio_server(*, profile: str, toolset: str, academic: bool, scholar_ho
 def build_local_server(*, profile: str, toolset: str, academic: bool, scholar_home: str | None = None) -> dict[str, object]:
     return {
         "type": "local",
-        "command": ["scholar-agent", "serve-mcp"],
+        "command": [sys.executable, "-m", "scholar_agent.cli", "serve-mcp"],
         "enabled": True,
         "environment": build_shared_env(profile=profile, toolset=toolset, academic=academic, scholar_home=scholar_home),
     }

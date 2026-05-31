@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import locale
 import os
 import shutil
 import sys
@@ -359,14 +360,17 @@ def _doctor_payload() -> dict[str, object]:
     if knowledge_dir.exists():
         card_count = sum(1 for _ in knowledge_dir.rglob("*.md"))
 
-    # MCP registration (Claude)
+    # MCP registration (Claude) — try CLI first, then direct-read fallback
     claude_registered = False
-    if shutil.which("claude"):
-        try:
-            result = claude_installer.get_install_status()
-            claude_registered = result.get("installed", False)
-        except Exception:
-            pass
+    try:
+        result = claude_installer.get_install_status()
+        claude_registered = result.get("installed", False)
+    except Exception:
+        pass
+
+    # Executable resolution — verify scholar-agent module is importable
+    module_runnable = importlib.util.find_spec("scholar_agent.cli") is not None
+    exe_on_path = shutil.which("scholar-agent")
 
     # PyMuPDF (PDF image extraction)
     pymupdf_available = importlib.util.find_spec("fitz") is not None
@@ -392,11 +396,19 @@ def _doctor_payload() -> dict[str, object]:
         "mcp": {
             "claude_registered": claude_registered,
         },
+        "executable": {
+            "scholar_agent_on_path": exe_on_path is not None,
+            "scholar_agent_path": exe_on_path,
+            "module_runnable": module_runnable,
+            "python_executable": sys.executable,
+        },
         "environment": {
             "SCHOLAR_HOME": os.environ.get("SCHOLAR_HOME"),
             "SCHOLAR_PROFILE": os.environ.get("SCHOLAR_PROFILE"),
             "SCHOLAR_TOOLSET": os.environ.get("SCHOLAR_TOOLSET"),
             "SCHOLAR_ACADEMIC": os.environ.get("SCHOLAR_ACADEMIC"),
+            "locale_encoding": locale.getpreferredencoding(False),
+            "PYTHONUTF8": os.environ.get("PYTHONUTF8"),
         },
     }
 
@@ -433,6 +445,19 @@ def _format_doctor_text(payload: dict[str, object]) -> str:
         lines.append(f"  claude: {icon}")
         if not claude_ok:
             problems.append("Claude Code MCP not registered. Run: scholar-agent init")
+
+    # Executable resolution
+    exe_info = payload.get("executable", {})
+    if isinstance(exe_info, dict):
+        lines.append("")
+        lines.append("Executable:")
+        on_path = exe_info.get("scholar_agent_on_path", False)
+        module_ok = exe_info.get("module_runnable", False)
+        lines.append(f"  on PATH: {'yes' if on_path else 'no'}")
+        lines.append(f"  python -m scholar_agent.cli: {'ok' if module_ok else 'BROKEN'}")
+        lines.append(f"  python: {exe_info.get('python_executable', '?')}")
+        if not module_ok:
+            problems.append("scholar_agent.cli module not importable — MCP server will not start. Reinstall with: pip install -e .")
 
     # Directory checks
     checks = payload.get("checks", [])

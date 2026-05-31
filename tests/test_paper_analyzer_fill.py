@@ -453,7 +453,7 @@ class TestIntegration(unittest.TestCase):
             note_path = pa.generate_note(paper, tmpdir, language="zh")
 
             # Verify skeleton has placeholders
-            content = Path(note_path).read_text()
+            content = Path(note_path).read_text(encoding="utf-8")
             self.assertIn("<!-- LLM:", content)
             self.assertIn("status: skeleton", content)
 

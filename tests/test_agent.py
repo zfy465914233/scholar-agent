@@ -24,7 +24,7 @@ def _build_index() -> None:
         [sys.executable, "-m", "scholar_agent.engine.local_index",
          "--knowledge-root", str(_ROOT / "tests" / "fixtures"),
          "--output", str(INDEX_PATH)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8",
     )
 
 
