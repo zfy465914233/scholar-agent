@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="50%" style="stop-color:#8b5cf6"/>
+      <stop offset="100%" style="stop-color:#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="200" rx="12" fill="url(#bg)"/>
+  <rect y="0" width="800" height="4" rx="2" fill="url(#accent)"/>
+  <!-- Graduation cap icon -->
+  <g transform="translate(60, 55)">
+    <polygon points="40,10 80,30 40,50 0,30" fill="none" stroke="#3b82f6" stroke-width="2.5"/>
+    <line x1="40" y1="50" x2="40" y2="80" stroke="#3b82f6" stroke-width="2.5"/>
+    <path d="M25,38 L25,62 C25,72 55,72 55,62 L55,38" fill="none" stroke="#8b5cf6" stroke-width="2"/>
+    <circle cx="40" cy="82" r="3" fill="#06b6d4"/>
+    <!-- Sparkle dots -->
+    <circle cx="70" cy="15" r="2" fill="#fbbf24" opacity="0.8"/>
+    <circle cx="15" cy="45" r="1.5" fill="#fbbf24" opacity="0.6"/>
+    <circle cx="75" cy="55" r="1.5" fill="#fbbf24" opacity="0.7"/>
+  </g>
+  <!-- Title -->
+  <text x="170" y="75" font-family="system-ui,-apple-system,sans-serif" font-size="38" font-weight="700" fill="#f8fafc" letter-spacing="-0.5">
+    Scholar Agent
+  </text>
+  <!-- Tagline -->
+  <text x="170" y="108" font-family="system-ui,-apple-system,sans-serif" font-size="16" fill="#94a3b8">
+    Knowledge flywheel for AI — research, accumulate, retrieve, compound.
+  </text>
+  <!-- Badges -->
+  <rect x="170" y="128" width="90" height="24" rx="12" fill="#1e3a5f"/>
+  <text x="215" y="144" font-family="monospace" font-size="11" fill="#60a5fa" text-anchor="middle">MCP Server</text>
+  <rect x="270" y="128" width="90" height="24" rx="12" fill="#1e3a5f"/>
+  <text x="315" y="144" font-family="monospace" font-size="11" fill="#60a5fa" text-anchor="middle">Claude Code</text>
+  <rect x="370" y="128" width="75" height="24" rx="12" fill="#1e3a5f"/>
+  <text x="408" y="144" font-family="monospace" font-size="11" fill="#60a5fa" text-anchor="middle">VS Code</text>
+  <rect x="455" y="128" width="60" height="24" rx="12" fill="#1e3a5f"/>
+  <text x="485" y="144" font-family="monospace" font-size="11" fill="#60a5fa" text-anchor="middle">Obsidian</text>
+  <!-- Flywheel icon on right -->
+  <g transform="translate(620, 35)">
+    <circle cx="50" cy="65" r="55" fill="none" stroke="#334155" stroke-width="1.5" stroke-dasharray="4,4"/>
+    <circle cx="50" cy="65" r="35" fill="none" stroke="#3b82f6" stroke-width="2" stroke-dasharray="8,4" opacity="0.6"/>
+    <!-- Arrows suggesting rotation -->
+    <path d="M50,10 A55,55 0 0,1 97,45" fill="none" stroke="#3b82f6" stroke-width="2.5" marker-end="url(#arrowBlue)"/>
+    <path d="M97,85 A55,55 0 0,1 50,120" fill="none" stroke="#8b5cf6" stroke-width="2.5" marker-end="url(#arrowPurple)"/>
+    <path d="M10,50 A55,55 0 0,1 50,10" fill="none" stroke="#06b6d4" stroke-width="2.5" marker-end="url(#arrowCyan)"/>
+    <!-- Center icon -->
+    <text x="50" y="72" font-family="monospace" font-size="22" fill="#f8fafc" text-anchor="middle">⚡</text>
+  </g>
+</svg>

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#2563eb"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#8b5cf6"/>
+      <stop offset="100%" style="stop-color:#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#06b6d4"/>
+      <stop offset="100%" style="stop-color:#0891b2"/>
+    </linearGradient>
+    <linearGradient id="g4" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#d97706"/>
+    </linearGradient>
+    <marker id="a1" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6"/></marker>
+    <marker id="a2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#8b5cf6"/></marker>
+    <marker id="a3" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#06b6d4"/></marker>
+    <marker id="a4" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/></marker>
+  </defs>
+  <rect width="720" height="320" rx="12" fill="#0f172a"/>
+  <!-- Step 1: Ask -->
+  <rect x="40" y="40" width="150" height="70" rx="10" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="115" y="68" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">❓ Your Question</text>
+  <text x="115" y="90" font-family="system-ui,sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Ask in natural language</text>
+  <!-- Arrow 1→2 -->
+  <line x1="190" y1="75" x2="230" y2="75" stroke="#3b82f6" stroke-width="2" marker-end="url(#a1)"/>
+  <!-- Step 2: Research -->
+  <rect x="240" y="40" width="150" height="70" rx="10" fill="#1e293b" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="315" y="68" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#c4b5fd" text-anchor="middle">🔍 Research</text>
+  <text x="315" y="90" font-family="system-ui,sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Web + Academic APIs</text>
+  <!-- Arrow 2→3 -->
+  <line x1="390" y1="75" x2="430" y2="75" stroke="#8b5cf6" stroke-width="2" marker-end="url(#a2)"/>
+  <!-- Step 3: Synthesize -->
+  <rect x="440" y="40" width="150" height="70" rx="10" fill="#1e293b" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="515" y="68" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#67e8f9" text-anchor="middle">📝 Synthesize</text>
+  <text x="515" y="90" font-family="system-ui,sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Citations + Confidence</text>
+  <!-- Arrow 3→4 (down) -->
+  <line x1="515" y1="110" x2="515" y2="150" stroke="#06b6d4" stroke-width="2" marker-end="url(#a3)"/>
+  <!-- Step 4: Accumulate -->
+  <rect x="440" y="160" width="150" height="70" rx="10" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="515" y="188" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#fcd34d" text-anchor="middle">💾 Accumulate</text>
+  <text x="515" y="210" font-family="system-ui,sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Knowledge cards + BM25</text>
+  <!-- Arrow 4→5 (left) -->
+  <line x1="440" y1="195" x2="400" y2="195" stroke="#f59e0b" stroke-width="2" marker-end="url(#a4)"/>
+  <!-- Step 5: Retrieve -->
+  <rect x="240" y="160" width="150" height="70" rx="10" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="315" y="188" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#93c5fd" text-anchor="middle">⚡ Retrieve</text>
+  <text x="315" y="210" font-family="system-ui,sans-serif" font-size="11" fill="#64748b" text-anchor="middle">Local first, fast &amp; accurate</text>
+  <!-- Arrow 5→6 (left) -->
+  <line x1="240" y1="195" x2="200" y2="195" stroke="#3b82f6" stroke-width="2" marker-end="url(#a1)"/>
+  <!-- Step 6: Next question -->
+  <rect x="40" y="160" width="150" height="70" rx="10" fill="#1e293b" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="115" y="188" font-family="system-ui,sans-serif" font-size="13" font-weight="600" fill="#c4b5fd" text-anchor="middle">🔄 Next Question</text>
+  <text x="115" y="210" font-family="system-ui,sans-serif" font-size="11" fill="#64748b" text-anchor="middle">AI checks local first</text>
+  <!-- Curved arrow from step 6 back to step 1 -->
+  <path d="M30,195 C10,195 10,75 30,75" fill="none" stroke="#8b5cf6" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#a2)"/>
+  <!-- "Compounds" label -->
+  <text x="360" y="290" font-family="system-ui,sans-serif" font-size="16" font-weight="600" fill="#f8fafc" text-anchor="middle">Knowledge compounds — every round makes the next one better</text>
+  <text x="360" y="310" font-family="system-ui,sans-serif" font-size="12" fill="#64748b" text-anchor="middle">33 knowledge cards → 50 → 100 → your domain expertise, codified</text>
+</svg>
