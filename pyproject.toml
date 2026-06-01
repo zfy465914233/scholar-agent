@@ -1,5 +1,5 @@
 [project]
-name = "scholar-agent"
+name = "py-scholar-agent"
 version = "0.1.0"
 description = "Knowledge flywheel MCP server + academic paper research pipeline for Claude Code and VS Code Copilot"
 readme = "README.md"

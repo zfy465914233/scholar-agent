@@ -56,7 +56,7 @@ Each round compounds. Knowledge cards have full lifecycle management: **draft â†
 ### Install
 
 ```bash
-pip install scholar-agent
+pip install py-scholar-agent
 ```
 
 Or from source:
