@@ -177,6 +177,25 @@ PDF 文本和图片提取由 PyMuPDF 处理（`pip install -e .` 会自动安装
 | `daily_recommend` | 每日论文推荐工作流 |
 | `link_paper_keywords` | 关键词自动 `[[wikilinks]]` 链接 |
 
+<details>
+<summary>🔌 Claude Desktop MCP 配置示例</summary>
+
+将以下内容添加到您的 `claude_desktop_config.json` 中：
+```json
+{
+  "mcpServers": {
+    "scholar-agent": {
+      "command": "scholar-agent",
+      "args": ["serve-mcp"],
+      "env": {
+        "SCHOLAR_ACADEMIC": "1"
+      }
+    }
+  }
+}
+```
+</details>
+
 ## 配置
 
 ### .scholar.json

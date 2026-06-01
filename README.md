@@ -107,6 +107,25 @@ Ask a question → Scholar Agent researches (web + academic APIs) → synthesize
 
 **Academic** (set `SCHOLAR_ACADEMIC=1`): `search_papers` · `search_conf_papers` · `download_paper` · `analyze_paper` · `extract_paper_images` · `paper_to_card` · `daily_recommend` · `link_paper_keywords`
 
+<details>
+<summary>🔌 Claude Desktop MCP Configuration</summary>
+
+Add this to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "scholar-agent": {
+      "command": "scholar-agent",
+      "args": ["serve-mcp"],
+      "env": {
+        "SCHOLAR_ACADEMIC": "1"
+      }
+    }
+  }
+}
+```
+</details>
+
 ---
 
 ## CLI Reference
