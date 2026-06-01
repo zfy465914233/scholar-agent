@@ -350,20 +350,22 @@ class TestParseArgs(unittest.TestCase):
 
     def test_required_args(self) -> None:
         from scholar_agent.engine.promote_draft import parse_args
+        from pathlib import Path
 
         with unittest.mock.patch("sys.argv", ["promote_draft", "--draft", "/tmp/draft.md"]):
             args = parse_args()
-        self.assertEqual(str(args.draft), "/tmp/draft.md")
-        self.assertEqual(str(args.knowledge_root), "knowledge")
+        self.assertEqual(Path(args.draft), Path("/tmp/draft.md"))
+        self.assertEqual(Path(args.knowledge_root), Path("knowledge"))
 
     def test_custom_knowledge_root(self) -> None:
         from scholar_agent.engine.promote_draft import parse_args
+        from pathlib import Path
 
         with unittest.mock.patch(
             "sys.argv", ["promote_draft", "--draft", "/tmp/d.md", "--knowledge-root", "/data/kb"]
         ):
             args = parse_args()
-        self.assertEqual(str(args.knowledge_root), "/data/kb")
+        self.assertEqual(Path(args.knowledge_root), Path("/data/kb"))
 
 
 class TestInferDomainFolder(unittest.TestCase):

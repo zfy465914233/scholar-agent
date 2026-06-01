@@ -295,11 +295,12 @@ class TestParseArgs(unittest.TestCase):
     def test_required_args(self) -> None:
         from unittest.mock import patch
         from scholar_agent.engine.distill_knowledge import parse_args
+        from pathlib import Path
 
         with patch("sys.argv", ["distill", "--answer-context", "/tmp/ctx.json", "--output", "/tmp/out.md"]):
             args = parse_args()
-        self.assertEqual(str(args.answer_context), "/tmp/ctx.json")
-        self.assertEqual(str(args.output), "/tmp/out.md")
+        self.assertEqual(Path(args.answer_context), Path("/tmp/ctx.json"))
+        self.assertEqual(Path(args.output), Path("/tmp/out.md"))
 
 
 class TestMain(unittest.TestCase):

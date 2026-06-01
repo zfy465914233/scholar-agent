@@ -21,18 +21,15 @@ class TestDefaultPipxBinDir(unittest.TestCase):
     """Tests for _default_pipx_bin_dir(env)."""
 
     def test_linux_default(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_bin_dir({})
-        self.assertEqual(result, Path.home() / ".local" / "bin")
+        result = _default_pipx_bin_dir({})
+        self.assertEqual(result.resolve(), (Path.home() / ".local" / "bin").resolve())
 
     def test_env_override(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_bin_dir({"PIPX_BIN_DIR": "/custom/bin"})
-        self.assertEqual(result, Path("/custom/bin"))
+        result = _default_pipx_bin_dir({"PIPX_BIN_DIR": "/custom/bin"})
+        self.assertEqual(Path(result), Path("/custom/bin").resolve())
 
     def test_env_override_expands_user(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_bin_dir({"PIPX_BIN_DIR": "~/my-bin"})
+        result = _default_pipx_bin_dir({"PIPX_BIN_DIR": "~/my-bin"})
         self.assertTrue(str(result).endswith("my-bin"))
         self.assertNotIn("~", str(result))
 
@@ -49,38 +46,32 @@ class TestDefaultPipxBinDir(unittest.TestCase):
         self.assertEqual(result, Path.home() / ".local" / "bin")
 
     def test_strips_whitespace_from_env(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_bin_dir({"PIPX_BIN_DIR": "  /trimmed  "})
-        self.assertEqual(result, Path("/trimmed"))
+        result = _default_pipx_bin_dir({"PIPX_BIN_DIR": "  /trimmed  "})
+        self.assertEqual(Path(result), Path("/trimmed").resolve())
 
     def test_none_env_uses_os_environ(self):
         # Should not raise; delegates to os.environ
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_bin_dir(None)
+        result = _default_pipx_bin_dir(None)
         self.assertIsInstance(result, Path)
 
     def test_empty_override_falls_back(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_bin_dir({"PIPX_BIN_DIR": "  "})
-        self.assertEqual(result, Path.home() / ".local" / "bin")
+        result = _default_pipx_bin_dir({"PIPX_BIN_DIR": "  "})
+        self.assertEqual(result.resolve(), (Path.home() / ".local" / "bin").resolve())
 
 
 class TestDefaultPipxHome(unittest.TestCase):
     """Tests for _default_pipx_home(env)."""
 
     def test_linux_default(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_home({})
-        self.assertEqual(result, Path.home() / ".local" / "pipx")
+        result = _default_pipx_home({})
+        self.assertEqual(result.resolve(), (Path.home() / ".local" / "pipx").resolve())
 
     def test_env_override(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_home({"PIPX_HOME": "/custom/pipx"})
-        self.assertEqual(result, Path("/custom/pipx"))
+        result = _default_pipx_home({"PIPX_HOME": "/custom/pipx"})
+        self.assertEqual(Path(result), Path("/custom/pipx").resolve())
 
     def test_env_override_expands_user(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_home({"PIPX_HOME": "~/pipx-home"})
+        result = _default_pipx_home({"PIPX_HOME": "~/pipx-home"})
         self.assertTrue(str(result).endswith("pipx-home"))
         self.assertNotIn("~", str(result))
 
@@ -97,9 +88,8 @@ class TestDefaultPipxHome(unittest.TestCase):
         self.assertEqual(result, Path.home() / ".local" / "pipx")
 
     def test_empty_override_falls_back(self):
-        with patch.object(os, "name", "posix"):
-            result = _default_pipx_home({"PIPX_HOME": ""})
-        self.assertEqual(result, Path.home() / ".local" / "pipx")
+        result = _default_pipx_home({"PIPX_HOME": ""})
+        self.assertEqual(result.resolve(), (Path.home() / ".local" / "pipx").resolve())
 
 
 class TestBuildPipxInstallPlan(unittest.TestCase):
@@ -117,7 +107,7 @@ class TestBuildPipxInstallPlan(unittest.TestCase):
         self.assertIn("pipx", install)
         self.assertIn("install", install)
         self.assertIn("/usr/bin/python3", install)
-        self.assertIn("/tmp/pkg.whl", install)
+        self.assertIn(str(Path("/tmp/pkg.whl")), install)
 
     def test_force_install_not_yet_installed(self):
         """When force=True but package is not installed, should use --force flag."""
@@ -138,7 +128,7 @@ class TestBuildPipxInstallPlan(unittest.TestCase):
             resolved_wheel=Path("/wheels/scholar_agent-1.0.whl"),
             force=False,
         )
-        self.assertIn("/wheels/scholar_agent-1.0.whl", install)
+        self.assertIn(str(Path("/wheels/scholar_agent-1.0.whl")), install)
 
     def test_install_command_uses_custom_prefix(self):
         _, install, _ = _build_pipx_install_plan(
@@ -187,11 +177,11 @@ class TestPathContains(unittest.TestCase):
     """Tests for _path_contains(target, env)."""
 
     def test_target_in_path(self):
-        env = {"PATH": "/usr/bin:/usr/local/bin"}
+        env = {"PATH": f"/usr/bin{os.pathsep}/usr/local/bin"}
         self.assertTrue(_path_contains(Path("/usr/bin"), env))
 
     def test_target_not_in_path(self):
-        env = {"PATH": "/usr/bin:/usr/local/bin"}
+        env = {"PATH": f"/usr/bin{os.pathsep}/usr/local/bin"}
         self.assertFalse(_path_contains(Path("/opt/custom/bin"), env))
 
     def test_empty_path_env(self):
@@ -203,12 +193,12 @@ class TestPathContains(unittest.TestCase):
         self.assertFalse(_path_contains(Path("/usr/bin"), env))
 
     def test_expands_tilde(self):
-        env = {"PATH": f"~/bin:/usr/bin"}
+        env = {"PATH": f"~/bin{os.pathsep}/usr/bin"}
         home_bin = Path.home() / "bin"
         self.assertTrue(_path_contains(home_bin, env))
 
     def test_multiple_entries(self):
-        env = {"PATH": "/a:/b:/c"}
+        env = {"PATH": f"/a{os.pathsep}/b{os.pathsep}/c"}
         self.assertTrue(_path_contains(Path("/b"), env))
         self.assertFalse(_path_contains(Path("/d"), env))
 
@@ -217,56 +207,53 @@ class TestDetectInstallManager(unittest.TestCase):
     """Tests for _detect_install_manager(dist_info_path, package_root, python_executable, env)."""
 
     def test_detects_pipx_when_under_pipx_venvs(self):
-        pipx_home = Path("/fake/home/.local/pipx")
-        dist_info = pipx_home / "venvs" / "scholar-agent" / "lib" / "site-packages" / "scholar_agent-1.0.dist-info"
-        package_root = pipx_home / "venvs" / "scholar-agent" / "lib" / "site-packages" / "scholar_agent"
+        pipx_home = Path("/fake/home/.local/pipx").resolve()
+        dist_info = (pipx_home / "venvs" / "scholar-agent" / "lib" / "site-packages" / "scholar_agent-1.0.dist-info").resolve()
+        package_root = (pipx_home / "venvs" / "scholar-agent" / "lib" / "site-packages" / "scholar_agent").resolve()
         env = {
             "PIPX_HOME": str(pipx_home),
             "PIPX_BIN_DIR": str(pipx_home.parent / "bin"),
         }
-        with patch.object(os, "name", "posix"):
-            manager, is_pipx, _, _ = _detect_install_manager(
-                dist_info_path=dist_info,
-                package_root=package_root,
-                python_executable=str(pipx_home / "venvs" / "scholar-agent" / "bin" / "python"),
-                env=env,
-            )
+        manager, is_pipx, _, _ = _detect_install_manager(
+            dist_info_path=dist_info,
+            package_root=package_root,
+            python_executable=str(pipx_home / "venvs" / "scholar-agent" / "bin" / "python"),
+            env=env,
+        )
         self.assertEqual(manager, "pipx")
         self.assertTrue(is_pipx)
 
     def test_detects_direct_when_not_under_pipx(self):
-        dist_info = Path("/usr/lib/python3.12/site-packages/scholar_agent-1.0.dist-info")
-        package_root = Path("/usr/lib/python3.12/site-packages/scholar_agent")
+        dist_info = Path("/usr/lib/python3.12/site-packages/scholar_agent-1.0.dist-info").resolve()
+        package_root = Path("/usr/lib/python3.12/site-packages/scholar_agent").resolve()
         env = {
-            "PIPX_HOME": "/fake/home/.local/pipx",
-            "PIPX_BIN_DIR": "/fake/home/.local/bin",
+            "PIPX_HOME": str(Path("/fake/home/.local/pipx").resolve()),
+            "PIPX_BIN_DIR": str(Path("/fake/home/.local/bin").resolve()),
         }
-        with patch.object(os, "name", "posix"):
-            manager, is_pipx, _, _ = _detect_install_manager(
-                dist_info_path=dist_info,
-                package_root=package_root,
-                python_executable="/usr/bin/python3",
-                env=env,
-            )
+        manager, is_pipx, _, _ = _detect_install_manager(
+            dist_info_path=dist_info,
+            package_root=package_root,
+            python_executable="/usr/bin/python3",
+            env=env,
+        )
         self.assertEqual(manager, "direct")
         self.assertFalse(is_pipx)
 
     def test_returns_pipx_home_and_bin_dir(self):
-        dist_info = Path("/opt/python/lib/site-packages/pkg.dist-info")
-        package_root = Path("/opt/python/lib/site-packages/pkg")
+        dist_info = Path("/opt/python/lib/site-packages/pkg.dist-info").resolve()
+        package_root = Path("/opt/python/lib/site-packages/pkg").resolve()
         env = {
-            "PIPX_HOME": "/custom/pipx",
-            "PIPX_BIN_DIR": "/custom/bin",
+            "PIPX_HOME": str(Path("/custom/pipx").resolve()),
+            "PIPX_BIN_DIR": str(Path("/custom/bin").resolve()),
         }
-        with patch.object(os, "name", "posix"):
-            _, _, pipx_home, pipx_bin = _detect_install_manager(
-                dist_info_path=dist_info,
-                package_root=package_root,
-                python_executable="/usr/bin/python3",
-                env=env,
-            )
-        self.assertEqual(pipx_home, Path("/custom/pipx"))
-        self.assertEqual(pipx_bin, Path("/custom/bin"))
+        _, _, pipx_home, pipx_bin = _detect_install_manager(
+            dist_info_path=dist_info,
+            package_root=package_root,
+            python_executable="/usr/bin/python3",
+            env=env,
+        )
+        self.assertEqual(pipx_home, Path("/custom/pipx").resolve())
+        self.assertEqual(pipx_bin, Path("/custom/bin").resolve())
 
 
 class TestFileUrlToPath(unittest.TestCase):
@@ -307,7 +294,7 @@ class TestResolveOutputDir(unittest.TestCase):
 
     def test_with_override(self):
         result = _resolve_output_dir(Path("/project/src"), "/custom/output")
-        self.assertEqual(result, Path("/custom/output"))
+        self.assertEqual(result, Path("/custom/output").resolve())
 
     def test_without_override_uses_dist(self):
         result = _resolve_output_dir(Path("/project/src"), None)

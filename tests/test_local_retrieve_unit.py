@@ -331,17 +331,17 @@ class TestParseArgs(unittest.TestCase):
 
     def test_custom_index(self) -> None:
         from scholar_agent.engine.local_retrieve import parse_args
-
+ 
         with patch("sys.argv", ["local_retrieve", "q", "--index", "/tmp/myidx.json"]):
             args = parse_args()
-        self.assertEqual(str(args.index), "/tmp/myidx.json")
-
+        self.assertEqual(Path(args.index), Path("/tmp/myidx.json"))
+ 
     def test_embedding_index_option(self) -> None:
         from scholar_agent.engine.local_retrieve import parse_args
-
+ 
         with patch("sys.argv", ["local_retrieve", "q", "--embedding-index", "/tmp/emb.json"]):
             args = parse_args()
-        self.assertEqual(str(args.embedding_index), "/tmp/emb.json")
+        self.assertEqual(Path(args.embedding_index), Path("/tmp/emb.json"))
 
 
 class TestMain(unittest.TestCase):

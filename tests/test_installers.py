@@ -38,7 +38,7 @@ class TestClaudeConfigPath(unittest.TestCase):
 
     def test_project_scope_with_cwd(self) -> None:
         path = _claude_config_path("project", cwd="/tmp/project")
-        self.assertEqual(str(path), "/tmp/project")
+        self.assertEqual(Path(path), Path("/tmp/project"))
 
     def test_local_scope_default(self) -> None:
         path = _claude_config_path("local")
