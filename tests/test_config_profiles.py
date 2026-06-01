@@ -1,6 +1,5 @@
 """Tests for scholar_agent.config.profiles module."""
 
-import os
 import unittest
 
 from scholar_agent.config.profiles import get_active_profile

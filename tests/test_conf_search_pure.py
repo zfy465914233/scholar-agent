@@ -4,12 +4,12 @@ import unittest
 from urllib.parse import unquote
 
 from scholar_agent.engine.academic.conf_search import (
-    _VenueSpec,
     _build_dblp_url,
     _dice_title_overlap,
     _extract_s2_fields,
     _fingerprint,
     _parse_dblp_hits,
+    _VenueSpec,
 )
 
 
@@ -223,7 +223,7 @@ class TestParseDblpHits(unittest.TestCase):
                 }
             }
         }
-        papers, total = _parse_dblp_hits(data, "CVPR", 2025)
+        papers, _total = _parse_dblp_hits(data, "CVPR", 2025)
         self.assertEqual(papers[0]["authors"], ["Alice", "Bob"])
 
     def test_strips_trailing_period_from_title(self):

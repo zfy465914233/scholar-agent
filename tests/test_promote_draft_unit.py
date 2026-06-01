@@ -6,6 +6,7 @@ and build_candidate_markdown using direct imports.
 
 import unittest
 
+from scholar_agent.engine.common import safe_slug
 from scholar_agent.engine.promote_draft import (
     build_candidate_markdown,
     collect_citation_ids,
@@ -13,8 +14,6 @@ from scholar_agent.engine.promote_draft import (
     infer_card_type,
     parse_query,
 )
-from scholar_agent.engine.common import safe_slug
-
 
 # ── extract_section ───────────────────────────────────────────────
 
@@ -349,8 +348,9 @@ class TestParseArgs(unittest.TestCase):
     """Tests for parse_args."""
 
     def test_required_args(self) -> None:
-        from scholar_agent.engine.promote_draft import parse_args
         from pathlib import Path
+
+        from scholar_agent.engine.promote_draft import parse_args
 
         with unittest.mock.patch("sys.argv", ["promote_draft", "--draft", "/tmp/draft.md"]):
             args = parse_args()
@@ -358,8 +358,9 @@ class TestParseArgs(unittest.TestCase):
         self.assertEqual(Path(args.knowledge_root), Path("knowledge"))
 
     def test_custom_knowledge_root(self) -> None:
-        from scholar_agent.engine.promote_draft import parse_args
         from pathlib import Path
+
+        from scholar_agent.engine.promote_draft import parse_args
 
         with unittest.mock.patch(
             "sys.argv", ["promote_draft", "--draft", "/tmp/d.md", "--knowledge-root", "/data/kb"]
@@ -374,6 +375,7 @@ class TestInferDomainFolder(unittest.TestCase):
     def test_basic_call(self) -> None:
         import tempfile
         from pathlib import Path
+
         from scholar_agent.engine.promote_draft import infer_domain_folder
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -389,6 +391,7 @@ class TestMain(unittest.TestCase):
     def test_main_creates_candidate(self) -> None:
         import tempfile
         from pathlib import Path
+
         from scholar_agent.engine.promote_draft import main
 
         draft_content = (

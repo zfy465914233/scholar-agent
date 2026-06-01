@@ -82,48 +82,48 @@ class TestExtendCandidates(unittest.TestCase):
 
     def test_add_single_item(self) -> None:
         items = [self._make_item("https://arxiv.org/abs/2501.12345")]
-        candidates, seen = _extend_candidates("query", items, [], set(), None)
+        candidates, _seen = _extend_candidates("query", items, [], set(), None)
         self.assertEqual(len(candidates), 1)
         self.assertEqual(candidates[0].url, "https://arxiv.org/abs/2501.12345")
 
     def test_deduplicate_by_url(self) -> None:
         item = self._make_item("https://arxiv.org/abs/2501.12345")
         items = [item, item]
-        candidates, seen = _extend_candidates("query", items, [], set(), None)
+        candidates, _seen = _extend_candidates("query", items, [], set(), None)
         self.assertEqual(len(candidates), 1)
 
     def test_deduplicate_with_existing_seen(self) -> None:
         url = "https://arxiv.org/abs/2501.12345"
         items = [self._make_item(url)]
-        candidates, seen = _extend_candidates(
+        candidates, _seen = _extend_candidates(
             "query", items, [], {url}, None
         )
         self.assertEqual(len(candidates), 0)
 
     def test_skip_empty_url(self) -> None:
         items = [{"url": "", "title": "No URL", "content": "text"}]
-        candidates, seen = _extend_candidates("query", items, [], set(), None)
+        candidates, _seen = _extend_candidates("query", items, [], set(), None)
         self.assertEqual(len(candidates), 0)
 
     def test_skip_whitespace_url(self) -> None:
         items = [{"url": "   ", "title": "Whitespace URL", "content": "text"}]
-        candidates, seen = _extend_candidates("query", items, [], set(), None)
+        candidates, _seen = _extend_candidates("query", items, [], set(), None)
         self.assertEqual(len(candidates), 0)
 
     def test_limit_enforced(self) -> None:
         items = [self._make_item(f"https://arxiv.org/abs/2501.{i:05d}") for i in range(10)]
-        candidates, seen = _extend_candidates("query", items, [], set(), 3)
+        candidates, _seen = _extend_candidates("query", items, [], set(), 3)
         self.assertEqual(len(candidates), 3)
 
     def test_limit_zero_adds_one_then_stops(self) -> None:
         """limit=0 adds one item before the >= check triggers."""
         items = [self._make_item("https://arxiv.org/abs/2501.12345")]
-        candidates, seen = _extend_candidates("query", items, [], set(), 0)
+        candidates, _seen = _extend_candidates("query", items, [], set(), 0)
         self.assertEqual(len(candidates), 1)
 
     def test_limit_none_means_no_cap(self) -> None:
         items = [self._make_item(f"https://arxiv.org/abs/2501.{i:05d}") for i in range(50)]
-        candidates, seen = _extend_candidates("query", items, [], set(), None)
+        candidates, _seen = _extend_candidates("query", items, [], set(), None)
         self.assertEqual(len(candidates), 50)
 
     def test_extends_existing_candidates(self) -> None:
@@ -135,14 +135,14 @@ class TestExtendCandidates(unittest.TestCase):
             published_at="2025-01-01",
         )
         items = [self._make_item("https://arxiv.org/abs/2501.00002", "New")]
-        candidates, seen = _extend_candidates("query", items, [existing], {"https://arxiv.org/abs/2501.00001"}, None)
+        candidates, _seen = _extend_candidates("query", items, [existing], {"https://arxiv.org/abs/2501.00001"}, None)
         self.assertEqual(len(candidates), 2)
         self.assertEqual(candidates[0].url, "https://arxiv.org/abs/2501.00001")
         self.assertEqual(candidates[1].url, "https://arxiv.org/abs/2501.00002")
 
     def test_seen_urls_updated(self) -> None:
         items = [self._make_item("https://arxiv.org/abs/2501.12345")]
-        candidates, seen = _extend_candidates("query", items, [], set(), None)
+        _candidates, seen = _extend_candidates("query", items, [], set(), None)
         self.assertIn("https://arxiv.org/abs/2501.12345", seen)
 
     def test_candidate_fields_populated(self) -> None:

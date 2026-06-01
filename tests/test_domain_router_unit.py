@@ -1,6 +1,5 @@
 """Tests for domain_router pure functions."""
 
-import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -91,7 +90,7 @@ class TestParseFrontmatterTitleTags(unittest.TestCase):
         self.assertEqual(tags, [])
 
     def test_unclosed_frontmatter(self) -> None:
-        title, tags = _parse_frontmatter_title_tags("---\ntitle: T\n")
+        title, _tags = _parse_frontmatter_title_tags("---\ntitle: T\n")
         self.assertEqual(title, "")
 
 

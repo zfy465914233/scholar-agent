@@ -252,12 +252,12 @@ class RemoveNamedServerTest(unittest.TestCase):
         self.assertIn("other", result["mcpServers"])
 
     def test_returns_false_for_missing_section(self) -> None:
-        result, removed = remove_named_server({}, section_key="mcpServers", server_name="scholar")
+        _result, removed = remove_named_server({}, section_key="mcpServers", server_name="scholar")
         self.assertFalse(removed)
 
     def test_returns_false_for_non_dict_section(self) -> None:
         config = {"mcpServers": "not a dict"}
-        result, removed = remove_named_server(config, section_key="mcpServers", server_name="scholar")
+        _result, removed = remove_named_server(config, section_key="mcpServers", server_name="scholar")
         self.assertFalse(removed)
 
     def test_does_not_mutate_original(self) -> None:

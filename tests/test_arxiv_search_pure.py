@@ -108,7 +108,9 @@ class TestPaperRecordToDict(unittest.TestCase):
 class TestPaperRecordFromAtomEntry(unittest.TestCase):
     """Tests for PaperRecord.from_atom_entry(entry, ns)."""
 
-    NS = {
+    from typing import ClassVar
+
+    NS: ClassVar[dict[str, str]] = {
         "a": "http://www.w3.org/2005/Atom",
         "arxiv": "http://arxiv.org/schemas/atom",
     }

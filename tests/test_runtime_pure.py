@@ -3,7 +3,6 @@
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from scholar_agent.runtime import (
     _build_pipx_install_plan,

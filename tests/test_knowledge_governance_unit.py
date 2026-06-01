@@ -169,7 +169,7 @@ class TestCmdLintStaleness(unittest.TestCase):
             del fm["updated_at"]
             fm["confidence"] = "draft"
             _write_card(root, "draft.md", fm)
-            result = cmd_lint(root, stale_days=90)
+            cmd_lint(root, stale_days=90)
             # May be orphan, but not stale
             # It will be orphan since no links
             # But the stale check should skip it
@@ -239,7 +239,7 @@ class TestCmdLintEdgeCases(unittest.TestCase):
             fm = _valid_frontmatter()
             del fm["id"]
             _write_card(root, "no_id.md", fm)
-            result = cmd_lint(root, stale_days=90)
+            cmd_lint(root, stale_days=90)
             # Should not crash; may report issues
 
     def test_card_with_empty_title(self) -> None:
@@ -247,7 +247,7 @@ class TestCmdLintEdgeCases(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_card(root, "empty_title.md", _valid_frontmatter({"id": "et-1", "title": ""}))
-            result = cmd_lint(root, stale_days=90)
+            cmd_lint(root, stale_days=90)
             # Should not crash
 
 

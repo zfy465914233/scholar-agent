@@ -9,9 +9,6 @@ math_depth_checks, and content_density_checks using direct imports.
 import unittest
 
 from scholar_agent.validation.validate_note import (
-    FORBIDDEN_PATTERNS,
-    SECTION_ALIASES,
-    UNKNOWN_VALUES,
     collect_forbidden_errors,
     collect_unknown_metadata_errors,
     content_density_checks,
@@ -25,7 +22,6 @@ from scholar_agent.validation.validate_note import (
     type_specific_checks,
     validate_core_sections,
 )
-
 
 # ── split_frontmatter ─────────────────────────────────────────────
 
@@ -49,47 +45,47 @@ class TestSplitFrontmatter(unittest.TestCase):
 
     def test_unterminated_frontmatter(self):
         text = "---\ntitle: My Title\ntype: knowledge\n\nNo closing marker."
-        metadata, body, errors = split_frontmatter(text)
+        metadata, _body, errors = split_frontmatter(text)
         self.assertIn("unterminated_frontmatter", errors)
         self.assertEqual(metadata, {})
 
     def test_empty_frontmatter_block_treated_as_unterminated(self):
         # "---\n---\n..." has no "\n---\n" after position 4, so it's unterminated
         text = "---\n---\n\n## Body"
-        metadata, body, errors = split_frontmatter(text)
+        _metadata, _body, errors = split_frontmatter(text)
         self.assertIn("unterminated_frontmatter", errors)
 
     def test_frontmatter_strips_quotes(self):
         text = "---\ntitle: \"My Title\"\nauthor: 'Author Name'\n---\nBody"
-        metadata, body, errors = split_frontmatter(text)
+        metadata, _body, _errors = split_frontmatter(text)
         self.assertEqual(metadata["title"], "My Title")
         self.assertEqual(metadata["author"], "Author Name")
 
     def test_skips_comments_and_blank_lines(self):
         text = "---\n# comment line\n  \ntitle: Hello\n---\nBody"
-        metadata, body, errors = split_frontmatter(text)
+        metadata, _body, _errors = split_frontmatter(text)
         self.assertEqual(metadata["title"], "Hello")
         self.assertEqual(len(metadata), 1)
 
     def test_duplicate_frontmatter_in_body_flagged(self):
         text = "---\ntitle: Hello\n---\n\n---\ntitle: Duplicate\n---\nBody"
-        metadata, body, errors = split_frontmatter(text)
+        _metadata, _body, errors = split_frontmatter(text)
         self.assertIn("duplicated_frontmatter", errors)
 
     def test_non_key_value_lines_ignored(self):
         text = "---\ntitle: Hello\njust a plain line\n---\nBody"
-        metadata, body, errors = split_frontmatter(text)
+        metadata, _body, _errors = split_frontmatter(text)
         self.assertEqual(len(metadata), 1)
         self.assertEqual(metadata["title"], "Hello")
 
     def test_multiple_keys(self):
         text = "---\ntitle: T\nauthor: A\ndate: 2026-01-01\nconfidence: confirmed\n---\nBody"
-        metadata, body, errors = split_frontmatter(text)
+        metadata, _body, _errors = split_frontmatter(text)
         self.assertEqual(len(metadata), 4)
 
     def test_keys_with_hyphens_and_underscores(self):
         text = "---\narxiv_id: 1234.5678\nsource_pdf: /path/to/pdf\n---\nBody"
-        metadata, body, errors = split_frontmatter(text)
+        metadata, _body, _errors = split_frontmatter(text)
         self.assertIn("arxiv_id", metadata)
         self.assertIn("source_pdf", metadata)
 
@@ -155,12 +151,12 @@ class TestFindSection(unittest.TestCase):
 
     def test_alias_in_title(self):
         sections = {"Research Motivation": "Motivation content."}
-        title, content = find_section(sections, ["motivation"])
+        title, _content = find_section(sections, ["motivation"])
         self.assertEqual(title, "Research Motivation")
 
     def test_chinese_alias(self):
         sections = {"研究动机": "Chinese motivation."}
-        title, content = find_section(sections, ["研究动机", "motivation"])
+        title, _content = find_section(sections, ["研究动机", "motivation"])
         self.assertIsNotNone(title)
 
     def test_no_match(self):
@@ -171,16 +167,16 @@ class TestFindSection(unittest.TestCase):
 
     def test_first_alias_wins(self):
         sections = {"Approach": "Approach content."}
-        title, content = find_section(sections, ["method", "approach"])
+        title, _content = find_section(sections, ["method", "approach"])
         self.assertEqual(title, "Approach")
 
     def test_empty_sections(self):
-        title, content = find_section({}, ["method"])
+        title, _content = find_section({}, ["method"])
         self.assertIsNone(title)
 
     def test_case_insensitive_match(self):
         sections = {"MY METHOD": "content"}
-        title, content = find_section(sections, ["method"])
+        title, _content = find_section(sections, ["method"])
         self.assertEqual(title, "MY METHOD")
 
 
@@ -337,38 +333,38 @@ class TestValidateCoreSections(unittest.TestCase):
     def test_all_sections_present_no_errors(self):
         body = self._make_body()
         sections = extract_sections(body)
-        errors, warnings, resolved = validate_core_sections(sections, "required", body)
+        errors, _warnings, _resolved = validate_core_sections(sections, "required", body)
         self.assertEqual(len(errors), 0)
 
     def test_missing_motivation(self):
         body = self._make_body(overrides={"motivation": ""})
         sections = extract_sections(body)
-        errors, warnings, resolved = validate_core_sections(sections, "required", body)
+        errors, _warnings, _resolved = validate_core_sections(sections, "required", body)
         self.assertTrue(any("missing_section:motivation" in e for e in errors))
 
     def test_missing_method(self):
         body = self._make_body(overrides={"method": ""})
         sections = extract_sections(body)
-        errors, warnings, resolved = validate_core_sections(sections, "required", body)
+        errors, _warnings, _resolved = validate_core_sections(sections, "required", body)
         self.assertTrue(any("missing_section:method" in e for e in errors))
 
     def test_missing_dataset_required_policy(self):
         body = self._make_body(overrides={"dataset": ""})
         sections = extract_sections(body)
-        errors, warnings, resolved = validate_core_sections(sections, "required", body)
+        errors, _warnings, _resolved = validate_core_sections(sections, "required", body)
         self.assertTrue(any("missing_section:dataset" in e for e in errors))
 
     def test_thin_section_flagged(self):
         thin_method = "## Method\n\nshort"
         body = self._make_body(overrides={"method": thin_method})
         sections = extract_sections(body)
-        errors, warnings, resolved = validate_core_sections(sections, "required", body)
+        errors, _warnings, _resolved = validate_core_sections(sections, "required", body)
         self.assertTrue(any("thin_section:method" in e for e in errors))
 
     def test_fallback_policy_omits_dataset_from_mandatory(self):
         body = self._make_body(overrides={"dataset": ""})
         sections = extract_sections(body)
-        errors, warnings, resolved = validate_core_sections(sections, "fallback", body)
+        errors, _warnings, _resolved = validate_core_sections(sections, "fallback", body)
         # With fallback, missing dataset should not produce a hard error for the core keys
         core_missing = [e for e in errors if e.startswith("missing_section:") and "dataset" not in e]
         self.assertEqual(len(core_missing), 0)
@@ -382,7 +378,7 @@ class TestValidateCoreSections(unittest.TestCase):
             "## Problem Definition\n\nThis is a problem definition section that serves as a dataset fallback with enough text to be substantive.\n\n"
         )
         sections = extract_sections(body)
-        errors, warnings, resolved = validate_core_sections(sections, "fallback", body)
+        errors, warnings, _resolved = validate_core_sections(sections, "fallback", body)
         # Should resolve dataset via fallback
         dataset_errors = [e for e in errors if "dataset" in e]
         self.assertEqual(len(dataset_errors), 0)
@@ -391,7 +387,7 @@ class TestValidateCoreSections(unittest.TestCase):
     def test_resolved_sections_contain_actual_titles(self):
         body = self._make_body()
         sections = extract_sections(body)
-        errors, warnings, resolved = validate_core_sections(sections, "required", body)
+        _errors, _warnings, resolved = validate_core_sections(sections, "required", body)
         self.assertIn("motivation", resolved)
         self.assertEqual(resolved["motivation"], "Motivation")
 

@@ -7,26 +7,29 @@ from pathlib import Path
 
 from scholar_agent.installers.claude import (
     _claude_config_path,
-    build_user_config_fragment as claude_fragment,
 )
-from scholar_agent.installers.common import (
-    build_local_server,
-    build_shared_env,
-    build_stdio_server,
-    load_json_file,
-    merge_named_server,
-    remove_named_server,
-    write_json_file,
+from scholar_agent.installers.claude import (
+    build_user_config_fragment as claude_fragment,
 )
 from scholar_agent.installers.opencode import (
     build_user_config_fragment as opencode_fragment,
+)
+from scholar_agent.installers.opencode import (
     get_default_user_config_path as opencode_config_path,
 )
 from scholar_agent.installers.vscode import (
     build_user_config_fragment as vscode_fragment,
+)
+from scholar_agent.installers.vscode import (
     get_default_user_config_path as vscode_config_path,
+)
+from scholar_agent.installers.vscode import (
     get_user_config_status as vscode_status,
+)
+from scholar_agent.installers.vscode import (
     uninstall_user_config as vscode_uninstall,
+)
+from scholar_agent.installers.vscode import (
     write_user_config as vscode_write,
 )
 

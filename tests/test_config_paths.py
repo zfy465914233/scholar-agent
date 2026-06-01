@@ -1,6 +1,5 @@
 """Tests for scholar_agent.config.paths module."""
 
-import os
 import unittest
 from pathlib import Path
 

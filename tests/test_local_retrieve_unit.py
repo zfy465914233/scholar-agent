@@ -331,14 +331,14 @@ class TestParseArgs(unittest.TestCase):
 
     def test_custom_index(self) -> None:
         from scholar_agent.engine.local_retrieve import parse_args
- 
+
         with patch("sys.argv", ["local_retrieve", "q", "--index", "/tmp/myidx.json"]):
             args = parse_args()
         self.assertEqual(Path(args.index), Path("/tmp/myidx.json"))
- 
+
     def test_embedding_index_option(self) -> None:
         from scholar_agent.engine.local_retrieve import parse_args
- 
+
         with patch("sys.argv", ["local_retrieve", "q", "--embedding-index", "/tmp/emb.json"]):
             args = parse_args()
         self.assertEqual(Path(args.embedding_index), Path("/tmp/emb.json"))
@@ -364,8 +364,9 @@ class TestMain(unittest.TestCase):
                 self.assertIn("results", data)
 
     def test_main_with_embedding_index(self) -> None:
-        from scholar_agent.engine.local_retrieve import main
         import types
+
+        from scholar_agent.engine.local_retrieve import main
 
         with tempfile.TemporaryDirectory() as tmp:
             idx = Path(tmp) / "index.json"
@@ -374,10 +375,10 @@ class TestMain(unittest.TestCase):
             emb.write_text('{"data": true}', encoding="utf-8")
             mock_mod = types.ModuleType("scholar_agent.engine.embedding_retrieve")
             mock_mod.retrieve_by_embedding = lambda q, i, k: [("doc-0", 0.9)]
-            with patch.dict("sys.modules", {"scholar_agent.engine.embedding_retrieve": mock_mod}):
-                with patch("sys.argv", ["local_retrieve", "markov", "--index", str(idx), "--embedding-index", str(emb)]):
-                    with patch("builtins.print"):
-                        ret = main()
+            with patch.dict("sys.modules", {"scholar_agent.engine.embedding_retrieve": mock_mod}), patch(
+                "sys.argv", ["local_retrieve", "markov", "--index", str(idx), "--embedding-index", str(emb)]
+            ), patch("builtins.print"):
+                ret = main()
             self.assertEqual(ret, 0)
 
 
@@ -399,8 +400,9 @@ class TestEmbeddingExceptionFallback(unittest.TestCase):
     """Cover the embedding retrieval exception handling."""
 
     def test_embedding_raises_falls_back(self) -> None:
-        from scholar_agent.engine.local_retrieve import retrieve_hybrid
         import types
+
+        from scholar_agent.engine.local_retrieve import retrieve_hybrid
 
         docs = _make_documents(5)
         mock_mod = types.ModuleType("scholar_agent.engine.embedding_retrieve")

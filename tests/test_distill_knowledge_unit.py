@@ -6,8 +6,8 @@ fields, empty lists, special characters, etc. Uses direct imports.
 
 import unittest
 
-from scholar_agent.engine.distill_knowledge import build_markdown
 from scholar_agent.engine.common import safe_slug
+from scholar_agent.engine.distill_knowledge import build_markdown
 
 
 class TestBuildMarkdownAllFields(unittest.TestCase):
@@ -293,9 +293,10 @@ class TestParseArgs(unittest.TestCase):
     """Tests for parse_args."""
 
     def test_required_args(self) -> None:
-        from unittest.mock import patch
-        from scholar_agent.engine.distill_knowledge import parse_args
         from pathlib import Path
+        from unittest.mock import patch
+
+        from scholar_agent.engine.distill_knowledge import parse_args
 
         with patch("sys.argv", ["distill", "--answer-context", "/tmp/ctx.json", "--output", "/tmp/out.md"]):
             args = parse_args()
@@ -311,6 +312,7 @@ class TestMain(unittest.TestCase):
         import tempfile
         from pathlib import Path
         from unittest.mock import patch
+
         from scholar_agent.engine.distill_knowledge import main
 
         payload = {

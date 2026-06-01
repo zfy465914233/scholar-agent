@@ -8,7 +8,6 @@ import unittest
 
 from scholar_agent.engine.knowledge_lifecycle import (
     CONFIDENCE_LEVELS,
-    CARD_TYPES,
     ORIGINS,
     VALID_TRANSITIONS,
     CardIssue,
@@ -19,7 +18,6 @@ from scholar_agent.engine.knowledge_lifecycle import (
     transition_card,
     validate_card,
 )
-
 
 # ── validate_card ──────────────────────────────────────────────────
 
@@ -275,7 +273,7 @@ class TestTransitionCardInvalid(unittest.TestCase):
 
     def test_draft_to_trusted(self):
         meta = {"review_status": "draft"}
-        updated, error = transition_card(meta, LifecycleState.TRUSTED)
+        _updated, error = transition_card(meta, LifecycleState.TRUSTED)
         self.assertIsNotNone(error)
         self.assertIn("Cannot transition", error)
 
@@ -283,7 +281,7 @@ class TestTransitionCardInvalid(unittest.TestCase):
         for target in LifecycleState:
             with self.subTest(target=target):
                 meta = {"review_status": "deprecated"}
-                updated, error = transition_card(meta, target)
+                _updated, error = transition_card(meta, target)
                 if target == LifecycleState.DEPRECATED:
                     # Transitioning to same state is also not in VALID_TRANSITIONS
                     self.assertIsNotNone(error)
@@ -292,7 +290,7 @@ class TestTransitionCardInvalid(unittest.TestCase):
 
     def test_invalid_current_state(self):
         meta = {"review_status": "nonexistent"}
-        updated, error = transition_card(meta, LifecycleState.REVIEWED)
+        _updated, error = transition_card(meta, LifecycleState.REVIEWED)
         self.assertIsNotNone(error)
         self.assertIn("not a valid lifecycle state", error)
 
@@ -407,7 +405,7 @@ class TestDetectDuplicates(unittest.TestCase):
             {"id": "b", "title": "Alpha Beta Gamma Epsilon", "topic": "math"},
         ]
         dupes = detect_duplicates(cards, similarity_threshold=0.5)
-        for i, j, score, reason in dupes:
+        for _i, _j, score, reason in dupes:
             if reason == "similar_title":
                 # Score should be rounded to 2 decimal places
                 self.assertEqual(score, round(score, 2))
