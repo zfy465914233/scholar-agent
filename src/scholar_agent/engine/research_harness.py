@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -83,8 +83,8 @@ class TextExtractor(HTMLParser):
                 self.images.append(
                     {
                         "url": src,
-                        "alt_text": attr_dict.get("alt", ""),
-                        "title": attr_dict.get("title", ""),
+                        "alt_text": attr_dict.get("alt") or "",
+                        "title": attr_dict.get("title") or "",
                     }
                 )
 
@@ -287,7 +287,7 @@ def build_evidence(user_query: str, candidate: SearchCandidate) -> dict[str, Any
     }
 
     # Include source images if found
-    images = fetch_result.get("images", [])
+    images: list[dict[str, str]] = fetch_result.get("images", [])
     if images:
         evidence["source_images"] = images
 
@@ -312,7 +312,7 @@ def classify_source_type(url: str) -> str:
     return "other"
 
 
-def fetch_content(url: str) -> dict[str, str]:
+def fetch_content(url: str) -> dict[str, Any]:
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     if any(host == domain or host.endswith(f".{domain}") for domain in BLOCKED_FETCH_DOMAINS):
@@ -513,13 +513,13 @@ def score_freshness(published_at: str | None) -> int:
 
 
 def load_schema(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast("dict[str, Any]", json.loads(path.read_text(encoding="utf-8")))
 
 
 def load_external_candidates(path: Path | None) -> dict[str, Any] | None:
     if path is None:
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    return cast("dict[str, Any]", json.loads(path.read_text(encoding="utf-8")))
 
 
 def validate_evidence_items(evidence: list[dict[str, Any]], schema: dict[str, Any]) -> list[str]:
@@ -568,7 +568,7 @@ def summarize_run(evidence: list[dict[str, Any]]) -> dict[str, Any]:
 def fetch_batch_concurrent(
     urls: list[str],
     max_workers: int = 4,
-) -> dict[str, dict[str, str]]:
+) -> dict[str, dict[str, Any]]:
     """Fetch multiple URLs concurrently with thread pooling.
 
     Returns a dict mapping each URL to its fetch_content result.

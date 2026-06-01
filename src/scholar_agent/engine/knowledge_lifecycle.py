@@ -149,7 +149,7 @@ def transition_card(
     """
     current = metadata.get("review_status", "")
     if not current:
-        current = "draft" if metadata.get("confidence") == "draft" else "reviewed"
+        current = "draft"
 
     try:
         current_state = LifecycleState(current)

@@ -10,7 +10,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from scholar_agent import runtime as runtime_manager
 from scholar_agent.adapters import mcp_server as mcp_adapter
@@ -332,7 +332,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _doctor_payload() -> dict[str, object]:
+def _doctor_payload() -> dict[str, Any]:
     config_file = scholar_config.get_config_file_path()
     knowledge_dir = Path(scholar_config.get_knowledge_dir())
     index_path = Path(scholar_config.get_index_path())
@@ -366,7 +366,7 @@ def _doctor_payload() -> dict[str, object]:
     claude_registered = False
     try:
         result = claude_installer.get_install_status()
-        claude_registered = result.get("installed", False)
+        claude_registered = bool(result.get("installed", False))
     except Exception:
         pass
 
@@ -528,7 +528,7 @@ def _run_doctor(output_format: str) -> int:
     return 1 if has_problem else 0
 
 
-def _config_show_payload() -> dict[str, object]:
+def _config_show_payload() -> dict[str, Any]:
     resolution = resolve_config()
     return {
         "mode": resolution.mode,

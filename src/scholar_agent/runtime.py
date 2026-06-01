@@ -302,6 +302,7 @@ def install_with_pipx(
 
     build_payload: dict[str, object] | None = None
     resolved_source: Path | None = None
+    uninstall_completed: subprocess.CompletedProcess[str] | None = None
 
     if wheel_path is not None:
         resolved_wheel = Path(wheel_path).expanduser().resolve()
@@ -325,7 +326,7 @@ def install_with_pipx(
                 resolved_wheel=resolved_wheel,
                 force=force,
             )
-            uninstall_completed: subprocess.CompletedProcess[str] | None = None
+            uninstall_completed = None
             if uninstall_command is not None:
                 try:
                     uninstall_completed = subprocess.run(
@@ -378,7 +379,7 @@ def install_with_pipx(
         resolved_wheel=resolved_wheel,
         force=force,
     )
-    uninstall_completed: subprocess.CompletedProcess[str] | None = None
+    uninstall_completed = None
     if uninstall_command is not None:
         try:
             uninstall_completed = subprocess.run(
@@ -432,7 +433,7 @@ def get_installation_state() -> dict[str, object]:
 
     # _path is private, but importlib.metadata exposes no public API that reliably
     # points back to the installed dist-info/egg-info directory across Python 3.10+.
-    dist_info_path = Path(dist._path)
+    dist_info_path = Path(getattr(dist, "_path"))  # noqa: B009
     direct_url = _load_direct_url(dist_info_path)
     dir_info = direct_url.get("dir_info", {}) if isinstance(direct_url, dict) else {}
     editable = isinstance(dir_info, dict) and bool(dir_info.get("editable"))
@@ -443,7 +444,7 @@ def get_installation_state() -> dict[str, object]:
         if source_path is None:
             source_path = dist_info_path.parent.resolve()
 
-    package_root = Path(dist.locate_file("")).resolve()
+    package_root = Path(str(dist.locate_file(""))).resolve()
     install_manager, pipx_managed, pipx_home, pipx_bin_dir = _detect_install_manager(
         dist_info_path=dist_info_path,
         package_root=package_root,

@@ -11,6 +11,7 @@ import argparse
 import json
 import logging
 from pathlib import Path
+from typing import Any, cast
 
 from scholar_agent.engine.common import extract_wiki_links, parse_frontmatter, resolve_link_target
 
@@ -118,7 +119,10 @@ def _load_manifest(index_output: Path) -> dict[str, float]:
     if not mp.exists():
         return {}
     try:
-        return json.loads(mp.read_text(encoding="utf-8"))
+        val = json.loads(mp.read_text(encoding="utf-8"))
+        if isinstance(val, dict):
+            return {str(k): float(v) for k, v in val.items()}
+        return {}
     except (json.JSONDecodeError, OSError):
         return {}
 
@@ -155,11 +159,15 @@ def _attach_backlinks(documents: list[dict]) -> None:
         doc["backlinks"] = bl_map.get(doc["doc_id"], [])
 
 
+_INDEX_SCHEMA_VERSION = 2
+
+
 def build_index(knowledge_root: Path) -> dict[str, object]:
     """Build a full index from scratch."""
     documents = [parse_card(path, knowledge_root=knowledge_root) for path in iter_cards(knowledge_root)]
     _attach_backlinks(documents)
     return {
+        "schema_version": _INDEX_SCHEMA_VERSION,
         "knowledge_root": str(knowledge_root.as_posix()),
         "documents": documents,
     }
@@ -184,9 +192,12 @@ def build_index_incremental(
     # Load existing index
     try:
         existing = json.loads(index_output.read_text(encoding="utf-8"))
+        if existing.get("schema_version") != _INDEX_SCHEMA_VERSION:
+            logger.info("Index schema version mismatch, performing full rebuild")
+            raise ValueError("schema mismatch")
         existing_docs = {str(Path(doc["path"]).resolve().as_posix()): doc for doc in existing.get("documents", [])}
-    except (json.JSONDecodeError, OSError, KeyError):
-        logger.info("Existing index corrupt, performing full rebuild")
+    except (json.JSONDecodeError, OSError, KeyError, ValueError):
+        logger.info("Existing index corrupt or outdated, performing full rebuild")
         payload = build_index(knowledge_root)
         manifest = _build_manifest(payload, knowledge_root)
         _save_manifest(manifest, index_output)
@@ -287,7 +298,8 @@ def write_index(
         try:
             from scholar_agent.engine.embedding_retrieve import build_embedding_index as build_emb
 
-            emb_index = build_emb(payload.get("documents", []))
+            docs = payload.get("documents", [])
+            emb_index = build_emb(cast("list[dict[Any, Any]]", docs)) if isinstance(docs, list) else build_emb([])
             valid = sum(1 for e in emb_index["embeddings"] if e)
             total = len(emb_index["doc_ids"])
             output_path = embedding_output or index_output.parent / "embeddings.json"

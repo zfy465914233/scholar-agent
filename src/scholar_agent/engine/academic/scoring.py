@@ -338,8 +338,9 @@ class PaperScorer:
     @staticmethod
     def _parse_date(paper: dict[str, Any]) -> datetime | None:
         """Parse publication date from multiple field names with fallback."""
-        if paper.get("published_date"):
-            return paper["published_date"]
+        published_date = paper.get("published_date")
+        if isinstance(published_date, datetime):
+            return published_date
         raw = paper.get("publicationDate") or paper.get("published")
         if not raw:
             return None

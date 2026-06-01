@@ -127,18 +127,26 @@ def _build_dblp_url(venue_key: str, year: int, offset: int, batch_size: int) -> 
     return f"{_DBLP_API}?{urllib.parse.urlencode(params)}"
 
 
-def _fetch_dblp_page(url: str, max_retries: int = 3) -> dict | None:
+def _fetch_dblp_page(url: str, max_retries: int = 3) -> dict[str, Any] | None:
     """Fetch and parse a single DBLP API page. Returns parsed JSON or None."""
     for attempt in range(max_retries):
         try:
             if HAS_REQUESTS:
                 resp = _requests.get(url, headers={"User-Agent": "ScholarAgent/1.0"}, timeout=60)
                 resp.raise_for_status()
-                return resp.json()
+                val = resp.json()
+                if isinstance(val, dict):
+                    return val
+                logger.warning("DBLP response is not a dict")
+                return None
             else:
                 req = urllib.request.Request(url, headers={"User-Agent": "ScholarAgent/1.0"})
                 with urllib.request.urlopen(req, timeout=60) as resp:
-                    return json.loads(resp.read().decode("utf-8"))
+                    val = json.loads(resp.read().decode("utf-8"))
+                    if isinstance(val, dict):
+                        return val
+                    logger.warning("DBLP response is not a dict")
+                    return None
         except Exception as e:
             logger.warning("dblp request failed try %d/%d: %s", attempt + 1, max_retries, e)
             if attempt < max_retries - 1:
@@ -275,7 +283,7 @@ def _batch_search_s2(
     for title in titles:
         if not title:
             continue
-        params = {"query": title, "limit": per_query, "fields": _S2_PAPER_FIELDS}
+        params: dict[str, Any] = {"query": title, "limit": per_query, "fields": _S2_PAPER_FIELDS}
 
         for attempt in range(3):
             try:

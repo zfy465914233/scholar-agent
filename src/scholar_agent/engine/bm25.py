@@ -11,7 +11,7 @@ import math
 import re
 
 TOKEN_RE = re.compile(r"[a-z0-9_-]+")
-CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
+CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+")
 STOPWORDS = {
     "a",
     "an",
@@ -121,7 +121,7 @@ class BM25:
 
         Returns a list of (doc_index, score, matched_terms) sorted by score descending.
         """
-        query_terms = tokenize(query)
+        query_terms = list(dict.fromkeys(tokenize(query)))
         results: list[tuple[int, float, list[str]]] = []
 
         for idx in range(self.corpus_size):

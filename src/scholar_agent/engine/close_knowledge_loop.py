@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
 import sys
@@ -40,18 +41,23 @@ DEFAULT_INDEX = get_index_path()
 
 
 def _normalize_answer_markdown(text: str) -> str:
-    """Ensure markdown headers are on their own lines with proper spacing."""
+    """Ensure markdown headers are on their own lines with proper spacing.
+
+    Skips content inside fenced code blocks (``` ... ```).
+    """
     if not text:
         return text
-    # Ensure ## / ### headers start on their own line (preceded by newline)
     import re
 
-    text = re.sub(r"(?<!\n)(#{1,6}\s)", r"\n\1", text)
-    # Ensure a blank line before headers
-    text = re.sub(r"([^\n])\n(#{1,6}\s)", r"\1\n\n\2", text)
-    # Collapse 3+ consecutive blank lines into 2
-    text = re.sub(r"\n{4,}", "\n\n\n", text)
-    return text
+    # Split into segments: alternating prose / code-block
+    parts = re.split(r"(```.*?```)", text, flags=re.DOTALL)
+    for i in range(0, len(parts), 2):
+        seg = parts[i]
+        seg = re.sub(r"(?<!\n)(#{1,6}\s)", r"\n\1", seg)
+        seg = re.sub(r"([^\n])\n(#{1,6}\s)", r"\1\n\n\2", seg)
+        seg = re.sub(r"\n{4,}", "\n\n\n", seg)
+        parts[i] = seg
+    return "".join(parts)
 
 
 def parse_args() -> argparse.Namespace:
@@ -763,12 +769,41 @@ def append_changelog(
         entry += f" — {detail}"
     entry += "\n"
 
-    if not changelog_path.exists():
-        header = "# Knowledge Base Changelog\n\nAll changes to knowledge cards are recorded here.\n\n"
-        changelog_path.write_text(header + entry, encoding="utf-8")
+    lock_path = changelog_path.with_suffix(".lock")
+    changelog_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Simple file-based lock for concurrent access safety
+    for _ in range(10):
+        try:
+            import os
+
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            break
+        except FileExistsError:
+            import time
+
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+                if age > 10:
+                    lock_path.unlink(missing_ok=True)
+                    continue
+            except FileNotFoundError:
+                pass
+            time.sleep(0.1)
     else:
-        with open(changelog_path, "a", encoding="utf-8") as f:
-            f.write(entry)
+        pass  # Proceed without lock rather than hanging
+
+    try:
+        if not changelog_path.exists():
+            header = "# Knowledge Base Changelog\n\nAll changes to knowledge cards are recorded here.\n\n"
+            changelog_path.write_text(header + entry, encoding="utf-8")
+        else:
+            with open(changelog_path, "a", encoding="utf-8") as f:
+                f.write(entry)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            lock_path.unlink()
 
 
 def main() -> int:

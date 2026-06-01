@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from scholar_agent.installers.common import (
     build_local_server,
@@ -17,7 +18,7 @@ from scholar_agent.installers.common import (
 
 def build_user_config_fragment(
     *, profile: str = "default", toolset: str = "default", academic: bool = True, scholar_home: str | None = None
-) -> dict[str, object]:
+) -> dict[str, Any]:
     return {
         "$schema": "https://opencode.ai/config.json",
         "mcp": {

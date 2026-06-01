@@ -338,7 +338,7 @@ class KeywordIndex:
 
         def _replace_cb(match: re.Match) -> str:
             nonlocal added
-            matched_text = match.group(1)
+            matched_text = str(match.group(1))
             kw_low = matched_text.lower()
             target = keywords.get(kw_low)
             if target is None or kw_low in linked:

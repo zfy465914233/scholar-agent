@@ -15,7 +15,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -51,14 +51,17 @@ class FolderSummary(TypedDict):
 # ── Config loaders ──────────────────────────────────────────────────
 
 
-def load_routing_policy() -> dict[str, object] | None:
+def load_routing_policy() -> dict[str, Any] | None:
     """Load the optional user-override routing policy.
 
     Returns None if the file does not exist (routing does not depend on it).
     """
     if not POLICY_PATH.exists():
         return None
-    return json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+    val = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+    if isinstance(val, dict):
+        return val
+    return None
 
 
 def load_routing_skill() -> str:
@@ -329,7 +332,7 @@ def match_existing_folders(
 # ── Legacy policy matching (kept for optional user overrides) ──────
 
 
-def _major_tokens(major_slug: str, major_policy: dict[str, object]) -> list[str]:
+def _major_tokens(major_slug: str, major_policy: dict[str, Any]) -> list[str]:
     tokens = _tokens_from_slug(major_slug)
     label = str(major_policy.get("label", "")).lower()
     if label:
@@ -339,7 +342,7 @@ def _major_tokens(major_slug: str, major_policy: dict[str, object]) -> list[str]
     return list(dict.fromkeys(tokens))
 
 
-def _subdomain_tokens(sub_slug: str, sub_policy: dict[str, object]) -> list[str]:
+def _subdomain_tokens(sub_slug: str, sub_policy: dict[str, Any]) -> list[str]:
     if not sub_slug:
         return []
     tokens = _tokens_from_slug(sub_slug)
@@ -353,7 +356,7 @@ def _subdomain_tokens(sub_slug: str, sub_policy: dict[str, object]) -> list[str]
 
 def match_route(
     query: str,
-    policy: dict[str, object],
+    policy: dict[str, Any],
     domain_tree: dict[str, dict[str, Path]],
 ) -> tuple[str, str | None] | None:
     """Match a query against policy-defined domains and subdomains.
@@ -441,7 +444,10 @@ def _call_router_llm(system_prompt: str, user_message: str) -> str | None:
         return None
 
     try:
-        return data["choices"][0]["message"]["content"].strip()
+        content = data["choices"][0]["message"]["content"]
+        if isinstance(content, str):
+            return content.strip()
+        return None
     except (KeyError, IndexError, TypeError):
         return None
 
@@ -599,7 +605,7 @@ def infer_domain_decision(
     card_title: str = "",
     card_summary: str = "",
     domain_override: str | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Infer the full domain routing decision for a query.
 
     Priority: domain_override → AI primary → folder-name matching → heuristic fallback.
@@ -653,16 +659,16 @@ def infer_domain_decision(
     # Tier 2: Folder-name token matching (zero-config, no API)
     matched = match_existing_folders(query, actual_tree)
     if matched is not None:
-        major_domain, subdomain = matched
+        matched_major, matched_sub = matched
         route_slug, output_path, normalized_subdomain = _build_route(
             knowledge_root,
-            major_domain,
-            subdomain,
+            matched_major,
+            matched_sub,
         )
         if _ensure_dir(output_path):
             clear_folder_cache()
         return {
-            "major_domain": major_domain,
+            "major_domain": matched_major,
             "subdomain": normalized_subdomain,
             "route_slug": route_slug,
             "output_path": output_path,

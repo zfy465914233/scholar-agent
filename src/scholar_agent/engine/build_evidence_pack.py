@@ -31,7 +31,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def normalize_local_items(query: str, local_payload: dict[str, object]) -> list[dict[str, object]]:
+from typing import Any
+
+
+def normalize_local_items(query: str, local_payload: dict[str, Any]) -> list[dict[str, Any]]:
     items = []
     for result in local_payload.get("results", []):
         items.append(
@@ -51,7 +54,7 @@ def normalize_local_items(query: str, local_payload: dict[str, object]) -> list[
     return items
 
 
-def normalize_web_items(web_payload: dict[str, object]) -> list[dict[str, object]]:
+def normalize_web_items(web_payload: dict[str, Any]) -> list[dict[str, Any]]:
     items = []
     for result in web_payload.get("evidence", []):
         url = result.get("url") or ""
@@ -75,7 +78,7 @@ def normalize_web_items(web_payload: dict[str, object]) -> list[dict[str, object
 
 def build_evidence_pack(
     query: str, index_path: Path, web_evidence_path: Path | None, local_limit: int
-) -> dict[str, object]:
+) -> dict[str, Any]:
     local_payload = retrieve(query, index_path, local_limit)
     items = normalize_local_items(query, local_payload)
 

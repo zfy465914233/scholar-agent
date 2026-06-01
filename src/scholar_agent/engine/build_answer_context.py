@@ -40,7 +40,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def summarize_item(item: dict[str, object]) -> str:
+from typing import Any
+
+
+def summarize_item(item: dict[str, Any]) -> str:
     title = str(item.get("title") or "")
     source_type = str(item.get("source_type") or "")
     if item.get("origin") == "local":
@@ -48,9 +51,7 @@ def summarize_item(item: dict[str, object]) -> str:
     return f"Web {source_type} source: {title}"
 
 
-def build_answer_context(
-    query: str, route: str, evidence_pack: dict[str, object], warnings: list[str]
-) -> dict[str, object]:
+def build_answer_context(query: str, route: str, evidence_pack: dict[str, Any], warnings: list[str]) -> dict[str, Any]:
     items = evidence_pack.get("items", [])
     direct_support = []
     citations = []

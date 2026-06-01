@@ -6,8 +6,10 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 SYSTEM_PROMPT = """You are a knowledge synthesis engine for scholar-agent. Produce structured answers from evidence.
+
 
 Core principles:
 1. Separate directly supported claims from inference.
@@ -67,13 +69,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_payload(path_or_stdin: str) -> dict[str, object]:
+def load_payload(path_or_stdin: str) -> dict[str, Any]:
     if path_or_stdin == "-":
-        return json.loads(sys.stdin.read())
-    return json.loads(Path(path_or_stdin).read_text(encoding="utf-8"))
+        val = json.loads(sys.stdin.read())
+    else:
+        val = json.loads(Path(path_or_stdin).read_text(encoding="utf-8"))
+    if isinstance(val, dict):
+        return val
+    raise ValueError("Payload must be a JSON object")
 
 
-def render_user_prompt(payload: dict[str, object]) -> str:
+def render_user_prompt(payload: dict[str, Any]) -> str:
     direct_support = payload.get("direct_support", [])
     inference_notes = payload.get("inference_notes", [])
     uncertainty_notes = payload.get("uncertainty_notes", [])

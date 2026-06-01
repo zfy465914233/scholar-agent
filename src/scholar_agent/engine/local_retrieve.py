@@ -22,6 +22,26 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_INDEX = Path("indexes/local/index.json")
 
+_bm25_cache: dict[tuple[str, float], tuple[BM25, list[dict]]] = {}
+
+
+def _get_bm25(documents: list[dict], index_path: Path) -> BM25:
+    """Get or create a cached BM25 instance for the given index."""
+    try:
+        cache_key = (str(index_path), index_path.stat().st_mtime)
+    except OSError:
+        cache_key = (str(index_path), 0.0)
+
+    cached = _bm25_cache.get(cache_key)
+    if cached is not None:
+        return cached[0]
+
+    bm25 = BM25(documents)
+    if len(_bm25_cache) > 4:
+        _bm25_cache.clear()
+    _bm25_cache[cache_key] = (bm25, documents)
+    return bm25
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Retrieve local knowledge documents from the JSON index.")
@@ -60,9 +80,9 @@ def _normalize_scores(scores: dict[str, float]) -> dict[str, float]:
     return {k: (v - min_s) / rng for k, v in scores.items()}
 
 
-def retrieve_bm25(query: str, documents: list[dict], limit: int) -> list[dict]:
+def retrieve_bm25(query: str, documents: list[dict], limit: int, index_path: Path | None = None) -> list[dict]:
     """BM25-only retrieval."""
-    bm25 = BM25(documents)
+    bm25 = _get_bm25(documents, index_path) if index_path is not None else BM25(documents)
     results = []
     for doc_idx, score, matched_terms in bm25.top_k(query, limit):
         doc = documents[doc_idx]
@@ -170,7 +190,10 @@ def retrieve_hybrid(
     return results
 
 
-def retrieve(query: str, index_path: Path, limit: int, **kwargs) -> dict[str, object]:
+from typing import Any
+
+
+def retrieve(query: str, index_path: Path, limit: int, **kwargs) -> dict[str, Any]:
     """Main retrieval entry point — backward compatible with existing callers."""
     try:
         payload = json.loads(index_path.read_text(encoding="utf-8"))
@@ -189,7 +212,7 @@ def retrieve(query: str, index_path: Path, limit: int, **kwargs) -> dict[str, ob
     if embedding_index is not None:
         results = retrieve_hybrid(query, documents, embedding_index, bm25_weight, limit)
     else:
-        results = retrieve_bm25(query, documents, limit)
+        results = retrieve_bm25(query, documents, limit, index_path=index_path)
 
     return {"query": query, "results": results}
 

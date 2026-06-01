@@ -32,6 +32,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from scholar_agent.engine.close_knowledge_loop import (
     QUALITY_THRESHOLD_CAPTURE_ANSWER,
@@ -68,6 +69,19 @@ def _optional_dep_warnings() -> list[str]:
     if importlib.util.find_spec("fitz") is None:
         warnings.append("PyMuPDF not installed — PDF image extraction will not work. Install with: pip install PyMuPDF")
     return warnings
+
+
+def _validate_path_within(path: str | Path, boundary: Path) -> Path | None:
+    """Resolve *path* and ensure it stays within *boundary*.
+
+    Returns the resolved path if safe, or None if it escapes the boundary.
+    """
+    resolved = Path(path).resolve()
+    try:
+        resolved.relative_to(boundary.resolve())
+    except ValueError:
+        return None
+    return resolved
 
 
 def _stale_marker_path(index_path: Path) -> Path:
@@ -119,7 +133,23 @@ def _release_refresh_lock(lock_path: Path) -> None:
 def _ensure_index_ready() -> tuple[Path, bool, str | None]:
     index_path = get_index_path()
     marker = _stale_marker_path(index_path)
+
+    # Check if index is stale or missing
     needs_refresh = marker.exists() or not index_path.exists()
+
+    # Also check if index is older than any knowledge card (detects external edits)
+    if not needs_refresh and index_path.exists():
+        try:
+            index_mtime = index_path.stat().st_mtime
+            knowledge_dir = get_knowledge_dir()
+            if knowledge_dir.exists():
+                for card_path in knowledge_dir.rglob("*.md"):
+                    if card_path.stat().st_mtime > index_mtime:
+                        needs_refresh = True
+                        break
+        except OSError:
+            pass
+
     if not needs_refresh:
         return index_path, False, None
 
@@ -302,7 +332,7 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
             **domain_kw,
         )
     except Exception as e:
-        return json.dumps({"error": f"Failed to write card: {e}"})
+        return json.dumps({"error": f"Failed to write card: {type(e).__name__}"})
 
     index_path = get_index_path()
     _mark_index_stale(index_path)
@@ -443,7 +473,7 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
     try:
         card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir(), index_path=get_index_path())
     except Exception as e:
-        return json.dumps({"error": f"Failed to write card: {e}"})
+        return json.dumps({"error": f"Failed to write card: {type(e).__name__}"})
 
     index_path = get_index_path()
     _mark_index_stale(index_path)
@@ -523,7 +553,7 @@ def ingest_source(source: str, title: str = "", tags: str = "", language: str = 
             auto_title, answer_data, None, get_knowledge_dir(), index_path=get_index_path()
         )
     except Exception as e:
-        return json.dumps({"error": f"Failed to write card: {e}"})
+        return json.dumps({"error": f"Failed to write card: {type(e).__name__}"})
 
     index_path = get_index_path()
     _mark_index_stale(index_path)
@@ -863,7 +893,9 @@ if SCHOLAR_ACADEMIC:
         # Resolve output directory
         if not output_dir or not output_dir.strip():
             output_dir = str(get_knowledge_dir().parent / "paper-notes")
-        out_path = Path(output_dir)
+        out_path = _validate_path_within(output_dir, get_knowledge_dir().parent)
+        if out_path is None:
+            return json.dumps({"error": "output_dir must be within the scholar knowledge directory tree"})
         out_path.mkdir(parents=True, exist_ok=True)
 
         # Find related papers if provided
@@ -952,7 +984,7 @@ if SCHOLAR_ACADEMIC:
                 fill_result = {"status": "error", "reason": str(exc)}
 
         # Quality check on the generated note
-        quality_check = {"has_issues": False, "issues": [], "placeholder_count": 0}
+        quality_check: dict[str, Any] = {"has_issues": False, "issues": [], "placeholder_count": 0}
         try:
             from scholar_agent.engine.academic.paper_analyzer import check_note_quality
 
@@ -1030,7 +1062,11 @@ if SCHOLAR_ACADEMIC:
         pdf_filename = f"{folder_name}.pdf"
 
         if output_dir and output_dir.strip():
-            paper_dir = Path(output_dir.strip())
+            paper_dir = _validate_path_within(output_dir.strip(), get_knowledge_dir().parent)
+            if paper_dir is None:
+                return json.dumps(
+                    {"error": "output_dir must be within the scholar knowledge directory tree", "pdf_path": None}
+                )
         elif domain and domain.strip():
             for char in ("..", "/", "\\"):
                 if char in domain:
@@ -1115,6 +1151,11 @@ if SCHOLAR_ACADEMIC:
         if not output_dir or not output_dir.strip():
             folder_name = _sanitize_title(title) if title and title.strip() else paper_id
             output_dir = str(get_knowledge_dir().parent / "paper-notes" / folder_name / "images")
+        else:
+            validated = _validate_path_within(output_dir, get_knowledge_dir().parent)
+            if validated is None:
+                return json.dumps({"error": "output_dir must be within the scholar knowledge directory tree"})
+            output_dir = str(validated)
 
         # Auto-detect local PDF if pdf_path not provided
         if not pdf_path or not pdf_path.strip():
@@ -1168,7 +1209,9 @@ if SCHOLAR_ACADEMIC:
         # Build answer content
         answer_text = ""
         if note_path and note_path.strip():
-            np = Path(note_path.strip())
+            np = _validate_path_within(note_path.strip(), get_knowledge_dir().parent)
+            if np is None:
+                return json.dumps({"error": "note_path must be within the scholar knowledge directory tree"})
             if np.exists():
                 with contextlib.suppress(OSError):
                     answer_text = np.read_text(encoding="utf-8")
@@ -1225,7 +1268,7 @@ if SCHOLAR_ACADEMIC:
                 index_path=get_index_path(),
             )
         except Exception as e:
-            return json.dumps({"error": f"Failed to write card: {e}"})
+            return json.dumps({"error": f"Failed to write card: {type(e).__name__}"})
 
         _mark_index_stale(get_index_path())
 
@@ -1390,7 +1433,9 @@ if SCHOLAR_ACADEMIC:
         if not notes_dir or not notes_dir.strip():
             notes_dir = str(get_knowledge_dir().parent / "paper-notes")
 
-        notes_path = Path(notes_dir)
+        notes_path = _validate_path_within(notes_dir, get_knowledge_dir().parent)
+        if notes_path is None:
+            return json.dumps({"error": "notes_dir must be within the scholar knowledge directory tree"})
         if not notes_path.exists():
             return json.dumps({"error": f"Notes directory not found: {notes_dir}"})
 
@@ -1415,7 +1460,9 @@ if SCHOLAR_ACADEMIC:
 
         if note_path and note_path.strip():
             # Linkify a single note
-            np = Path(note_path.strip())
+            np = _validate_path_within(note_path.strip(), get_knowledge_dir().parent)
+            if np is None:
+                return json.dumps({"error": "note_path must be within the scholar knowledge directory tree"})
             if not np.exists():
                 return json.dumps({"error": f"Note not found: {note_path}"})
             modified, links = apply_wiki_links(str(np), keyword_index)
@@ -1443,12 +1490,13 @@ if SCHOLAR_ACADEMIC:
     logger.info("Academic tools enabled (SCHOLAR_ACADEMIC=%s)", SCHOLAR_ACADEMIC)
 
 
-def main():
+def main() -> int:
     """Entry point for the MCP server."""
     if mcp is None:
         print("Error: fastmcp not installed. Run: pip install fastmcp", file=sys.stderr)
-        sys.exit(1)
+        return 1
     mcp.run()
+    return 0
 
 
 if __name__ == "__main__":

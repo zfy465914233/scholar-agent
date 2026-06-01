@@ -26,7 +26,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_markdown(payload: dict[str, object]) -> str:
+from typing import Any
+
+
+def build_markdown(payload: dict[str, Any]) -> str:
     query = str(payload.get("query", "")).strip()
     route = str(payload.get("route", "")).strip()
     direct_support = payload.get("direct_support", [])

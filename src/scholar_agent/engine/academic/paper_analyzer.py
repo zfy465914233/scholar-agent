@@ -887,7 +887,7 @@ def _call_llm_anthropic(api_url: str, api_key: str, model: str, system_prompt: s
                 if isinstance(val, list):
                     for item in val:
                         if isinstance(item, dict) and item.get("type") == "text":
-                            return item["text"].strip()
+                            return str(item["text"]).strip()
                         if isinstance(item, str):
                             return item.strip()
         raise KeyError(
@@ -899,7 +899,7 @@ def _call_llm_anthropic(api_url: str, api_key: str, model: str, system_prompt: s
     # Find the first text block (content may start with thinking blocks)
     for block in data["content"]:
         if block.get("type") == "text":
-            return block["text"].strip()
+            return str(block["text"]).strip()
     raise KeyError("No text block in Anthropic response")
 
 
@@ -942,7 +942,7 @@ def _call_llm_openai(api_url: str, api_key: str, model: str, system_prompt: str,
             f"Response preview: {_json.dumps(data)[:200]}"
         )
 
-    return data["choices"][0]["message"]["content"].strip()
+    return str(data["choices"][0]["message"]["content"]).strip()
 
 
 def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
@@ -1020,6 +1020,7 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
 
     Path(note_path).write_text(filled_content, encoding="utf-8")
 
+    assert used_provider is not None
     return {
         "status": "ok",
         "placeholders_filled": filled_count,

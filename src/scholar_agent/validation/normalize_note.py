@@ -8,9 +8,11 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def parse_args() -> argparse.Namespace:
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, help="Path to the staged markdown note")
     parser.add_argument("--paper-notes-root", required=True, help="Root paper-notes directory")
@@ -41,7 +43,7 @@ def build_target_filename(args: argparse.Namespace) -> str:
         return "note.md"
     if not args.filename:
         raise ValueError("explicit filename mode requires --filename")
-    return args.filename
+    return str(args.filename)
 
 
 def prune_empty_parents(path: Path, stop_at: Path) -> None:
@@ -59,7 +61,7 @@ def main() -> int:
     source = Path(args.source).expanduser().resolve()
     root = Path(args.paper_notes_root).expanduser().resolve()
 
-    result = {
+    result: dict[str, Any] = {
         "ok": False,
         "source": str(source),
         "paper_notes_root": str(root),

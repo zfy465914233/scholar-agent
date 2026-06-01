@@ -166,7 +166,7 @@ def build_embedding_index(documents: list[dict]) -> dict[str, Any]:
             continue
         indices, valid_texts = zip(*non_empty, strict=False)
         batch_embeddings = embed_texts(list(valid_texts))
-        result = [[] for _ in batch]
+        result: list[list[float]] = [[] for _ in batch]
         for idx, emb in zip(indices, batch_embeddings, strict=False):
             result[idx] = emb
         all_embeddings.extend(result)

@@ -26,7 +26,11 @@ class ConfigResolution:
 
 def _load_json(path: Path) -> dict[str, Any] | None:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        val = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(val, dict):
+            return val
+        logger.warning("JSON in %s is not a dictionary — skipping", path)
+        return None
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Failed to parse %s: %s — skipping", path, exc)
         return None

@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from scholar_agent.installers.common import (
     build_stdio_server,
@@ -38,7 +39,7 @@ def _claude_config_path(scope: str, cwd: str | Path | None = None) -> Path:
 
 def build_user_config_fragment(
     *, profile: str = "default", toolset: str = "default", academic: bool = True, scholar_home: str | None = None
-) -> dict[str, object]:
+) -> dict[str, Any]:
     return {
         "mcpServers": {
             "scholar-agent": build_stdio_server(

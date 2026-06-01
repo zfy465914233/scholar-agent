@@ -17,7 +17,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -92,8 +92,8 @@ def parse_args() -> argparse.Namespace:
 
 def load_prompt_bundle(path_or_stdin: str) -> dict[str, Any]:
     if path_or_stdin == "-":
-        return json.loads(sys.stdin.read())
-    return json.loads(Path(path_or_stdin).read_text(encoding="utf-8"))
+        return cast("dict[str, Any]", json.loads(sys.stdin.read()))
+    return cast("dict[str, Any]", json.loads(Path(path_or_stdin).read_text(encoding="utf-8")))
 
 
 def build_chat_request(prompt_bundle: dict[str, Any], model: str) -> dict[str, Any]:

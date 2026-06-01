@@ -180,7 +180,11 @@ def load_json(path: Path) -> dict[str, Any]:
     Returns empty dict on failure and prints a warning to stderr.
     """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        val = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(val, dict):
+            return val
+        logger.warning("JSON at %s is not a dictionary", path)
+        return {}
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("failed to load JSON from %s: %s", path, exc)
         return {}

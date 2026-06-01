@@ -27,7 +27,7 @@ import logging
 import sys
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from scholar_agent.engine.exceptions import ResearchError, SynthesisError
 
@@ -92,7 +92,7 @@ class Router:
             )
             if result.returncode != 0:
                 raise ResearchError(f"Router failed: {result.stderr}") from None
-            return json.loads(result.stdout).get("route", "mixed")
+            return str(json.loads(result.stdout).get("route", "mixed"))
 
     def should_research_web(self, route: str) -> bool:
         return route in {"web-led", "mixed"}
@@ -168,7 +168,7 @@ class Researcher:
             )
             if result.returncode != 0:
                 raise ResearchError(f"Researcher failed: {result.stderr}") from None
-            return json.loads(result.stdout)
+            return cast("dict[str, Any]", json.loads(result.stdout))
 
     def is_evidence_sufficient(self, answer_context: dict[str, Any]) -> tuple[bool, str]:
         """Check if the gathered evidence is sufficient for synthesis.
@@ -229,7 +229,7 @@ class Synthesizer:
             )
             if result.returncode != 0:
                 raise SynthesisError(f"Synthesizer render failed: {result.stderr}") from None
-            return json.loads(result.stdout)
+            return cast("dict[str, Any]", json.loads(result.stdout))
 
     def synthesize(self, prompt_bundle: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
         """Call the LLM to generate a structured answer.
@@ -259,7 +259,7 @@ class Synthesizer:
             )
             if result.returncode != 0:
                 raise SynthesisError(f"Synthesizer failed: {result.stderr}") from None
-            return json.loads(result.stdout)
+            return cast("dict[str, Any]", json.loads(result.stdout))
 
 
 # ── Curator ────────────────────────────────────────────────────────

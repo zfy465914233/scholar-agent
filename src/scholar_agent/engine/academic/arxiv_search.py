@@ -273,7 +273,7 @@ class PaperRecord:
 def _fetch_arxiv_xml(url: str) -> str:
     """Fetch raw XML body from arXiv (single attempt, may raise)."""
     with _url_lib.urlopen(url, timeout=60) as resp:
-        return resp.read().decode("utf-8")
+        return str(resp.read().decode("utf-8"))
 
 
 def query_arxiv(
@@ -311,17 +311,23 @@ def query_arxiv(
 # ---------------------------------------------------------------------------
 
 
-def _fetch_s2_json(url: str, params: dict, headers: dict) -> dict:
+def _fetch_s2_json(url: str, params: dict, headers: dict) -> dict[str, Any]:
     """Fetch a single S2 API page (may raise)."""
     if _HAS_REQUESTS:
         r = _http.get(url, params=params, headers=headers, timeout=15)
         r.raise_for_status()
-        return r.json()
+        val = r.json()
+        if isinstance(val, dict):
+            return val
+        raise ValueError("S2 response is not a JSON object")
     else:
         qs = urllib.parse.urlencode(params)
         req = _url_lib.Request(f"{url}?{qs}", headers=headers)
         with _url_lib.urlopen(req, timeout=15) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            val = json.loads(resp.read().decode("utf-8"))
+            if isinstance(val, dict):
+                return val
+            raise ValueError("S2 response is not a JSON object")
 
 
 def _enrich_s2_author_affiliations(authors: list[dict]) -> list[str]:
