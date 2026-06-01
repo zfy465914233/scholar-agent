@@ -1020,7 +1020,8 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
 
     Path(note_path).write_text(filled_content, encoding="utf-8")
 
-    assert used_provider is not None
+    if used_provider is None:
+        return {"status": "error", "reason": "All LLM providers failed"}
     return {
         "status": "ok",
         "placeholders_filled": filled_count,

@@ -250,6 +250,7 @@ def build_index_incremental(
     _save_manifest(manifest, index_output)
 
     return {
+        "schema_version": _INDEX_SCHEMA_VERSION,
         "knowledge_root": str(knowledge_root.as_posix()),
         "documents": documents,
     }

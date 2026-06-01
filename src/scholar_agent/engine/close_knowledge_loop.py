@@ -53,8 +53,11 @@ def _normalize_answer_markdown(text: str) -> str:
     parts = re.split(r"(```.*?```)", text, flags=re.DOTALL)
     for i in range(0, len(parts), 2):
         seg = parts[i]
-        seg = re.sub(r"(?<!\n)(#{1,6}\s)", r"\n\1", seg)
+        # Ensure headers start at beginning of a line
+        seg = re.sub(r"(?<!^)(?<!\n)(#{1,6}\s)", r"\n\1", seg, flags=re.MULTILINE)
+        # Ensure a blank line before headers
         seg = re.sub(r"([^\n])\n(#{1,6}\s)", r"\1\n\n\2", seg)
+        # Collapse 3+ consecutive blank lines into 2
         seg = re.sub(r"\n{4,}", "\n\n\n", seg)
         parts[i] = seg
     return "".join(parts)

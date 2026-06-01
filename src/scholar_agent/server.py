@@ -698,7 +698,10 @@ if SCHOLAR_ACADEMIC:
 
         config = {}
         if config_path:
-            config = _load_config(config_path)
+            validated_cp = _validate_path_within(config_path, get_knowledge_dir().parent)
+            if validated_cp is None:
+                return json.dumps({"error": "config_path must be within the scholar knowledge directory tree"})
+            config = _load_config(str(validated_cp))
         if not config:
             # Try research interests from .scholar.json
             interests = get_research_interests()
@@ -800,7 +803,10 @@ if SCHOLAR_ACADEMIC:
 
         config = {}
         if config_path:
-            config = _load_config(config_path)
+            validated_cp = _validate_path_within(config_path, get_knowledge_dir().parent)
+            if validated_cp is None:
+                return json.dumps({"error": "config_path must be within the scholar knowledge directory tree"})
+            config = _load_config(str(validated_cp))
         if not config:
             interests = get_research_interests()
             if interests.get("research_domains"):
@@ -888,7 +894,10 @@ if SCHOLAR_ACADEMIC:
             paper_title = paper.get("title", "")
             detected_pdf = _find_local_pdf(arxiv_id, title=paper_title)
         else:
-            detected_pdf = pdf_path.strip()
+            validated_pdf = _validate_path_within(pdf_path.strip(), get_knowledge_dir().parent)
+            if validated_pdf is None:
+                return json.dumps({"error": "pdf_path must be within the scholar knowledge directory tree"})
+            detected_pdf = str(validated_pdf)
 
         # Resolve output directory
         if not output_dir or not output_dir.strip():
@@ -959,7 +968,7 @@ if SCHOLAR_ACADEMIC:
             )
         except Exception as e:
             logger.exception("analyze_paper failed")
-            return json.dumps({"error": f"Failed to generate note: {e}"})
+            return json.dumps({"error": f"Failed to generate note: {type(e).__name__}"})
 
         # Extract full text from local PDF if available
         pdf_text = ""
@@ -1162,12 +1171,17 @@ if SCHOLAR_ACADEMIC:
             local_pdf = _find_local_pdf(paper_id, title=title)
             if local_pdf:
                 pdf_path = local_pdf
+        elif pdf_path.strip():
+            validated_pdf = _validate_path_within(pdf_path.strip(), get_knowledge_dir().parent)
+            if validated_pdf is None:
+                return json.dumps({"error": "pdf_path must be within the scholar knowledge directory tree"})
+            pdf_path = str(validated_pdf)
 
         try:
             images = _extract(paper_id, output_dir, pdf_path or None)
         except Exception as e:
             logger.exception("extract_paper_images failed")
-            return json.dumps({"error": str(e), "images": [], "count": 0})
+            return json.dumps({"error": str(type(e).__name__), "images": [], "count": 0})
 
         result: dict[str, object] = {
             "status": "ok",
@@ -1314,7 +1328,10 @@ if SCHOLAR_ACADEMIC:
         # Load config
         config = {}
         if config_path:
-            config = _load_config(config_path)
+            validated_cp = _validate_path_within(config_path, get_knowledge_dir().parent)
+            if validated_cp is None:
+                return json.dumps({"error": "config_path must be within the scholar knowledge directory tree"})
+            config = _load_config(str(validated_cp))
         if not config:
             interests = get_research_interests()
             if interests.get("research_domains"):
@@ -1441,9 +1458,9 @@ if SCHOLAR_ACADEMIC:
 
         # Build keyword index
         try:
-            keyword_index = build_keyword_index(notes_dir)
+            keyword_index = build_keyword_index(str(notes_path))
         except Exception as e:
-            return json.dumps({"error": f"Failed to scan keywords: {e}"})
+            return json.dumps({"error": f"Failed to scan keywords: {type(e).__name__}"})
 
         if not keyword_index:
             return json.dumps(
@@ -1500,4 +1517,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -107,9 +107,10 @@ def retrieve_hybrid(
     embedding_index: dict | None,
     bm25_weight: float,
     limit: int,
+    index_path: Path | None = None,
 ) -> list[dict]:
     """Hybrid retrieval: BM25 + embedding reranking."""
-    bm25 = BM25(documents)
+    bm25 = _get_bm25(documents, index_path) if index_path is not None else BM25(documents)
     bm25_results = bm25.top_k(query, limit * 3)  # fetch more candidates for reranking
 
     # BM25 scores
@@ -210,7 +211,7 @@ def retrieve(query: str, index_path: Path, limit: int, **kwargs) -> dict[str, An
     bm25_weight = kwargs.get("bm25_weight", 0.6)
 
     if embedding_index is not None:
-        results = retrieve_hybrid(query, documents, embedding_index, bm25_weight, limit)
+        results = retrieve_hybrid(query, documents, embedding_index, bm25_weight, limit, index_path=index_path)
     else:
         results = retrieve_bm25(query, documents, limit, index_path=index_path)
 
