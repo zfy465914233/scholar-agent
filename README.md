@@ -23,7 +23,11 @@
 
 ## Demo
 
-> **TODO**: Replace with a demo GIF showing: ask a question → AI researches web + academic papers → saves structured knowledge card → next question hits local cache instantly.
+<p align="center">
+  <img src="assets/demo.gif" alt="Scholar Agent Demo" width="720" />
+</p>
+
+<p align="center"><sub>Ask → Research → Accumulate → Next question hits local cache instantly</sub></p>
 
 <p align="center">
   <img src="assets/flywheel.svg" alt="Knowledge Flywheel" width="720" />
