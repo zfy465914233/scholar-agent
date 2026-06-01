@@ -184,7 +184,7 @@ def build_index_incremental(
     # Load existing index
     try:
         existing = json.loads(index_output.read_text(encoding="utf-8"))
-        existing_docs = {doc["path"]: doc for doc in existing.get("documents", [])}
+        existing_docs = {str(Path(doc["path"]).resolve().as_posix()): doc for doc in existing.get("documents", [])}
     except (json.JSONDecodeError, OSError, KeyError):
         logger.info("Existing index corrupt, performing full rebuild")
         payload = build_index(knowledge_root)
@@ -222,7 +222,7 @@ def build_index_incremental(
         elif abs_key in existing_docs:
             new_docs[abs_key] = existing_docs[abs_key]
         else:
-            new_docs[abs_key] = parse_card(path)
+            new_docs[abs_key] = parse_card(path, knowledge_root=knowledge_root)
 
     documents = list(new_docs.values())
     _attach_backlinks(documents)

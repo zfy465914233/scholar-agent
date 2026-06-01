@@ -160,7 +160,7 @@ def _pull_source_tarball(paper_id: str, dest: str) -> bool:
                 and os.path.splitext(m.name)[1].lower() in _IMAGE_EXTS
             ]
             if image_members:
-                tf.extractall(path=dest, members=image_members)
+                tf.extractall(path=dest, members=image_members, filter="data")
             else:
                 # Fallback: try full extraction if no image members found
                 safe = [
@@ -168,7 +168,7 @@ def _pull_source_tarball(paper_id: str, dest: str) -> bool:
                     for m in tf.getmembers()
                     if not m.name.startswith("/") and ".." not in m.name and not m.issym() and not m.islnk()
                 ]
-                tf.extractall(path=dest, members=safe)
+                tf.extractall(path=dest, members=safe, filter="data")
         return True
     except Exception as exc:
         logger.error("Source tarball failed: %s", exc)

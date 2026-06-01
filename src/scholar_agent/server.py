@@ -162,6 +162,9 @@ def query_knowledge(query: str, limit: int = 5) -> str:
     if not isinstance(limit, int) or limit < 1 or limit > 50:
         return json.dumps({"error": "limit must be an integer between 1 and 50", "results": []})
 
+    if not query or not query.strip():
+        return json.dumps({"error": "query must not be empty", "results": []})
+
     index_path, refreshed, refresh_error = _ensure_index_ready()
 
     if not index_path.exists():
@@ -284,7 +287,12 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
     try:
         # Pass language to answer_data so build_knowledge_card can write it to frontmatter
         answer_data["language"] = language
-        domain_kw = {"domain_override": domain.strip()} if domain and domain.strip() else {}
+        sanitized_domain = domain.strip() if domain and domain.strip() else ""
+        if sanitized_domain:
+            for char in ("..", "/", "\\"):
+                if char in sanitized_domain:
+                    return json.dumps({"error": "domain must not contain path separators or parent references"})
+        domain_kw = {"domain_override": sanitized_domain} if sanitized_domain else {}
         card_path = build_knowledge_card(
             query,
             answer_data,
@@ -772,6 +780,10 @@ if SCHOLAR_ACADEMIC:
                 }
         if not config:
             config = {"research_domains": {}, "excluded_keywords": []}
+
+        if not isinstance(top_n, int) or top_n < 1:
+            top_n = 10
+        top_n = min(top_n, 50)
 
         try:
             result = search_and_score_conferences(
