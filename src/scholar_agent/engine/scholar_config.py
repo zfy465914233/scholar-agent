@@ -22,6 +22,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+
 # Scholar Agent's own directory — walk up to find repo root for embedded-mode support
 def _resolve_scholar_root() -> Path:
     candidate = Path(__file__).resolve().parent
@@ -33,6 +34,7 @@ def _resolve_scholar_root() -> Path:
             break
         candidate = parent
     return Path(__file__).resolve().parents[3]
+
 
 SCHOLAR_ROOT = _resolve_scholar_root()
 
@@ -49,10 +51,7 @@ _config_cache: dict | None = None
 def _get_user_config_path() -> Path:
     """Return the user-level config path (~/scholar/config/config.json by default)."""
     override = os.environ.get("SCHOLAR_HOME", "").strip()
-    if override:
-        user_home = Path(override).expanduser().resolve()
-    else:
-        user_home = Path.home() / "scholar"
+    user_home = Path(override).expanduser().resolve() if override else Path.home() / "scholar"
     return user_home / "config" / "config.json"
 
 

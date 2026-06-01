@@ -6,19 +6,17 @@ Run:  python -m tests.verify_v2_v3_v4
 from __future__ import annotations
 
 import sys
-import os
-import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
 
-# Ensure project root and scripts/ are importable
-
-from scholar_agent.engine.academic.scoring import PaperScorer
 from scholar_agent.engine.academic.arxiv_search import _slugify
 
+# Ensure project root and scripts/ are importable
+from scholar_agent.engine.academic.scoring import PaperScorer
 
 # ========================================================================
 # V2: Linear Freshness Decay Verification
 # ========================================================================
+
 
 def verify_v2():
     print("=" * 72)
@@ -55,11 +53,12 @@ def verify_v2():
     score_366 = next(s for a, s in results if a == 366)
     score_400 = next(s for a, s in results if a == 400)
     zero_after_year = score_365 == 0.0 and score_366 == 0.0 and score_400 == 0.0
-    print(f"[CHECK] Score at 365+ is 0.0 (365={score_365}, 366={score_366}, 400={score_400}): "
-          f"{'PASS' if zero_after_year else 'FAIL'}")
+    print(
+        f"[CHECK] Score at 365+ is 0.0 (365={score_365}, 366={score_366}, 400={score_400}): "
+        f"{'PASS' if zero_after_year else 'FAIL'}"
+    )
 
     # OLD step-function reference values
-    OLD_STEP = {0: 3.0, 30: 2.2, 90: 1.3, 180: 0.7, 240: 0.0, 300: 0.0, 364: 0.0}
 
     print(f"\n{'age_days':>10}  {'NEW':>8}  {'OLD':>8}  {'delta':>8}  {'rank_change':>14}")
     print("-" * 56)
@@ -87,10 +86,12 @@ def verify_v2():
             rank_differences.append((age, new_score, old, delta))
 
     for age, new_score, old, delta in rank_differences:
-        print(f"{age:>10}  {new_score:>8.2f}  {old:>8.1f}  {delta:>+8.2f}  {'DIFFERENT' if abs(delta) > 0.01 else 'same':>14}")
+        print(
+            f"{age:>10}  {new_score:>8.2f}  {old:>8.1f}  {delta:>+8.2f}  {'DIFFERENT' if abs(delta) > 0.01 else 'same':>14}"
+        )
 
     # Summary of ranking differences
-    print(f"\n  Age ranges where NEW ranking DIFFERS from OLD:")
+    print("\n  Age ranges where NEW ranking DIFFERS from OLD:")
     if rank_differences:
         # Group into ranges
         ages_diff = [a for a, _, _, _ in rank_differences]
@@ -137,6 +138,7 @@ def verify_v2():
 # V3: Date Parsing Compatibility
 # ========================================================================
 
+
 def verify_v3():
     print("\n" + "=" * 72)
     print("V3: DATE PARSING COMPATIBILITY")
@@ -168,7 +170,7 @@ def verify_v3():
             "expect_day": None,
         },
         {
-            "label": 'Case 4: published_date=datetime(2024,3,15) (direct)',
+            "label": "Case 4: published_date=datetime(2024,3,15) (direct)",
             "paper": {"published_date": datetime(2024, 3, 15)},
             "expect_success": True,
             "expect_year": 2024,
@@ -197,12 +199,12 @@ def verify_v3():
             "expect_success": False,
         },
         {
-            "label": 'Case 8: {} (no date field)',
+            "label": "Case 8: {} (no date field)",
             "paper": {},
             "expect_success": False,
         },
         {
-            "label": 'Case 9: publicationDate=None',
+            "label": "Case 9: publicationDate=None",
             "paper": {"publicationDate": None},
             "expect_success": False,
         },
@@ -257,6 +259,7 @@ def verify_v3():
 # ========================================================================
 # V4: _slugify Dedup Accuracy
 # ========================================================================
+
 
 def verify_v4():
     print("\n" + "=" * 72)
@@ -321,9 +324,9 @@ def verify_v4():
         actually_dedup = slugs[0] == slugs[1]
 
         print(f"\n  {tc['label']}")
-        for i, (title, slug) in enumerate(zip(tc["titles"], slugs)):
-            print(f"    Title {i+1}: \"{title}\"")
-            print(f"    Slug  {i+1}: \"{slug}\"")
+        for i, (title, slug) in enumerate(zip(tc["titles"], slugs, strict=False)):
+            print(f'    Title {i + 1}: "{title}"')
+            print(f'    Slug  {i + 1}: "{slug}"')
 
         if tc["should_dedup"] is not None:
             if actually_dedup == tc["should_dedup"]:
@@ -338,9 +341,9 @@ def verify_v4():
 
             # Flag false positive / false negative
             if actually_dedup and not tc["should_dedup"]:
-                print(f"    ** FALSE POSITIVE: these should NOT dedup but they do **")
+                print("    ** FALSE POSITIVE: these should NOT dedup but they do **")
             elif not actually_dedup and tc["should_dedup"]:
-                print(f"    ** FALSE NEGATIVE: these SHOULD dedup but they don't **")
+                print("    ** FALSE NEGATIVE: these SHOULD dedup but they don't **")
         else:
             print(f"    [INFO] Same slug: {actually_dedup}")
 
@@ -355,7 +358,7 @@ def verify_v4():
     ]
     for title, desc in edge_titles:
         slug = _slugify(title)
-        print(f"    {desc} -> slug=\"{slug[:60]}{'...' if len(slug) > 60 else ''}\"")
+        print(f'    {desc} -> slug="{slug[:60]}{"..." if len(slug) > 60 else ""}"')
 
     return all_pass
 

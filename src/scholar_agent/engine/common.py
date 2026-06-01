@@ -68,6 +68,7 @@ def get_package_data_path(*parts: str) -> Path:
 
 # ── Frontmatter parsing ────────────────────────────────────────────
 
+
 def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
     """Parse YAML-like frontmatter from a markdown string.
 
@@ -111,8 +112,9 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
         # Decode \uXXXX unicode escapes (from json.dumps with ensure_ascii)
         if value and "\\u" in value:
             import re
+
             value = re.sub(
-                r'\\u([0-9a-fA-F]{4})',
+                r"\\u([0-9a-fA-F]{4})",
                 lambda m: chr(int(m.group(1), 16)),
                 value,
             )
@@ -130,6 +132,7 @@ def parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
 
 
 # ── Slugification ──────────────────────────────────────────────────
+
 
 def sanitize_title(title: str) -> str:
     """Convert a paper title to a filesystem-safe directory/filename.
@@ -170,6 +173,7 @@ def safe_slug(text: str) -> str:
 
 # ── JSON I/O ───────────────────────────────────────────────────────
 
+
 def load_json(path: Path) -> dict[str, Any]:
     """Load JSON from a file with error handling.
 
@@ -192,6 +196,7 @@ def write_json(path: Path, data: Any, indent: int = 2) -> None:
 
 
 # ── Date / time helpers ────────────────────────────────────────────
+
 
 def normalize_date(value: Any) -> str | None:
     """Normalize a date value to ISO format.
@@ -252,16 +257,28 @@ def resolve_link_target(target: str, all_ids: set[str]) -> str | None:
 
 # ── Entity extraction ─────────────────────────────────────────────
 
-_CAPITALIZED_PHRASE = re.compile(
-    r"\b([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)+)\b"
-)
+_CAPITALIZED_PHRASE = re.compile(r"\b([A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+)+)\b")
 _BACKTICK_TERM = re.compile(r"`([^`]{2,40})`")
 _STOP_ENTITIES = {
-    "Research Note", "Knowledge Note", "Method Note", "Supporting Claims", "Missing Evidence",
-    "Suggested Next Steps", "Visual Aids", "Source Images",
-    "Concrete Example", "Expected Output", "Question", "Answer",
-    "Uncertainty", "Inferences", "See Also", "Key Findings",
-    "Related Work", "Further Reading", "Open Questions",
+    "Research Note",
+    "Knowledge Note",
+    "Method Note",
+    "Supporting Claims",
+    "Missing Evidence",
+    "Suggested Next Steps",
+    "Visual Aids",
+    "Source Images",
+    "Concrete Example",
+    "Expected Output",
+    "Question",
+    "Answer",
+    "Uncertainty",
+    "Inferences",
+    "See Also",
+    "Key Findings",
+    "Related Work",
+    "Further Reading",
+    "Open Questions",
 }
 
 

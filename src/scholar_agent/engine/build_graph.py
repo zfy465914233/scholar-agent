@@ -67,13 +67,15 @@ def build_graph_data(index_path: Path) -> dict:
         safe_title = html.escape(doc.get("title", doc_id))
         safe_topic = html.escape(topic)
         safe_type = html.escape(doc.get("type", "?"))
-        nodes.append({
-            "id": doc_id,
-            "label": safe_title[:40],
-            "title": f"<b>{safe_title}</b><br>Topic: {safe_topic}<br>Type: {safe_type}",
-            "color": color,
-            "group": topic,
-        })
+        nodes.append(
+            {
+                "id": doc_id,
+                "label": safe_title[:40],
+                "title": f"<b>{safe_title}</b><br>Topic: {safe_topic}<br>Type: {safe_type}",
+                "color": color,
+                "group": topic,
+            }
+        )
 
         for link in doc.get("links", []):
             edge_key = (doc_id, link)

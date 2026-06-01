@@ -1,7 +1,7 @@
 import json
 import subprocess
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -10,8 +10,9 @@ ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 
 
-from scholar_agent.engine.local_index import build_backlinks
 import sys
+
+from scholar_agent.engine.local_index import build_backlinks
 
 
 class LocalIndexTest(unittest.TestCase):
@@ -19,7 +20,15 @@ class LocalIndexTest(unittest.TestCase):
         INDEX_PATH.unlink(missing_ok=True)
 
     def test_local_index_builder_creates_json_index_from_knowledge_cards(self) -> None:
-        command = [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)]
+        command = [
+            sys.executable,
+            "-m",
+            "scholar_agent.engine.local_index",
+            "--knowledge-root",
+            "tests/fixtures",
+            "--output",
+            str(INDEX_PATH),
+        ]
         result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
 
         self.assertEqual(
@@ -79,9 +88,13 @@ class BuildBacklinksTest(unittest.TestCase):
     def test_index_includes_backlinks(self) -> None:
         """Integration: full index build should populate backlinks."""
         command = [
-            sys.executable, "-m", "scholar_agent.engine.local_index",
-            "--knowledge-root", "tests/fixtures",
-            "--output", str(INDEX_PATH),
+            sys.executable,
+            "-m",
+            "scholar_agent.engine.local_index",
+            "--knowledge-root",
+            "tests/fixtures",
+            "--output",
+            str(INDEX_PATH),
         ]
         subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
         payload = json.loads(INDEX_PATH.read_text(encoding="utf-8"))

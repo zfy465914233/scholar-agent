@@ -66,16 +66,18 @@ def retrieve_bm25(query: str, documents: list[dict], limit: int) -> list[dict]:
     results = []
     for doc_idx, score, matched_terms in bm25.top_k(query, limit):
         doc = documents[doc_idx]
-        results.append({
-            "doc_id": doc["doc_id"],
-            "path": doc["path"],
-            "title": doc["title"],
-            "type": doc["type"],
-            "topic": doc["topic"],
-            "score": round(score, 4),
-            "matched_terms": sorted(set(matched_terms)),
-            "source": "bm25",
-        })
+        results.append(
+            {
+                "doc_id": doc["doc_id"],
+                "path": doc["path"],
+                "title": doc["title"],
+                "type": doc["type"],
+                "topic": doc["topic"],
+                "score": round(score, 4),
+                "matched_terms": sorted(set(matched_terms)),
+                "source": "bm25",
+            }
+        )
     return results
 
 
@@ -100,6 +102,7 @@ def retrieve_hybrid(
     if embedding_index is not None:
         try:
             from scholar_agent.engine.embedding_retrieve import retrieve_by_embedding
+
             emb_results = retrieve_by_embedding(query, embedding_index, k=limit * 3)
             emb_scores = {doc_id: score for doc_id, score in emb_results}
         except Exception as exc:
@@ -110,16 +113,18 @@ def retrieve_hybrid(
         results = []
         for doc_idx, score, matched_terms in bm25_results[:limit]:
             doc = documents[doc_idx]
-            results.append({
-                "doc_id": doc["doc_id"],
-                "path": doc["path"],
-                "title": doc["title"],
-                "type": doc["type"],
-                "topic": doc["topic"],
-                "score": round(score, 4),
-                "matched_terms": sorted(set(matched_terms)),
-                "source": "bm25",
-            })
+            results.append(
+                {
+                    "doc_id": doc["doc_id"],
+                    "path": doc["path"],
+                    "title": doc["title"],
+                    "type": doc["type"],
+                    "topic": doc["topic"],
+                    "score": round(score, 4),
+                    "matched_terms": sorted(set(matched_terms)),
+                    "source": "bm25",
+                }
+            )
         return results
 
     # Normalize and blend scores
@@ -150,16 +155,18 @@ def retrieve_hybrid(
     results = []
     for doc_id, score in blended[:limit]:
         doc = doc_by_id.get(doc_id, {})
-        results.append({
-            "doc_id": doc_id,
-            "path": doc.get("path", ""),
-            "title": doc.get("title", ""),
-            "type": doc.get("type", ""),
-            "topic": doc.get("topic", ""),
-            "score": round(score, 4),
-            "matched_terms": sorted(set(matched_terms_map.get(doc_id, []))),
-            "source": "hybrid",
-        })
+        results.append(
+            {
+                "doc_id": doc_id,
+                "path": doc.get("path", ""),
+                "title": doc.get("title", ""),
+                "type": doc.get("type", ""),
+                "topic": doc.get("topic", ""),
+                "score": round(score, 4),
+                "matched_terms": sorted(set(matched_terms_map.get(doc_id, []))),
+                "source": "hybrid",
+            }
+        )
     return results
 
 

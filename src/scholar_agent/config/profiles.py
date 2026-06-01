@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def get_active_profile(config: Mapping[str, Any] | None = None, env: Mapping[str, str] | None = None) -> str:

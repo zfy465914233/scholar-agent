@@ -13,7 +13,6 @@ from pathlib import Path
 
 from scholar_agent.engine.build_evidence_pack import build_evidence_pack
 
-
 LATEST_PATTERNS = (
     "latest",
     "newest",
@@ -122,6 +121,7 @@ def _probe_local_score(query: str, index_path: Path | None = None) -> float | No
         return None
     try:
         from scholar_agent.engine.local_retrieve import retrieve_bm25
+
         payload = json.loads(index_path.read_text(encoding="utf-8"))
         documents = payload.get("documents", [])
         if not documents:

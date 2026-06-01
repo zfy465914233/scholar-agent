@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING
 
 from scholar_agent.config.loader import resolve_config
 from scholar_agent.config.paths import build_default_config, get_user_config_path, get_user_home
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from pathlib import Path
 
 
 def _user_home_directories(user_home: Path) -> list[Path]:
@@ -25,7 +28,9 @@ def _user_home_directories(user_home: Path) -> list[Path]:
     ]
 
 
-def initialize_user_home(*, force: bool = False, write_config: bool = True, env: Mapping[str, str] | None = None) -> dict[str, object]:
+def initialize_user_home(
+    *, force: bool = False, write_config: bool = True, env: Mapping[str, str] | None = None
+) -> dict[str, object]:
     user_home = get_user_home(env)
     user_config_path = get_user_config_path(env)
 

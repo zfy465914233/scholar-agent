@@ -105,11 +105,7 @@ def is_card(path: Path) -> bool:
 
 
 def iter_cards(knowledge_root: Path) -> list[Path]:
-    return sorted(
-        path
-        for path in knowledge_root.rglob("*.md")
-        if is_card(path)
-    )
+    return sorted(path for path in knowledge_root.rglob("*.md") if is_card(path))
 
 
 def _manifest_path(index_output: Path) -> Path:
@@ -234,7 +230,9 @@ def build_index_incremental(
     removed = len(existing_docs) - len(existing_docs.keys() & current_manifest.keys())
     logger.info(
         "Incremental index: %d docs total, %d re-parsed, %d removed",
-        len(documents), len(changed & current_manifest.keys()), removed,
+        len(documents),
+        len(changed & current_manifest.keys()),
+        removed,
     )
 
     manifest = dict(current_manifest)
@@ -288,14 +286,13 @@ def write_index(
     if build_embedding_index:
         try:
             from scholar_agent.engine.embedding_retrieve import build_embedding_index as build_emb
+
             emb_index = build_emb(payload.get("documents", []))
             valid = sum(1 for e in emb_index["embeddings"] if e)
             total = len(emb_index["doc_ids"])
             output_path = embedding_output or index_output.parent / "embeddings.json"
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(
-                json.dumps(emb_index, ensure_ascii=False) + "\n", encoding="utf-8"
-            )
+            output_path.write_text(json.dumps(emb_index, ensure_ascii=False) + "\n", encoding="utf-8")
             logger.info("Embedding index: %d/%d docs embedded → %s", valid, total, output_path)
         except Exception as exc:
             logger.warning("embedding index build failed (%s), skipping", exc)

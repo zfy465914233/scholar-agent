@@ -1,6 +1,5 @@
 """Tests for the agent control loop (agent.py)."""
 
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -13,18 +12,26 @@ FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 
 # Ensure scripts/ is importable
 
-from scholar_agent.engine.agent import DomainAgent, Router, Researcher  # noqa: E402
+from scholar_agent.engine.agent import DomainAgent, Researcher, Router
 
 
 def _build_index() -> None:
     """Build the test index once."""
     import subprocess
-    import sys
+
     subprocess.run(
-        [sys.executable, "-m", "scholar_agent.engine.local_index",
-         "--knowledge-root", str(_ROOT / "tests" / "fixtures"),
-         "--output", str(INDEX_PATH)],
-        capture_output=True, text=True, encoding="utf-8",
+        [
+            sys.executable,
+            "-m",
+            "scholar_agent.engine.local_index",
+            "--knowledge-root",
+            str(_ROOT / "tests" / "fixtures"),
+            "--output",
+            str(INDEX_PATH),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
 
 
@@ -126,7 +133,7 @@ class ResearcherTest(unittest.TestCase):
     def test_evidence_sufficiency_check(self) -> None:
         r = Researcher(index_path=INDEX_PATH, research_script=FAKE_HARNESS)
         ctx = r.gather("what is a markov chain", "local-led")
-        sufficient, reason = r.is_evidence_sufficient(ctx)
+        sufficient, _reason = r.is_evidence_sufficient(ctx)
         self.assertTrue(sufficient)
 
     def test_evidence_insufficient_on_empty(self) -> None:

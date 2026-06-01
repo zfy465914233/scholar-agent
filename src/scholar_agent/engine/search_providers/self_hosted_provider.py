@@ -6,7 +6,6 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
 
-from scholar_agent.engine.cache_helper import get as cache_get
 from scholar_agent.engine.common import normalize_date
 from scholar_agent.engine.retry import retry_with_backoff
 from scholar_agent.engine.search_providers.base import ProviderResult, SearchCandidate, SearchProvider
@@ -72,22 +71,21 @@ class AcademicProvider(SearchProvider):
 
 def search_openalex(query: str) -> list[dict[str, Any]]:
     url = f"https://api.openalex.org/works?search={quote_plus(query)}"
-    request = Request(
-        url,
-        headers={"User-Agent": "scholar-agent/1.0 (mailto:scholar@example.com)"}
-    )
+    request = Request(url, headers={"User-Agent": "scholar-agent/1.0 (mailto:scholar@example.com)"})
 
     def _do_search() -> list[dict[str, Any]]:
         with urlopen(request, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
         results = []
         for item in payload.get("results", [])[:5]:
-            results.append({
-                "url": item.get("doi") or item.get("id"),
-                "title": item.get("title", ""),
-                "content": "",
-                "publishedDate": item.get("publication_date", "")
-            })
+            results.append(
+                {
+                    "url": item.get("doi") or item.get("id"),
+                    "title": item.get("title", ""),
+                    "content": "",
+                    "publishedDate": item.get("publication_date", ""),
+                }
+            )
         return results
 
     try:
@@ -103,22 +101,21 @@ def search_openalex(query: str) -> list[dict[str, Any]]:
 
 def search_semanticscholar(query: str) -> list[dict[str, Any]]:
     url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={quote_plus(query)}&limit=5&fields=title,url,abstract,year"
-    request = Request(
-        url,
-        headers={"User-Agent": "scholar-agent/1.0"}
-    )
+    request = Request(url, headers={"User-Agent": "scholar-agent/1.0"})
 
     def _do_search() -> list[dict[str, Any]]:
         with urlopen(request, timeout=10) as response:
             payload = json.loads(response.read().decode("utf-8"))
         results = []
         for item in payload.get("data", []):
-            results.append({
-                "url": item.get("url", ""),
-                "title": item.get("title", ""),
-                "content": item.get("abstract", ""),
-                "publishedDate": f"{item.get('year')}-01-01" if item.get("year") else ""
-            })
+            results.append(
+                {
+                    "url": item.get("url", ""),
+                    "title": item.get("title", ""),
+                    "content": item.get("abstract", ""),
+                    "publishedDate": f"{item.get('year')}-01-01" if item.get("year") else "",
+                }
+            )
         return results
 
     try:

@@ -29,10 +29,18 @@ def tearDownModule() -> None:
 def _build_index() -> None:
     _TEST_INDEX.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        [sys.executable, str(ENGINE / "local_index.py"),
-         "--knowledge-root", str(_ROOT / "tests" / "fixtures"),
-         "--output", str(_TEST_INDEX)],
-        capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+        [
+            sys.executable,
+            str(ENGINE / "local_index.py"),
+            "--knowledge-root",
+            str(_ROOT / "tests" / "fixtures"),
+            "--output",
+            str(_TEST_INDEX),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=_ROOT,
     )
 
 
@@ -74,7 +82,13 @@ class SaveResearchValidationTest(unittest.TestCase):
     def _valid_answer(self) -> dict:
         return {
             "answer": "This is a test answer with enough content to pass the quality gate threshold for minimum answer length requirements. It must be at least 200 characters long to be accepted by the quality gate in the save_research function.",
-            "supporting_claims": [{"claim": "This is a test claim with enough substance to pass validation checks", "evidence_ids": ["e1"], "confidence": "high"}],
+            "supporting_claims": [
+                {
+                    "claim": "This is a test claim with enough substance to pass validation checks",
+                    "evidence_ids": ["e1"],
+                    "confidence": "high",
+                }
+            ],
             "inferences": [],
             "uncertainty": [],
             "missing_evidence": [],

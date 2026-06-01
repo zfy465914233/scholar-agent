@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from importlib import resources
 from pathlib import Path
 
 _SECTION_RE = re.compile(r"<!-- section:(\w+) -->\n(.*?)(?=<!-- section:\w+ -->|\Z)", re.DOTALL)

@@ -1,7 +1,6 @@
 """Shared test fixtures for scholar-agent."""
 
 import os
-
 from pathlib import Path
 
 # Force UTF-8 mode for all subprocess.run(text=True) calls on Windows (GBK locale).

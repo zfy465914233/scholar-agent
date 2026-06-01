@@ -24,14 +24,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Import config helpers
-from scholar_agent.engine.common import safe_slug, extract_entities, get_package_data_path
+from scholar_agent.engine.common import extract_entities, get_package_data_path, safe_slug
 
 ANSWER_SCHEMA_PATH = get_package_data_path("schemas", "answer.schema.json")
 
 from scholar_agent.engine.domain_router import infer_domain as _infer_domain
 from scholar_agent.engine.domain_router import infer_domain_decision as _infer_domain_decision
-from scholar_agent.engine.scholar_config import get_knowledge_dir, get_index_path
 from scholar_agent.engine.local_retrieve import retrieve as bm25_retrieve
+from scholar_agent.engine.scholar_config import get_index_path, get_knowledge_dir
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +45,12 @@ def _normalize_answer_markdown(text: str) -> str:
         return text
     # Ensure ## / ### headers start on their own line (preceded by newline)
     import re
-    text = re.sub(r'(?<!\n)(#{1,6}\s)', r'\n\1', text)
+
+    text = re.sub(r"(?<!\n)(#{1,6}\s)", r"\n\1", text)
     # Ensure a blank line before headers
-    text = re.sub(r'([^\n])\n(#{1,6}\s)', r'\1\n\n\2', text)
+    text = re.sub(r"([^\n])\n(#{1,6}\s)", r"\1\n\n\2", text)
     # Collapse 3+ consecutive blank lines into 2
-    text = re.sub(r'\n{4,}', '\n\n\n', text)
+    text = re.sub(r"\n{4,}", "\n\n\n", text)
     return text
 
 
@@ -99,7 +100,11 @@ def collect_source_urls(research_data: dict | None) -> list[str]:
 
 
 def check_contradictions(
-    query: str, claims: list[dict], index_path: Path, *, current_domain: str = "",
+    query: str,
+    claims: list[dict],
+    index_path: Path,
+    *,
+    current_domain: str = "",
 ) -> list[dict]:
     """Check new claims against existing cards for potential contradictions.
 
@@ -142,11 +147,34 @@ def check_contradictions(
 
 # Keywords suggesting an image is a useful diagram/chart rather than a photo
 _CONTENT_IMAGE_KEYWORDS = (
-    "diagram", "chart", "graph", "figure", "plot", "flow",
-    "architecture", "pipeline", "framework", "structure", "schematic",
-    "overview", "comparison", "model", "process", "algorithm",
-    "table", "results", "performance", "heatmap", "confusion",
-    "分布", "流程", "架构", "对比", "示意图", "模型", "图",
+    "diagram",
+    "chart",
+    "graph",
+    "figure",
+    "plot",
+    "flow",
+    "architecture",
+    "pipeline",
+    "framework",
+    "structure",
+    "schematic",
+    "overview",
+    "comparison",
+    "model",
+    "process",
+    "algorithm",
+    "table",
+    "results",
+    "performance",
+    "heatmap",
+    "confusion",
+    "分布",
+    "流程",
+    "架构",
+    "对比",
+    "示意图",
+    "模型",
+    "图",
 )
 
 
@@ -262,37 +290,25 @@ def quality_score_answer_data(answer_data: dict, source: str = "save_research") 
 
     # --- Hard constraints (violations regardless of score) ---
     if answer_len < min_answer_len:
-        violations.append(
-            f"answer is {answer_len} characters, minimum is {min_answer_len}"
-        )
+        violations.append(f"answer is {answer_len} characters, minimum is {min_answer_len}")
     if len(claims) < min_claims:
-        violations.append(
-            f"supporting_claims has {len(claims)} items, minimum is {min_claims}"
-        )
+        violations.append(f"supporting_claims has {len(claims)} items, minimum is {min_claims}")
     for i, claim in enumerate(claims):
         if isinstance(claim, dict):
             claim_text = str(claim.get("claim", ""))
             if len(claim_text) < MIN_CLAIM_TEXT_LENGTH:
                 violations.append(
-                    f"supporting_claims[{i}].claim is {len(claim_text)} characters, "
-                    f"minimum is {MIN_CLAIM_TEXT_LENGTH}"
+                    f"supporting_claims[{i}].claim is {len(claim_text)} characters, minimum is {MIN_CLAIM_TEXT_LENGTH}"
                 )
 
     # --- Soft scoring ---
     answer_length_score = min(answer_len / 500, 1.0) * 0.3
     claims_score = min(len(claims) / 3, 1.0) * 0.3
-    avg_claim_len = (
-        sum(len(str(c.get("claim", ""))) for c in claims if isinstance(c, dict))
-        / max(len(claims), 1)
-    )
+    avg_claim_len = sum(len(str(c.get("claim", ""))) for c in claims if isinstance(c, dict)) / max(len(claims), 1)
     claim_depth_score = min(avg_claim_len / 50, 1.0) * 0.2
 
-    optional_fields = [
-        "inferences", "uncertainty", "missing_evidence", "suggested_next_steps"
-    ]
-    filled_optional = sum(
-        1 for f in optional_fields if answer_data.get(f) and len(answer_data[f]) > 0
-    )
+    optional_fields = ["inferences", "uncertainty", "missing_evidence", "suggested_next_steps"]
+    filled_optional = sum(1 for f in optional_fields if answer_data.get(f) and len(answer_data[f]) > 0)
     structural_richness = filled_optional * 0.05
 
     score = round(
@@ -345,9 +361,21 @@ def _infer_card_type(query: str, answer_data: dict) -> str:
     """
     normalized = query.lower().strip()
     procedural_keywords = (
-        "how to ", "implement", "deploy", "train", "build",
-        "configure", "setup", "install", "run ", "optimize",
-        "tune ", "debug", "fix ", "procedure", "algorithm",
+        "how to ",
+        "implement",
+        "deploy",
+        "train",
+        "build",
+        "configure",
+        "setup",
+        "install",
+        "run ",
+        "optimize",
+        "tune ",
+        "debug",
+        "fix ",
+        "procedure",
+        "algorithm",
     )
     if any(kw in normalized for kw in procedural_keywords):
         return "method"
@@ -389,8 +417,10 @@ def build_knowledge_card(
     """Build a knowledge card from research evidence and structured answer."""
     card_summary = str(answer_data.get("answer", ""))[:500]
     routing = _infer_domain_decision(
-        query, knowledge_root,
-        card_title=query, card_summary=card_summary,
+        query,
+        knowledge_root,
+        card_title=query,
+        card_summary=card_summary,
         domain_override=domain_override,
     )
     major_domain = str(routing["major_domain"])
@@ -424,11 +454,18 @@ def build_knowledge_card(
         base_tags.append(topic)
     query_lower = query.lower()
     for keyword, tag in [
-        ("xgboost", "xgboost"), ("random forest", "random-forest"),
-        ("cnn", "cnn"), ("lstm", "lstm"), ("transformer", "transformer"),
-        ("qpe", "ml-qpe"), ("radar", "radar"), ("rainfall", "rainfall"),
-        ("precipitation", "precipitation"), ("markov", "markov-chain"),
-        ("quantum", "quantum"), ("quantization", "quantization"),
+        ("xgboost", "xgboost"),
+        ("random forest", "random-forest"),
+        ("cnn", "cnn"),
+        ("lstm", "lstm"),
+        ("transformer", "transformer"),
+        ("qpe", "ml-qpe"),
+        ("radar", "radar"),
+        ("rainfall", "rainfall"),
+        ("precipitation", "precipitation"),
+        ("markov", "markov-chain"),
+        ("quantum", "quantum"),
+        ("quantization", "quantization"),
     ]:
         if keyword in query_lower and tag not in base_tags:
             base_tags.append(tag)
@@ -441,8 +478,12 @@ def build_knowledge_card(
     # Index visual aids by their target section for inline placement
     visual_aids = answer_data.get("visual_aids", [])
     _SECTION_ORDER = [
-        "answer", "supporting_claims", "inferences",
-        "uncertainty", "missing_evidence", "suggested_next_steps",
+        "answer",
+        "supporting_claims",
+        "inferences",
+        "uncertainty",
+        "missing_evidence",
+        "suggested_next_steps",
     ]
     va_by_section: dict[str | None, list[dict]] = {}
     for va in visual_aids:
@@ -470,27 +511,31 @@ def build_knowledge_card(
             lines.append(f"  - {url}")
     card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
     card_language = answer_data.get("language", "zh")
-    lines.extend([
-        "confidence: draft",
-        f"updated_at: {now}",
-        "origin: web_research_with_synthesis",
-        "review_status: draft",
-        f'language: "{card_language}"',
-        "---",
-        "",
-        f"# {note_label} — {query}",
-        "",
-        f"> **{card_label}** | scholar-agent",
-        ">",
-    ])
+    lines.extend(
+        [
+            "confidence: draft",
+            f"updated_at: {now}",
+            "origin: web_research_with_synthesis",
+            "review_status: draft",
+            f'language: "{card_language}"',
+            "---",
+            "",
+            f"# {note_label} — {query}",
+            "",
+            f"> **{card_label}** | scholar-agent",
+            ">",
+        ]
+    )
     # Primary references from source URLs
     if source_urls:
         lines.append(f"> 主要参考：{', '.join(source_urls[:5])}")
-    lines.extend([
-        ">",
-        "---",
-        "",
-    ])
+    lines.extend(
+        [
+            ">",
+            "---",
+            "",
+        ]
+    )
 
     # --- Build TOC (目录) ---
     toc_entries = []
@@ -663,11 +708,13 @@ def build_knowledge_card(
     lines.extend(["", "---", ""])
 
     # --- Footer ---
-    lines.extend([
-        f"*文档生成时间：{now}*",
-        f"*版本：v1.0 | scholar-agent {card_label}*",
-        "",
-    ])
+    lines.extend(
+        [
+            f"*文档生成时间：{now}*",
+            f"*版本：v1.0 | scholar-agent {card_label}*",
+            "",
+        ]
+    )
 
     # Write to knowledge tree
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -687,6 +734,7 @@ def reindex(knowledge_root: Path, index_output: Path) -> bool:
     """Rebuild the local index."""
     try:
         from scholar_agent.engine.local_index import write_index
+
         write_index(knowledge_root, index_output)
         return True
     except Exception:
@@ -747,7 +795,10 @@ def main() -> int:
 
     # Step 1: Build knowledge card
     card_path = build_knowledge_card(
-        args.query, answer_data, research_data, args.knowledge_root,
+        args.query,
+        answer_data,
+        research_data,
+        args.knowledge_root,
         index_path=args.index_output,
     )
     logger.info("Knowledge card written: %s", card_path)
@@ -760,19 +811,27 @@ def main() -> int:
 
     # Step 3: Verify retrievability
     import subprocess
+
     verify = subprocess.run(
-        [sys.executable, "-m", "scholar_agent.engine.local_retrieve",
-         args.query, "--index", str(args.index_output), "--limit", "3"],
-        capture_output=True, text=True, encoding="utf-8",
+        [
+            sys.executable,
+            "-m",
+            "scholar_agent.engine.local_retrieve",
+            args.query,
+            "--index",
+            str(args.index_output),
+            "--limit",
+            "3",
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
     if verify.returncode == 0:
         results = json.loads(verify.stdout)
         slug = safe_slug(args.query)
         expected_prefixes = (f"knowledge-{slug}", f"method-{slug}")
-        found = any(
-            r.get("doc_id", "").startswith(expected_prefixes)
-            for r in results.get("results", [])
-        )
+        found = any(r.get("doc_id", "").startswith(expected_prefixes) for r in results.get("results", []))
         status = "verified retrievable" if found else "written but not in top results"
         logger.info("Verification: %s", status)
     else:
@@ -783,6 +842,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, stream=sys.stderr,
-                        format="%(levelname)s: %(message)s")
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(levelname)s: %(message)s")
     raise SystemExit(main())

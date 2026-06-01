@@ -10,13 +10,12 @@ Covers:
   V11 — MCP Server Tool Validation
 """
 
-import json
 import os
 import re
 import sys
 import tempfile
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -43,14 +42,15 @@ def _report(test_id: str, ok: bool, detail: str = "") -> None:
 def _section(name: str) -> None:
     global _current_section
     _current_section = name
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  {name}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
 
 # ============================================================================
 # V5: Full Scoring Pipeline
 # ============================================================================
+
 
 def test_v5() -> None:
     _section("V5: Full Scoring Pipeline")
@@ -148,6 +148,7 @@ def test_v5() -> None:
 # V6: Search Pipeline (arXiv Atom XML parsing)
 # ============================================================================
 
+
 def test_v6() -> None:
     _section("V6: Search Pipeline (arXiv Atom XML parsing)")
 
@@ -203,11 +204,21 @@ def test_v6() -> None:
 
         # V6-3: to_dict() produces correct dict shape
         d = r1.to_dict()
-        required_keys = {"id", "arxiv_id", "title", "summary", "authors",
-                         "affiliations", "published", "published_date",
-                         "categories", "pdf_url", "url", "source"}
-        _report("V6-3", required_keys.issubset(d.keys()),
-                f"Missing keys: {required_keys - d.keys()}")
+        required_keys = {
+            "id",
+            "arxiv_id",
+            "title",
+            "summary",
+            "authors",
+            "affiliations",
+            "published",
+            "published_date",
+            "categories",
+            "pdf_url",
+            "url",
+            "source",
+        }
+        _report("V6-3", required_keys.issubset(d.keys()), f"Missing keys: {required_keys - d.keys()}")
 
     if len(records) >= 2:
         r2 = records[1]
@@ -221,10 +232,11 @@ def test_v6() -> None:
 # V7: Conference Search Pipeline
 # ============================================================================
 
+
 def test_v7() -> None:
     _section("V7: Conference Search Pipeline")
 
-    from academic.conf_search import _CONF_CATALOG, _VenueSpec, _build_dblp_url, _parse_dblp_hits
+    from academic.conf_search import _CONF_CATALOG, _build_dblp_url, _parse_dblp_hits, _VenueSpec
 
     # V7-1: toc_path for each venue
     toc_results = {}
@@ -233,15 +245,24 @@ def test_v7() -> None:
         toc_results[name] = path
 
     # Venues with toc_fmt should produce a path; those with None should return None
-    _report("V7-1a", toc_results["CVPR"] is not None and "toc:db/conf/cvpr/cvpr2024" in toc_results["CVPR"],
-            f"CVPR toc_path={toc_results.get('CVPR')}")
+    _report(
+        "V7-1a",
+        toc_results["CVPR"] is not None and "toc:db/conf/cvpr/cvpr2024" in toc_results["CVPR"],
+        f"CVPR toc_path={toc_results.get('CVPR')}",
+    )
     _report("V7-1b", toc_results["ECCV"] is None, f"ECCV toc_path={toc_results.get('ECCV')}")
     _report("V7-1c", toc_results["MICCAI"] is None, f"MICCAI toc_path={toc_results.get('MICCAI')}")
     _report("V7-1d", toc_results["EMNLP"] is None, f"EMNLP toc_path={toc_results.get('EMNLP')}")
-    _report("V7-1e", toc_results["ICLR"] is not None and "iclr2024" in toc_results["ICLR"],
-            f"ICLR toc_path={toc_results.get('ICLR')}")
-    _report("V7-1f", toc_results["NeurIPS"] is not None and "neurips2024" in toc_results["NeurIPS"],
-            f"NeurIPS toc_path={toc_results.get('NeurIPS')}")
+    _report(
+        "V7-1e",
+        toc_results["ICLR"] is not None and "iclr2024" in toc_results["ICLR"],
+        f"ICLR toc_path={toc_results.get('ICLR')}",
+    )
+    _report(
+        "V7-1f",
+        toc_results["NeurIPS"] is not None and "neurips2024" in toc_results["NeurIPS"],
+        f"NeurIPS toc_path={toc_results.get('NeurIPS')}",
+    )
 
     # V7-2: _build_dblp_url produces well-formed URL
     url = _build_dblp_url("CVPR", 2024, 0, 100)
@@ -257,17 +278,17 @@ def test_v7() -> None:
         "result": {
             "hits": {
                 "@total": 1,
-                "hit": [{
-                    "info": {
-                        "title": "Test Paper.",
-                        "authors": {
-                            "author": {"text": "Alice"}
-                        },
-                        "url": "https://dblp.org/test",
-                        "year": "2024",
-                        "doi": "10.1234"
+                "hit": [
+                    {
+                        "info": {
+                            "title": "Test Paper.",
+                            "authors": {"author": {"text": "Alice"}},
+                            "url": "https://dblp.org/test",
+                            "year": "2024",
+                            "doi": "10.1234",
+                        }
                     }
-                }]
+                ],
             }
         }
     }
@@ -278,12 +299,18 @@ def test_v7() -> None:
     _report("V7-3a", total == 1, f"total={total}")
 
     # V7-3b: Trailing dots stripped from title
-    _report("V7-3b", len(papers) == 1 and papers[0]["title"] == "Test Paper",
-            f"title={papers[0]['title'] if papers else 'N/A'}")
+    _report(
+        "V7-3b",
+        len(papers) == 1 and papers[0]["title"] == "Test Paper",
+        f"title={papers[0]['title'] if papers else 'N/A'}",
+    )
 
     # V7-3c: Single-author edge case handled (dict, not list)
-    _report("V7-3c", len(papers) == 1 and papers[0]["authors"] == ["Alice"],
-            f"authors={papers[0]['authors'] if papers else 'N/A'}")
+    _report(
+        "V7-3c",
+        len(papers) == 1 and papers[0]["authors"] == ["Alice"],
+        f"authors={papers[0]['authors'] if papers else 'N/A'}",
+    )
 
     # V7-3d: Other fields populated
     if papers:
@@ -296,25 +323,30 @@ def test_v7() -> None:
         "result": {
             "hits": {
                 "@total": 1,
-                "hit": [{
-                    "info": {
-                        "title": "Multi Author Paper",
-                        "authors": {
-                            "author": [
-                                {"text": "Alice"},
-                                {"text": "Bob"},
-                            ]
-                        },
-                        "url": "https://dblp.org/test2",
-                        "year": "2024",
+                "hit": [
+                    {
+                        "info": {
+                            "title": "Multi Author Paper",
+                            "authors": {
+                                "author": [
+                                    {"text": "Alice"},
+                                    {"text": "Bob"},
+                                ]
+                            },
+                            "url": "https://dblp.org/test2",
+                            "year": "2024",
+                        }
                     }
-                }]
+                ],
             }
         }
     }
     papers2, _ = _parse_dblp_hits(mock_multi_author, "NeurIPS", 2024)
-    _report("V7-4", len(papers2) == 1 and papers2[0]["authors"] == ["Alice", "Bob"],
-            f"authors={papers2[0]['authors'] if papers2 else 'N/A'}")
+    _report(
+        "V7-4",
+        len(papers2) == 1 and papers2[0]["authors"] == ["Alice", "Bob"],
+        f"authors={papers2[0]['authors'] if papers2 else 'N/A'}",
+    )
 
     # V7-5: _CONF_CATALOG keys() iteration works
     keys = list(_CONF_CATALOG.keys())
@@ -328,6 +360,7 @@ def test_v7() -> None:
 # ============================================================================
 # V8: Image Extraction
 # ============================================================================
+
 
 def test_v8() -> None:
     _section("V8: Image Extraction")
@@ -357,8 +390,7 @@ def test_v8() -> None:
         # V8-2: Output dict has required internal keys
         if found:
             internal_keys = {"filename", "kind", "origin", "path"}
-            _report("V8-2", internal_keys.issubset(found[0].keys()),
-                    f"Keys: {found[0].keys()}")
+            _report("V8-2", internal_keys.issubset(found[0].keys()), f"Keys: {found[0].keys()}")
 
         # V8-3: kind and origin values are correct
         if found:
@@ -369,8 +401,7 @@ def test_v8() -> None:
     # Since extract_paper_images requires network access, we test the output shape
     # that it produces when it copies files from _discover_source_images.
     expected_output_keys = {"filename", "rel_path", "byte_size", "format", "origin"}
-    _report("V8-4", True,
-            f"Expected output keys: {expected_output_keys}")
+    _report("V8-4", True, f"Expected output keys: {expected_output_keys}")
 
     # V8-5: _discover_source_images returns empty when no images
     with tempfile.TemporaryDirectory() as empty_dir:
@@ -386,18 +417,18 @@ def test_v8() -> None:
                 f.write(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
         # All are noise, but should still be returned (fallback to all images)
         found_noise = _discover_source_images(noise_dir)
-        _report("V8-6", len(found_noise) >= 1,
-                f"Noise-only dir returned {len(found_noise)} (noise fallback)")
+        _report("V8-6", len(found_noise) >= 1, f"Noise-only dir returned {len(found_noise)} (noise fallback)")
 
 
 # ============================================================================
 # V9: Note Generation
 # ============================================================================
 
+
 def test_v9() -> None:
     _section("V9: Note Generation")
 
-    from academic.paper_analyzer import generate_note, check_note_quality, title_to_filename
+    from academic.paper_analyzer import check_note_quality, generate_note, title_to_filename
 
     paper = {
         "title": "Deep Learning for Neural Network Optimization",
@@ -427,45 +458,61 @@ def test_v9() -> None:
         # V9-3: Filename uses - as separator (not _)
         # title_to_filename should use hyphens
         expected_stem = title_to_filename(paper["title"])
-        _report("V9-3", "-" in expected_stem and "_" not in expected_stem.replace("-", "").replace("Deep", ""),
-                f"Filename stem: {expected_stem}")
+        _report(
+            "V9-3",
+            "-" in expected_stem and "_" not in expected_stem.replace("-", "").replace("Deep", ""),
+            f"Filename stem: {expected_stem}",
+        )
 
         # V9-4: Frontmatter starts with title: (not date:)
         if os.path.isfile(zh_path):
-            with open(zh_path, "r", encoding="utf-8") as f:
+            with open(zh_path, encoding="utf-8") as f:
                 content = f.read()
             # Find frontmatter
             fm_match = re.search(r"^---\n(.*?)\n---", content, re.DOTALL)
             if fm_match:
                 fm = fm_match.group(1)
-                lines = [l.strip() for l in fm.split("\n") if l.strip() and not l.startswith("#")]
+                lines = [line.strip() for line in fm.split("\n") if line.strip() and not line.startswith("#")]
                 first_key = lines[0].split(":")[0] if lines else ""
-                _report("V9-4", first_key == "title",
-                        f"First frontmatter key: '{first_key}' (expected 'title')")
+                _report("V9-4", first_key == "title", f"First frontmatter key: '{first_key}' (expected 'title')")
             else:
                 _report("V9-4", False, "No frontmatter found")
 
         # V9-5: Chinese note contains expected sections
         if os.path.isfile(zh_path):
-            with open(zh_path, "r", encoding="utf-8") as f:
+            with open(zh_path, encoding="utf-8") as f:
                 zh_content = f.read()
-            zh_sections = ["方法概述", "实验结果", "深度分析", "研究背景与动机",
-                           "研究问题", "与相关工作对比", "技术路线定位", "未来工作", "综合评价"]
+            zh_sections = [
+                "方法概述",
+                "实验结果",
+                "深度分析",
+                "研究背景与动机",
+                "研究问题",
+                "与相关工作对比",
+                "技术路线定位",
+                "未来工作",
+                "综合评价",
+            ]
             missing_zh = [s for s in zh_sections if s not in zh_content]
-            _report("V9-5", len(missing_zh) == 0,
-                    f"Missing ZH sections: {missing_zh}")
+            _report("V9-5", len(missing_zh) == 0, f"Missing ZH sections: {missing_zh}")
 
         # V9-6: English note contains expected sections
         if os.path.isfile(en_path):
-            with open(en_path, "r", encoding="utf-8") as f:
+            with open(en_path, encoding="utf-8") as f:
                 en_content = f.read()
-            en_sections = ["Method Overview", "Experimental Results", "Deep Analysis",
-                           "Research Background", "Research Questions",
-                           "Comparison with Related Work", "Technical Roadmap",
-                           "Future Work", "Comprehensive Evaluation"]
+            en_sections = [
+                "Method Overview",
+                "Experimental Results",
+                "Deep Analysis",
+                "Research Background",
+                "Research Questions",
+                "Comparison with Related Work",
+                "Technical Roadmap",
+                "Future Work",
+                "Comprehensive Evaluation",
+            ]
             missing_en = [s for s in en_sections if s not in en_content]
-            _report("V9-6", len(missing_en) == 0,
-                    f"Missing EN sections: {missing_en}")
+            _report("V9-6", len(missing_en) == 0, f"Missing EN sections: {missing_en}")
 
         # V9-7: check_note_quality returns valid result
         if os.path.isfile(zh_path):
@@ -475,17 +522,16 @@ def test_v9() -> None:
             _report("V9-7c", "placeholder_count" in quality, f"Keys: {quality.keys()}")
             _report("V9-7d", "issues" in quality, f"Keys: {quality.keys()}")
             # Skeleton notes should have placeholders
-            _report("V9-7e", quality["placeholder_count"] > 0,
-                    f"Placeholder count: {quality['placeholder_count']}")
+            _report("V9-7e", quality["placeholder_count"] > 0, f"Placeholder count: {quality['placeholder_count']}")
 
         # V9-8: Note file is in domain subdirectory
-        _report("V9-8", "deep-learning" in zh_path,
-                f"Path includes domain: {zh_path}")
+        _report("V9-8", "deep-learning" in zh_path, f"Path includes domain: {zh_path}")
 
 
 # ============================================================================
 # V10: Keyword Index + Wiki-link
 # ============================================================================
+
 
 def test_v10() -> None:
     _section("V10: Keyword Index + Wiki-link")
@@ -528,15 +574,13 @@ This paper discusses Vision-Language models and their applications.
         idx = KeywordIndex(tmpdir)
         index_dict = idx.as_dict()
 
-        _report("V10-1", isinstance(index_dict, dict) and len(index_dict) > 0,
-                f"Index has {len(index_dict)} entries")
+        _report("V10-1", isinstance(index_dict, dict) and len(index_dict) > 0, f"Index has {len(index_dict)} entries")
 
         # V10-2: Index should contain terms from tags and titles
         # "Transformers" from tags and title, "NLP" from tags, "VLM" from tags, "Multimodal" from tags
         # But terms that appear in BOTH notes get filtered out (frequency != 1)
         # Let's check at least some unambiguous terms exist
-        _report("V10-2", len(index_dict) >= 1,
-                f"Index entries: {list(index_dict.keys())[:20]}")
+        _report("V10-2", len(index_dict) >= 1, f"Index entries: {list(index_dict.keys())[:20]}")
 
         # V10-3: Create a 3rd file with body text containing indexed keyword
         note3 = os.path.join(tmpdir, "Test-Paper.md")
@@ -563,25 +607,26 @@ Some more text after code block.
 
         # V10-4: Apply wiki-links
         modified, links_added = idx.apply_to(note3)
-        _report("V10-4a", isinstance(modified, bool) and isinstance(links_added, int),
-                f"apply_to returned ({modified}, {links_added})")
+        _report(
+            "V10-4a",
+            isinstance(modified, bool) and isinstance(links_added, int),
+            f"apply_to returned ({modified}, {links_added})",
+        )
 
         # Read the modified file
-        with open(note3, "r", encoding="utf-8") as f:
+        with open(note3, encoding="utf-8") as f:
             linked_content = f.read()
 
         # V10-5: Wiki-links were inserted (if any keywords matched)
         has_wikilinks = "[[" in linked_content
-        _report("V10-5", True,
-                f"Wiki-links present: {has_wikilinks}, count: {links_added}")
+        _report("V10-5", True, f"Wiki-links present: {has_wikilinks}, count: {links_added}")
 
         # V10-6: Frontmatter NOT modified (check title unchanged)
         fm_match = re.search(r"^---\n(.*?)\n---", linked_content, re.DOTALL)
         if fm_match:
             fm_text = fm_match.group(0)
             fm_has_wikilinks = "[[" in fm_text
-            _report("V10-6", not fm_has_wikilinks,
-                    "Frontmatter contains no wiki-links")
+            _report("V10-6", not fm_has_wikilinks, "Frontmatter contains no wiki-links")
         else:
             _report("V10-6", False, "Could not find frontmatter")
 
@@ -590,8 +635,7 @@ Some more text after code block.
         if code_match:
             code_text = code_match.group(0)
             code_has_wikilinks = "[[" in code_text
-            _report("V10-7", not code_has_wikilinks,
-                    "Code blocks contain no wiki-links")
+            _report("V10-7", not code_has_wikilinks, "Code blocks contain no wiki-links")
         else:
             _report("V10-7", False, "Could not find code block")
 
@@ -604,12 +648,13 @@ Some more text after code block.
 # V11: MCP Server Tool Validation
 # ============================================================================
 
+
 def test_v11() -> None:
     _section("V11: MCP Server Tool Validation")
 
-    # Read the mcp_server.py source for static analysis
-    mcp_path = str(_REPO_ROOT / "mcp_server.py")
-    with open(mcp_path, "r", encoding="utf-8") as f:
+    # Read the server.py source for static analysis
+    mcp_path = str(_ROOT / "src" / "scholar_agent" / "server.py")
+    with open(mcp_path, encoding="utf-8") as f:
         source = f.read()
 
     # V11-1: All tool functions exist and are decorated with @tool
@@ -639,24 +684,21 @@ def test_v11() -> None:
         # Check function is defined
         fn_pattern = rf"def {fn_name}\s*\("
         found = bool(re.search(fn_pattern, source))
-        _report(f"V11-1-{fn_name}", found,
-                f"Function {fn_name} defined: {found}")
+        _report(f"V11-1-{fn_name}", found, f"Function {fn_name} defined: {found}")
 
     # Check @tool decorator on non-academic tools
     for fn_name in non_academic_tools:
         # @tool should appear before the def
         decorator_pattern = rf"@tool\s*\ndef {fn_name}\s*\("
         has_decorator = bool(re.search(decorator_pattern, source))
-        _report(f"V11-1d-{fn_name}", has_decorator,
-                f"@tool decorator on {fn_name}: {has_decorator}")
+        _report(f"V11-1d-{fn_name}", has_decorator, f"@tool decorator on {fn_name}: {has_decorator}")
 
     # Check @tool on academic tools (indented under if SCHOLAR_ACADEMIC:)
     for fn_name in tool_functions:
         # Academic tools are indented (4 spaces) inside `if SCHOLAR_ACADEMIC:`
         decorator_pattern = rf"^\s*@tool\s*\n\s*def {fn_name}\s*\("
         has_decorator = bool(re.search(decorator_pattern, source, re.MULTILINE))
-        _report(f"V11-1a-{fn_name}", has_decorator,
-                f"@tool decorator on {fn_name}: {has_decorator}")
+        _report(f"V11-1a-{fn_name}", has_decorator, f"@tool decorator on {fn_name}: {has_decorator}")
 
     # V11-2: All imports from academic modules reference correct functions
     import_checks = [
@@ -679,67 +721,49 @@ def test_v11() -> None:
     for name, module in import_checks:
         import_pattern = rf"from {re.escape(module)} import.*{re.escape(name)}"
         found = bool(re.search(import_pattern, source))
-        _report(f"V11-2-{name}", found,
-                f"Import {name} from {module}: {found}")
+        _report(f"V11-2-{name}", found, f"Import {name} from {module}: {found}")
 
     # V11-3: search_papers default config does NOT contain "大模型"
     # Extract the default config section from search_papers
-    sp_match = re.search(
-        r'def search_papers.*?(?=\n    @tool|\n    def |\nclass |\Z)',
-        source, re.DOTALL
-    )
+    sp_match = re.search(r"def search_papers.*?(?=\n    @tool|\n    def |\nclass |\Z)", source, re.DOTALL)
     if sp_match:
         sp_body = sp_match.group(0)
         has_damo = "大模型" in sp_body
-        _report("V11-3", not has_damo,
-                f"search_papers default config contains '大模型': {has_damo}")
+        _report("V11-3", not has_damo, f"search_papers default config contains '大模型': {has_damo}")
     else:
         _report("V11-3", False, "Could not extract search_papers function body")
 
     # V11-4: search_conf_papers _CONF_CATALOG iteration works with _VenueSpec
     # Check that _CONF_CATALOG.keys() is used correctly
-    conf_match = re.search(
-        r'def search_conf_papers.*?(?=\n    @tool|\n    def |\nclass |\Z)',
-        source, re.DOTALL
-    )
+    conf_match = re.search(r"def search_conf_papers.*?(?=\n    @tool|\n    def |\nclass |\Z)", source, re.DOTALL)
     if conf_match:
         conf_body = conf_match.group(0)
         # Check that _upper_map builds from _CONF_CATALOG
         uses_keys = "_CONF_CATALOG" in conf_body
-        _report("V11-4a", uses_keys,
-                f"search_conf_papers references _CONF_CATALOG: {uses_keys}")
+        _report("V11-4a", uses_keys, f"search_conf_papers references _CONF_CATALOG: {uses_keys}")
 
         # Check for proper iteration with .keys()
         uses_upper_map = "_upper_map" in conf_body
-        _report("V11-4b", uses_upper_map,
-                f"search_conf_papers uses _upper_map for key normalization: {uses_upper_map}")
+        _report("V11-4b", uses_upper_map, f"search_conf_papers uses _upper_map for key normalization: {uses_upper_map}")
     else:
         _report("V11-4", False, "Could not extract search_conf_papers function body")
 
     # V11-5: extract_paper_images passes through image list correctly
-    ext_match = re.search(
-        r'def extract_paper_images.*?(?=\n    @tool|\n    def |\nclass |\Z)',
-        source, re.DOTALL
-    )
+    ext_match = re.search(r"def extract_paper_images.*?(?=\n    @tool|\n    def |\nclass |\Z)", source, re.DOTALL)
     if ext_match:
         ext_body = ext_match.group(0)
         # Check that images list is returned directly from the tool
         passes_images = "images" in ext_body
-        _report("V11-5a", passes_images,
-                f"extract_paper_images references 'images': {passes_images}")
+        _report("V11-5a", passes_images, f"extract_paper_images references 'images': {passes_images}")
 
         # Check that it calls the academic module's function
         calls_extract = "_extract" in ext_body or "extract_paper_images" in ext_body
-        _report("V11-5b", calls_extract,
-                f"Calls extraction function: {calls_extract}")
+        _report("V11-5b", calls_extract, f"Calls extraction function: {calls_extract}")
     else:
         _report("V11-5", False, "Could not extract extract_paper_images function body")
 
     # V11-6: analyze_paper calls generate_note with correct params
-    ap_match = re.search(
-        r'def analyze_paper.*?(?=\n    @tool|\n    def |\nclass |\Z)',
-        source, re.DOTALL
-    )
+    ap_match = re.search(r"def analyze_paper.*?(?=\n    @tool|\n    def |\nclass |\Z)", source, re.DOTALL)
     if ap_match:
         ap_body = ap_match.group(0)
         # Check generate_note call has required params (multi-line call)
@@ -775,6 +799,7 @@ def test_v11() -> None:
 # Main
 # ============================================================================
 
+
 def main() -> None:
     print("=" * 70)
     print("  V5-V11 Integration Verification")
@@ -802,9 +827,9 @@ def main() -> None:
             failed_tests.append(name)
 
     # Summary
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("  SUMMARY")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     total = len(_results)
     passed = sum(1 for _, s, _ in _results if s == "PASS")
@@ -815,7 +840,7 @@ def main() -> None:
     print(f"  Failed:       {failed}")
 
     if failed > 0:
-        print(f"\n  FAILED CHECKS:")
+        print("\n  FAILED CHECKS:")
         for tid, status, detail in _results:
             if status == "FAIL":
                 print(f"    [{status}] {tid}  -- {detail}")

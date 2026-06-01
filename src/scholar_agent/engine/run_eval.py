@@ -20,9 +20,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from scholar_agent.engine.common import get_repo_root
+
 # Import run_pipeline (scripts dir is on sys.path when run as script)
 from scholar_agent.engine.run_pipeline import run_pipeline
-from scholar_agent.engine.common import get_repo_root
 
 logger = logging.getLogger(__name__)
 
@@ -129,10 +130,7 @@ def evaluate_case(case: BenchmarkCase, dry_run: bool = False) -> dict:
     # Check retrieval: do any expected evidence IDs appear in citations?
     citations = output.get("citations", [])
     citation_ids = {c.get("evidence_id") for c in citations}
-    retrieval_hit = (
-        not case.expected_top_evidence_ids
-        or bool(citation_ids & set(case.expected_top_evidence_ids))
-    )
+    retrieval_hit = not case.expected_top_evidence_ids or bool(citation_ids & set(case.expected_top_evidence_ids))
 
     min_citations_met = len(citations) >= case.min_citations
 

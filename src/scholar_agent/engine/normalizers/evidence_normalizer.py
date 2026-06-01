@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlparse
 
 from scholar_agent.engine.common import now_iso
-
 
 VALID_SOURCE_TYPES = {"github", "arxiv", "blog", "docs", "forum", "paper", "patent", "other"}
 
@@ -120,7 +119,8 @@ def _fallback_candidate_uri(candidate: Any) -> str:
             str(_candidate_value(candidate, "snippet", "") or "").strip(),
             str(
                 _normalize_published_at(
-                    _candidate_value(candidate, "published_at", None) or _candidate_value(candidate, "publishedDate", None)
+                    _candidate_value(candidate, "published_at", None)
+                    or _candidate_value(candidate, "publishedDate", None)
                 )
                 or ""
             ),

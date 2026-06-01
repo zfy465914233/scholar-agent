@@ -1,8 +1,8 @@
 import subprocess
-import tempfile
-from pathlib import Path
-import unittest
 import sys
+import tempfile
+import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,10 +14,19 @@ FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 class DistillKnowledgeTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.local_index",
+                "--knowledge-root",
+                "tests/fixtures",
+                "--output",
+                str(INDEX_PATH),
+            ],
             cwd=_ROOT,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -33,7 +42,8 @@ class DistillKnowledgeTest(unittest.TestCase):
             answer_result = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "scholar_agent.engine.build_answer_context",
+                    "-m",
+                    "scholar_agent.engine.build_answer_context",
                     "what is a markov chain",
                     "--mode",
                     "mixed",
@@ -44,7 +54,8 @@ class DistillKnowledgeTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, answer_result.returncode, msg=answer_result.stderr)
             answer_context_path.write_text(answer_result.stdout, encoding="utf-8")
@@ -52,7 +63,8 @@ class DistillKnowledgeTest(unittest.TestCase):
             distill_result = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "scholar_agent.engine.distill_knowledge",
+                    "-m",
+                    "scholar_agent.engine.distill_knowledge",
                     "--answer-context",
                     str(answer_context_path),
                     "--output",
@@ -60,7 +72,8 @@ class DistillKnowledgeTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
 
             self.assertEqual(0, distill_result.returncode, msg=distill_result.stderr)

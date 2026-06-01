@@ -1,9 +1,9 @@
 import json
 import subprocess
-import tempfile
-from pathlib import Path
-import unittest
 import sys
+import tempfile
+import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,10 +14,19 @@ INDEX_PATH = _ROOT / "indexes" / "local" / "index.json"
 class HybridEvidencePackTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.local_index",
+                "--knowledge-root",
+                "tests/fixtures",
+                "--output",
+                str(INDEX_PATH),
+            ],
             cwd=_ROOT,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -51,7 +60,8 @@ class HybridEvidencePackTest(unittest.TestCase):
 
         command = [
             sys.executable,
-            "-m", "scholar_agent.engine.build_evidence_pack",
+            "-m",
+            "scholar_agent.engine.build_evidence_pack",
             "what is a markov chain",
             "--index",
             str(INDEX_PATH),

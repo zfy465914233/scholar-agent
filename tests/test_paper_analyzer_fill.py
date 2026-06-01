@@ -24,6 +24,7 @@ from unittest.mock import MagicMock, patch
 def _reload_module():
     """Reload paper_analyzer to pick up env var changes."""
     import scholar_agent.engine.academic.paper_analyzer as pa
+
     importlib.reload(pa)
     return pa
 
@@ -37,10 +38,17 @@ class TestResolveProviders(unittest.TestCase):
     def _clean_env(self):
         """Remove all LLM-related env vars."""
         for key in list(os.environ):
-            if any(key.startswith(p) for p in (
-                "SCHOLAR_FILLER_", "ANTHROPIC_", "OPENAI_",
-                "SCHOLAR_ROUTER_", "LLM_", "GITHUB_TOKEN",
-            )):
+            if any(
+                key.startswith(p)
+                for p in (
+                    "SCHOLAR_FILLER_",
+                    "ANTHROPIC_",
+                    "OPENAI_",
+                    "SCHOLAR_ROUTER_",
+                    "LLM_",
+                    "GITHUB_TOKEN",
+                )
+            ):
                 del os.environ[key]
 
     def test_scenario1_explicit_filler(self):
@@ -141,143 +149,119 @@ class TestResolveProviders(unittest.TestCase):
 # 2. LLM call functions — response parsing + error handling
 # ============================================================================
 class TestCallLlmAnthropic(unittest.TestCase):
-
     def test_normal_response(self):
         """Standard Anthropic response with content blocks."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "content": [{"type": "text", "text": "Hello from Claude"}]
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {"content": [{"type": "text", "text": "Hello from Claude"}]}
+        ).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
-            result = pa._call_llm_anthropic(
-                "https://api.anthropic.com", "key", "model", "sys", "user"
-            )
+            result = pa._call_llm_anthropic("https://api.anthropic.com", "key", "model", "sys", "user")
             self.assertEqual(result, "Hello from Claude")
 
     def test_error_response(self):
         """API returns error object instead of content."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "error": {"message": "Invalid API key", "type": "auth_error"}
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {"error": {"message": "Invalid API key", "type": "auth_error"}}
+        ).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(RuntimeError) as ctx:
-                pa._call_llm_anthropic(
-                    "https://api.anthropic.com", "key", "model", "sys", "user"
-                )
+                pa._call_llm_anthropic("https://api.anthropic.com", "key", "model", "sys", "user")
             self.assertIn("Invalid API key", str(ctx.exception))
 
     def test_proxy_nonstandard_response(self):
         """Proxy returns non-standard format (e.g. Zhipu's {code, msg, success})."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "code": 500, "msg": "404 NOT_FOUND", "success": False
-        }).encode()
+        mock_response.read.return_value = json.dumps({"code": 500, "msg": "404 NOT_FOUND", "success": False}).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(KeyError) as ctx:
-                pa._call_llm_anthropic(
-                    "https://proxy.example.com", "key", "model", "sys", "user"
-                )
+                pa._call_llm_anthropic("https://proxy.example.com", "key", "model", "sys", "user")
             self.assertIn("content", str(ctx.exception))
 
     def test_thinking_blocks_skipped(self):
         """Response with thinking blocks should find the text block."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "content": [
-                {"type": "thinking", "thinking": "internal thought"},
-                {"type": "text", "text": "The actual answer"},
-            ]
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {
+                "content": [
+                    {"type": "thinking", "thinking": "internal thought"},
+                    {"type": "text", "text": "The actual answer"},
+                ]
+            }
+        ).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
-            result = pa._call_llm_anthropic(
-                "https://api.anthropic.com", "key", "model", "sys", "user"
-            )
+            result = pa._call_llm_anthropic("https://api.anthropic.com", "key", "model", "sys", "user")
             self.assertEqual(result, "The actual answer")
 
 
 class TestCallLlmOpenai(unittest.TestCase):
-
     def test_normal_response(self):
         """Standard OpenAI response."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "choices": [{"message": {"content": "Hello from GPT"}}]
-        }).encode()
+        mock_response.read.return_value = json.dumps({"choices": [{"message": {"content": "Hello from GPT"}}]}).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
-            result = pa._call_llm_openai(
-                "https://api.openai.com/v1", "key", "model", "sys", "user"
-            )
+            result = pa._call_llm_openai("https://api.openai.com/v1", "key", "model", "sys", "user")
             self.assertEqual(result, "Hello from GPT")
 
     def test_error_response(self):
         """OpenAI-compatible API returns error."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "error": {"message": "Rate limit exceeded", "type": "rate_limit"}
-        }).encode()
+        mock_response.read.return_value = json.dumps(
+            {"error": {"message": "Rate limit exceeded", "type": "rate_limit"}}
+        ).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(RuntimeError) as ctx:
-                pa._call_llm_openai(
-                    "https://api.openai.com/v1", "key", "model", "sys", "user"
-                )
+                pa._call_llm_openai("https://api.openai.com/v1", "key", "model", "sys", "user")
             self.assertIn("Rate limit", str(ctx.exception))
 
     def test_missing_choices_key(self):
         """Response missing 'choices' key."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "status": "error", "detail": "something went wrong"
-        }).encode()
+        mock_response.read.return_value = json.dumps({"status": "error", "detail": "something went wrong"}).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(KeyError) as ctx:
-                pa._call_llm_openai(
-                    "https://proxy.example.com/v1", "key", "model", "sys", "user"
-                )
+                pa._call_llm_openai("https://proxy.example.com/v1", "key", "model", "sys", "user")
             self.assertIn("choices", str(ctx.exception))
 
     def test_url_no_double_append(self):
         """URL already ending in /chat/completions should not be doubled."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "choices": [{"message": {"content": "ok"}}]
-        }).encode()
+        mock_response.read.return_value = json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response) as mock_urlopen:
-            pa._call_llm_openai(
-                "https://api.example.com/v1/chat/completions", "key", "model", "sys", "user"
-            )
+            pa._call_llm_openai("https://api.example.com/v1/chat/completions", "key", "model", "sys", "user")
             # Check the actual URL used in the request
             call_args = mock_urlopen.call_args
             request_obj = call_args[0][0]
@@ -289,14 +273,20 @@ class TestCallLlmOpenai(unittest.TestCase):
 # 3. fill_note_from_pdf — branching logic
 # ============================================================================
 class TestFillNoteFromPdf(unittest.TestCase):
-
     def test_no_providers_skips(self):
         """No API keys → returns skipped."""
         for key in list(os.environ):
-            if any(key.startswith(p) for p in (
-                "SCHOLAR_FILLER_", "ANTHROPIC_", "OPENAI_",
-                "SCHOLAR_ROUTER_", "LLM_", "GITHUB_TOKEN",
-            )):
+            if any(
+                key.startswith(p)
+                for p in (
+                    "SCHOLAR_FILLER_",
+                    "ANTHROPIC_",
+                    "OPENAI_",
+                    "SCHOLAR_ROUTER_",
+                    "LLM_",
+                    "GITHUB_TOKEN",
+                )
+            ):
                 del os.environ[key]
 
         pa = _reload_module()
@@ -331,10 +321,17 @@ class TestFillNoteFromPdf(unittest.TestCase):
     def test_fallback_on_primary_failure(self):
         """Primary provider fails → fallback provider succeeds."""
         for key in list(os.environ):
-            if any(key.startswith(p) for p in (
-                "SCHOLAR_FILLER_", "ANTHROPIC_", "OPENAI_",
-                "SCHOLAR_ROUTER_", "LLM_", "GITHUB_TOKEN",
-            )):
+            if any(
+                key.startswith(p)
+                for p in (
+                    "SCHOLAR_FILLER_",
+                    "ANTHROPIC_",
+                    "OPENAI_",
+                    "SCHOLAR_ROUTER_",
+                    "LLM_",
+                    "GITHUB_TOKEN",
+                )
+            ):
                 del os.environ[key]
 
         os.environ["SCHOLAR_FILLER_API_KEY"] = "filler-key"
@@ -353,18 +350,16 @@ class TestFillNoteFromPdf(unittest.TestCase):
             if "messages" in req.full_url:
                 # Anthropic format → error
                 mock_resp = MagicMock()
-                mock_resp.read.return_value = json.dumps({
-                    "code": 500, "msg": "NOT_FOUND", "success": False
-                }).encode()
+                mock_resp.read.return_value = json.dumps({"code": 500, "msg": "NOT_FOUND", "success": False}).encode()
                 mock_resp.__enter__ = lambda s: s
                 mock_resp.__exit__ = lambda s, *a: None
                 return mock_resp
             else:
                 # OpenAI format → success
                 mock_resp = MagicMock()
-                mock_resp.read.return_value = json.dumps({
-                    "choices": [{"message": {"content": "## Filled\nContent."}}]
-                }).encode()
+                mock_resp.read.return_value = json.dumps(
+                    {"choices": [{"message": {"content": "## Filled\nContent."}}]}
+                ).encode()
                 mock_resp.__enter__ = lambda s: s
                 mock_resp.__exit__ = lambda s, *a: None
                 return mock_resp
@@ -386,7 +381,6 @@ class TestFillNoteFromPdf(unittest.TestCase):
 # 4. generate_note — path consistency with download_paper
 # ============================================================================
 class TestGenerateNotePath(unittest.TestCase):
-
     def test_note_in_title_subfolder(self):
         """generate_note should create {domain}/{title}/{title}.md structure."""
         for key in list(os.environ):
@@ -415,24 +409,27 @@ class TestGenerateNotePath(unittest.TestCase):
             # Should NOT be at tmpdir/test-domain/Test-Paper-Title-Here.md (old structure)
             flat_path = os.path.join(tmpdir, "test-domain", Path(note_path).name)
             if note_path != flat_path:
-                self.assertFalse(
-                    os.path.exists(flat_path),
-                    f"Note should not exist at flat path: {flat_path}"
-                )
+                self.assertFalse(os.path.exists(flat_path), f"Note should not exist at flat path: {flat_path}")
 
 
 # ============================================================================
 # 5. Integration — full flow check
 # ============================================================================
 class TestIntegration(unittest.TestCase):
-
     def test_full_flow_with_mock(self):
         """Simulate full analyze + fill flow with mocked LLM."""
         for key in list(os.environ):
-            if any(key.startswith(p) for p in (
-                "SCHOLAR_FILLER_", "ANTHROPIC_", "OPENAI_",
-                "SCHOLAR_ROUTER_", "LLM_", "GITHUB_TOKEN",
-            )):
+            if any(
+                key.startswith(p)
+                for p in (
+                    "SCHOLAR_FILLER_",
+                    "ANTHROPIC_",
+                    "OPENAI_",
+                    "SCHOLAR_ROUTER_",
+                    "LLM_",
+                    "GITHUB_TOKEN",
+                )
+            ):
                 del os.environ[key]
 
         os.environ["SCHOLAR_FILLER_API_KEY"] = "test-key"
@@ -459,13 +456,13 @@ class TestIntegration(unittest.TestCase):
 
             # Step 2: Fill with mocked LLM
             mock_response = MagicMock()
-            filled_content = content.replace("<!-- LLM: fill -->", "Filled content")
+            content.replace("<!-- LLM: fill -->", "Filled content")
             # Simulate LLM returning the content with placeholders filled
             mock_llm_output = content.replace("status: skeleton", "status: filled")
             mock_llm_output = mock_llm_output.replace("<!-- LLM:", "RESOLVED<!-- ")
-            mock_response.read.return_value = json.dumps({
-                "choices": [{"message": {"content": mock_llm_output}}]
-            }).encode()
+            mock_response.read.return_value = json.dumps(
+                {"choices": [{"message": {"content": mock_llm_output}}]}
+            ).encode()
             mock_response.__enter__ = lambda s: s
             mock_response.__exit__ = lambda s, *a: None
 
@@ -481,7 +478,6 @@ class TestIntegration(unittest.TestCase):
 # 6. Regression tests for newly fixed bugs
 # ============================================================================
 class TestBugFixes(unittest.TestCase):
-
     def test_bugA_slugification_matches_download_paper(self):
         """title_to_filename must produce the same slug as _sanitize_title."""
         pa = _reload_module()
@@ -497,43 +493,31 @@ class TestBugFixes(unittest.TestCase):
         ]
         for title in test_titles:
             with self.subTest(title=title):
-                self.assertEqual(
-                    pa.title_to_filename(title),
-                    _sanitize_title(title),
-                    f"Slug mismatch for: {title}"
-                )
+                self.assertEqual(pa.title_to_filename(title), _sanitize_title(title), f"Slug mismatch for: {title}")
 
     def test_bugB_openai_empty_choices(self):
         """Empty choices list should raise KeyError, not IndexError."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "choices": []
-        }).encode()
+        mock_response.read.return_value = json.dumps({"choices": []}).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response):
             with self.assertRaises(KeyError) as ctx:
-                pa._call_llm_openai(
-                    "https://api.openai.com/v1", "key", "model", "sys", "user"
-                )
+                pa._call_llm_openai("https://api.openai.com/v1", "key", "model", "sys", "user")
             self.assertIn("no choices", str(ctx.exception).lower())
 
     def test_bugC_anthropic_url_no_double_append(self):
         """URL ending in /messages should not be doubled."""
         pa = _reload_module()
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "content": [{"type": "text", "text": "ok"}]
-        }).encode()
+        mock_response.read.return_value = json.dumps({"content": [{"type": "text", "text": "ok"}]}).encode()
         mock_response.__enter__ = lambda s: s
         mock_response.__exit__ = lambda s, *a: None
 
         with patch("scholar_agent.engine.academic.paper_analyzer.urlopen", return_value=mock_response) as mock_urlopen:
-            pa._call_llm_anthropic(
-                "https://api.anthropic.com/v1/messages", "key", "model", "sys", "user"
-            )
+            pa._call_llm_anthropic("https://api.anthropic.com/v1/messages", "key", "model", "sys", "user")
             request_obj = mock_urlopen.call_args[0][0]
             self.assertNotIn("/messages/messages", request_obj.full_url)
             self.assertTrue(request_obj.full_url.endswith("/messages"))

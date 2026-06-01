@@ -73,7 +73,9 @@ def normalize_web_items(web_payload: dict[str, object]) -> list[dict[str, object
     return items
 
 
-def build_evidence_pack(query: str, index_path: Path, web_evidence_path: Path | None, local_limit: int) -> dict[str, object]:
+def build_evidence_pack(
+    query: str, index_path: Path, web_evidence_path: Path | None, local_limit: int
+) -> dict[str, object]:
     local_payload = retrieve(query, index_path, local_limit)
     items = normalize_local_items(query, local_payload)
 

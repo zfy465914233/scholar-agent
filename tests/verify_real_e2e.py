@@ -88,7 +88,7 @@ try:
     if arxiv_results:
         print("\n--- Raw papers (before scoring) ---")
         for i, p in enumerate(arxiv_results[:5]):
-            print(f"  [{i+1}] {p.get('title', 'N/A')[:100]}")
+            print(f"  [{i + 1}] {p.get('title', 'N/A')[:100]}")
             print(f"      arxiv_id={p.get('arxiv_id')}, published={p.get('published', 'N/A')[:10]}")
 
         print("\n--- Scoring papers ---")
@@ -98,10 +98,12 @@ try:
         print("\n--- Top 3 Scored Papers ---")
         for i, p in enumerate(scored[:3]):
             scores = p.get("scores", {})
-            print(f"\n  [{i+1}] {p.get('title', 'N/A')[:120]}")
+            print(f"\n  [{i + 1}] {p.get('title', 'N/A')[:120]}")
             print(f"      arxiv_id: {p.get('arxiv_id')}")
-            print(f"      fit={scores.get('fit', 0)}, freshness={scores.get('freshness', 0)}, "
-                  f"impact={scores.get('impact', 0)}, rigor={scores.get('rigor', 0)}")
+            print(
+                f"      fit={scores.get('fit', 0)}, freshness={scores.get('freshness', 0)}, "
+                f"impact={scores.get('impact', 0)}, rigor={scores.get('rigor', 0)}"
+            )
             print(f"      recommendation={scores.get('recommendation', 0)}")
             print(f"      domain={p.get('best_domain')}, keywords={p.get('domain_keywords')}")
 
@@ -110,7 +112,7 @@ try:
         print("\n--- Assessment ---")
         if scored:
             print(f"Papers are relevant to research domains: {bool(scored)}")
-            print(f"Ranking uses recommendation score (weighted sum of fit/freshness/impact/rigor)")
+            print("Ranking uses recommendation score (weighted sum of fit/freshness/impact/rigor)")
         else:
             print("WARNING: No papers scored above threshold -- config may need tuning")
     else:
@@ -147,9 +149,11 @@ try:
     if s2_results:
         print("\n--- Top 3 S2 Results ---")
         for i, p in enumerate(s2_results[:3]):
-            print(f"\n  [{i+1}] {p.get('title', 'N/A')[:120]}")
-            print(f"      arxiv_id={p.get('arxiv_id')}, citations={p.get('citationCount', 0)}, "
-                  f"influential={p.get('influentialCitationCount', 0)}")
+            print(f"\n  [{i + 1}] {p.get('title', 'N/A')[:120]}")
+            print(
+                f"      arxiv_id={p.get('arxiv_id')}, citations={p.get('citationCount', 0)}, "
+                f"influential={p.get('influentialCitationCount', 0)}"
+            )
             print(f"      source={p.get('source')}")
             print(f"      abstract: {(p.get('abstract') or '')[:200]}...")
     else:
@@ -180,10 +184,10 @@ if not paper_for_note:
         "scores": {"recommendation": 7.5, "fit": 3.2, "freshness": 2.8, "impact": 2.1, "rigor": 1.8},
         "affiliations": ["MIT", "Stanford"],
     }
-    print(f"Using fallback paper (no arXiv results for note generation)")
+    print("Using fallback paper (no arXiv results for note generation)")
 
 try:
-    from scholar_agent.engine.academic.paper_analyzer import generate_note, check_note_quality
+    from scholar_agent.engine.academic.paper_analyzer import check_note_quality, generate_note
 
     print(f"Generating Chinese note for: {paper_for_note.get('title', 'N/A')[:100]}")
     zh_note_path = generate_note(
@@ -193,17 +197,17 @@ try:
     )
     print(f"Note written to: {zh_note_path}")
 
-    with open(zh_note_path, "r", encoding="utf-8") as f:
+    with open(zh_note_path, encoding="utf-8") as f:
         zh_content = f.read()
 
     lines = zh_content.split("\n")
     print(f"\n--- Chinese Note (first 200 lines / {len(lines)} total) ---")
     for i, line in enumerate(lines[:200]):
-        print(f"  {i+1:3d} | {line}")
+        print(f"  {i + 1:3d} | {line}")
 
     # Quality check
     quality = check_note_quality(zh_note_path)
-    print(f"\n--- Note Quality ---")
+    print("\n--- Note Quality ---")
     print(f"  Has issues: {quality['has_issues']}")
     print(f"  Placeholder count: {quality['placeholder_count']}")
     for issue in quality.get("issues", []):
@@ -218,6 +222,7 @@ try:
         # Try YAML parse
         try:
             import yaml
+
             fm = yaml.safe_load(frontmatter)
             print(f"\nYAML parse OK: {list(fm.keys())}")
         except ImportError:
@@ -246,17 +251,17 @@ try:
     )
     print(f"Note written to: {en_note_path}")
 
-    with open(en_note_path, "r", encoding="utf-8") as f:
+    with open(en_note_path, encoding="utf-8") as f:
         en_content = f.read()
 
     lines = en_content.split("\n")
     print(f"\n--- English Note (first 200 lines / {len(lines)} total) ---")
     for i, line in enumerate(lines[:200]):
-        print(f"  {i+1:3d} | {line}")
+        print(f"  {i + 1:3d} | {line}")
 
     # Quality check
     quality = check_note_quality(en_note_path)
-    print(f"\n--- Note Quality ---")
+    print("\n--- Note Quality ---")
     print(f"  Has issues: {quality['has_issues']}")
     print(f"  Placeholder count: {quality['placeholder_count']}")
 
@@ -268,6 +273,7 @@ try:
         print(frontmatter)
         try:
             import yaml
+
             fm = yaml.safe_load(frontmatter)
             print(f"\nYAML parse OK: {list(fm.keys())}")
         except ImportError:
@@ -298,7 +304,7 @@ try:
     if conf_results:
         print("\n--- Sample NeurIPS 2024 Papers ---")
         for i, p in enumerate(conf_results[:5]):
-            print(f"\n  [{i+1}] {p.get('title', 'N/A')[:120]}")
+            print(f"\n  [{i + 1}] {p.get('title', 'N/A')[:120]}")
             print(f"      authors: {', '.join(p.get('authors', [])[:3])}...")
             print(f"      venue={p.get('venue')}, year={p.get('year')}, source={p.get('source')}")
     else:
@@ -331,7 +337,7 @@ try:
     total = pipeline_result.get("total_found", 0)
     windows = pipeline_result.get("date_windows", {})
 
-    print(f"\nPipeline complete:")
+    print("\nPipeline complete:")
     print(f"  Total unique papers found: {total}")
     print(f"  Top papers returned: {len(papers)}")
     print(f"  Date windows: {safe_json(windows)}")
@@ -340,10 +346,12 @@ try:
         print("\n--- Top 3 Pipeline Results ---")
         for i, p in enumerate(papers[:3]):
             scores = p.get("scores", {})
-            print(f"\n  [{i+1}] {p.get('title', 'N/A')[:120]}")
+            print(f"\n  [{i + 1}] {p.get('title', 'N/A')[:120]}")
             print(f"      arxiv_id={p.get('arxiv_id')}, source={p.get('source')}")
-            print(f"      fit={scores.get('fit', 0)}, freshness={scores.get('freshness', 0)}, "
-                  f"impact={scores.get('impact', 0)}, rigor={scores.get('rigor', 0)}")
+            print(
+                f"      fit={scores.get('fit', 0)}, freshness={scores.get('freshness', 0)}, "
+                f"impact={scores.get('impact', 0)}, rigor={scores.get('rigor', 0)}"
+            )
             print(f"      recommendation={scores.get('recommendation', 0)}")
             print(f"      domain={p.get('best_domain')}, trending={p.get('trending')}")
     else:

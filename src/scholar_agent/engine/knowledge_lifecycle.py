@@ -19,13 +19,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from scholar_agent.engine.common import parse_frontmatter as _parse_frontmatter
 
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # ── Lifecycle states ───────────────────────────────────────────────
+
 
 class LifecycleState(str, Enum):
     DRAFT = "draft"
@@ -55,9 +57,18 @@ REQUIRED_FIELDS = {"id", "title", "type", "topic", "confidence", "updated_at"}
 
 # Optional but recommended fields
 OPTIONAL_FIELDS = {
-    "tags", "source_refs", "origin", "aliases", "domain",
-    "review_status", "last_reviewed_at", "freshness_expectation",
-    "supersedes", "conflicts_with", "question_types", "prerequisites",
+    "tags",
+    "source_refs",
+    "origin",
+    "aliases",
+    "domain",
+    "review_status",
+    "last_reviewed_at",
+    "freshness_expectation",
+    "supersedes",
+    "conflicts_with",
+    "question_types",
+    "prerequisites",
 }
 
 

@@ -15,11 +15,15 @@ from scholar_agent.installers.common import (
 )
 
 
-def build_user_config_fragment(*, profile: str = "default", toolset: str = "default", academic: bool = True, scholar_home: str | None = None) -> dict[str, object]:
+def build_user_config_fragment(
+    *, profile: str = "default", toolset: str = "default", academic: bool = True, scholar_home: str | None = None
+) -> dict[str, object]:
     return {
         "$schema": "https://opencode.ai/config.json",
         "mcp": {
-            "scholar-agent": build_local_server(profile=profile, toolset=toolset, academic=academic, scholar_home=scholar_home),
+            "scholar-agent": build_local_server(
+                profile=profile, toolset=toolset, academic=academic, scholar_home=scholar_home
+            ),
         },
     }
 

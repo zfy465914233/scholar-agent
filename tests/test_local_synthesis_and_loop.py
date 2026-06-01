@@ -1,12 +1,13 @@
 """Tests for local answer mode and knowledge loop closing."""
 
+import contextlib
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import sys
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -29,7 +30,10 @@ class LocalAnswerSynthesisTest(unittest.TestCase):
         local_answer = {
             "answer": "test answer",
             "supporting_claims": [{"claim": "c1", "evidence_ids": ["e1"], "confidence": "high"}],
-            "inferences": [], "uncertainty": [], "missing_evidence": [], "suggested_next_steps": [],
+            "inferences": [],
+            "uncertainty": [],
+            "missing_evidence": [],
+            "suggested_next_steps": [],
         }
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -39,10 +43,17 @@ class LocalAnswerSynthesisTest(unittest.TestCase):
             answer_path.write_text(json.dumps(local_answer))
 
             result = subprocess.run(
-                [sys.executable, str(ENGINE / "synthesize_answer.py"),
-                 "--prompt-bundle", str(bundle_path),
-                 "--local-answer", str(answer_path)],
-                capture_output=True, text=True, encoding="utf-8",
+                [
+                    sys.executable,
+                    str(ENGINE / "synthesize_answer.py"),
+                    "--prompt-bundle",
+                    str(bundle_path),
+                    "--local-answer",
+                    str(answer_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             output = json.loads(result.stdout)
@@ -64,8 +75,18 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
 
         # Build an isolated index so tests never rewrite the active project index.
         subprocess.run(
-            [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(cls.knowledge_root), "--output", str(cls.index_path)],
-            capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+            [
+                sys.executable,
+                str(ENGINE / "local_index.py"),
+                "--knowledge-root",
+                str(cls.knowledge_root),
+                "--output",
+                str(cls.index_path),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=_ROOT,
         )
 
     @classmethod
@@ -87,12 +108,22 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             answer_path.write_text(json.dumps(answer))
 
             result = subprocess.run(
-                [sys.executable, str(ENGINE / "close_knowledge_loop.py"),
-                 "--query", "test loop closing query",
-                 "--answer", str(answer_path),
-                 "--knowledge-root", str(self.knowledge_root),
-                 "--index-output", str(self.index_path)],
-                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+                [
+                    sys.executable,
+                    str(ENGINE / "close_knowledge_loop.py"),
+                    "--query",
+                    "test loop closing query",
+                    "--answer",
+                    str(answer_path),
+                    "--knowledge-root",
+                    str(self.knowledge_root),
+                    "--index-output",
+                    str(self.index_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             self.assertIn("Knowledge card written", result.stderr)
@@ -116,14 +147,22 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             # Clean up
             card_path.unlink()
             # Remove empty parent directory if it was created by this test
-            try:
+            with contextlib.suppress(OSError):
                 card_path.parent.rmdir()
-            except OSError:
-                pass
             # Reindex without the test card
             subprocess.run(
-                [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+                [
+                    sys.executable,
+                    str(ENGINE / "local_index.py"),
+                    "--knowledge-root",
+                    str(self.knowledge_root),
+                    "--output",
+                    str(self.index_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=_ROOT,
             )
 
     def test_close_loop_card_has_all_sections(self) -> None:
@@ -144,12 +183,22 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             answer_path.write_text(json.dumps(answer))
 
             result = subprocess.run(
-                [sys.executable, str(ENGINE / "close_knowledge_loop.py"),
-                 "--query", "test schema validation query",
-                 "--answer", str(answer_path),
-                 "--knowledge-root", str(self.knowledge_root),
-                 "--index-output", str(self.index_path)],
-                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+                [
+                    sys.executable,
+                    str(ENGINE / "close_knowledge_loop.py"),
+                    "--query",
+                    "test schema validation query",
+                    "--answer",
+                    str(answer_path),
+                    "--knowledge-root",
+                    str(self.knowledge_root),
+                    "--index-output",
+                    str(self.index_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
 
@@ -163,8 +212,12 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             content = card_path.read_text(encoding="utf-8")
 
             for section in [
-                "## 问题", "## 回答", "## 支撑论据",
-                "## 推论", "## 不确定性", "## 缺失证据",
+                "## 问题",
+                "## 回答",
+                "## 支撑论据",
+                "## 推论",
+                "## 不确定性",
+                "## 缺失证据",
                 "## 建议后续步骤",
             ]:
                 self.assertIn(section, content, f"Missing section: {section}")
@@ -175,8 +228,18 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             # Clean up
             card_path.unlink()
             subprocess.run(
-                [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+                [
+                    sys.executable,
+                    str(ENGINE / "local_index.py"),
+                    "--knowledge-root",
+                    str(self.knowledge_root),
+                    "--output",
+                    str(self.index_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=_ROOT,
             )
 
     def test_close_loop_warns_on_invalid_answer(self) -> None:
@@ -188,12 +251,22 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             answer_path.write_text(json.dumps(answer))
 
             result = subprocess.run(
-                [sys.executable, str(ENGINE / "close_knowledge_loop.py"),
-                 "--query", "test invalid schema query",
-                 "--answer", str(answer_path),
-                 "--knowledge-root", str(self.knowledge_root),
-                 "--index-output", str(self.index_path)],
-                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+                [
+                    sys.executable,
+                    str(ENGINE / "close_knowledge_loop.py"),
+                    "--query",
+                    "test invalid schema query",
+                    "--answer",
+                    str(answer_path),
+                    "--knowledge-root",
+                    str(self.knowledge_root),
+                    "--index-output",
+                    str(self.index_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=_ROOT,
             )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             self.assertIn("Schema warning", result.stderr)
@@ -209,8 +282,18 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
             if card_path and card_path.exists():
                 card_path.unlink()
             subprocess.run(
-                [sys.executable, str(ENGINE / "local_index.py"), "--knowledge-root", str(self.knowledge_root), "--output", str(self.index_path)],
-                capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+                [
+                    sys.executable,
+                    str(ENGINE / "local_index.py"),
+                    "--knowledge-root",
+                    str(self.knowledge_root),
+                    "--output",
+                    str(self.index_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=_ROOT,
             )
 
 
@@ -228,8 +311,12 @@ class AnswerSchemaTest(unittest.TestCase):
         schema = json.loads(ANSWER_SCHEMA_PATH.read_text(encoding="utf-8"))
         props = schema["properties"]
         for field in [
-            "answer", "supporting_claims", "inferences",
-            "uncertainty", "missing_evidence", "suggested_next_steps",
+            "answer",
+            "supporting_claims",
+            "inferences",
+            "uncertainty",
+            "missing_evidence",
+            "suggested_next_steps",
         ]:
             self.assertIn(field, props, f"Schema missing field: {field}")
 
@@ -237,8 +324,12 @@ class AnswerSchemaTest(unittest.TestCase):
         self.assertTrue(RESEARCH_NOTE_TEMPLATE.exists(), "knowledge.md template must exist")
         content = RESEARCH_NOTE_TEMPLATE.read_text(encoding="utf-8")
         for section in [
-            "## 目录", "## 第一节", "## 第二节",
-            "## 公式速查表", "## 参考文献", "## See Also",
+            "## 目录",
+            "## 第一节",
+            "## 第二节",
+            "## 公式速查表",
+            "## 参考文献",
+            "## See Also",
         ]:
             self.assertIn(section, content, f"Template missing section: {section}")
 

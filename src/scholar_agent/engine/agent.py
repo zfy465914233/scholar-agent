@@ -29,7 +29,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from scholar_agent.engine.exceptions import ScholarError, ResearchError, SynthesisError
+from scholar_agent.engine.exceptions import ResearchError, SynthesisError
 
 ENGINE_DIR = Path(__file__).resolve().parent
 DEFAULT_INDEX = Path.cwd() / "indexes" / "local" / "index.json"
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── State machine ──────────────────────────────────────────────────
+
 
 class AgentState(str, Enum):
     ROUTE = "route"
@@ -48,6 +49,7 @@ class AgentState(str, Enum):
 
 
 # ── Router ─────────────────────────────────────────────────────────
+
 
 class Router:
     """Classifies the query and determines the execution path.
@@ -67,17 +69,29 @@ class Router:
         """
         try:
             from scholar_agent.engine.orchestrate_research import classify_route
+
             return classify_route(query, index_path)
         except ImportError:
             logger.debug("Falling back to subprocess for route classification")
             import subprocess
+
             result = subprocess.run(
-                [sys.executable, str(ENGINE_DIR / "orchestrate_research.py"),
-                 query, "--mode", "auto", "--index", str(index_path)],
-                capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
+                [
+                    sys.executable,
+                    str(ENGINE_DIR / "orchestrate_research.py"),
+                    query,
+                    "--mode",
+                    "auto",
+                    "--index",
+                    str(index_path),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=ENGINE_DIR,
             )
             if result.returncode != 0:
-                raise ResearchError(f"Router failed: {result.stderr}")
+                raise ResearchError(f"Router failed: {result.stderr}") from None
             return json.loads(result.stdout).get("route", "mixed")
 
     def should_research_web(self, route: str) -> bool:
@@ -88,6 +102,7 @@ class Router:
 
 
 # ── Researcher ─────────────────────────────────────────────────────
+
 
 class Researcher:
     """Gathers evidence from local and web sources.
@@ -110,10 +125,9 @@ class Researcher:
         Uses in-process calls when possible, subprocess fallback otherwise.
         """
         try:
-            from scholar_agent.engine.orchestrate_research import classify_route, build_decision, generate_web_evidence
-            from scholar_agent.engine.build_evidence_pack import build_evidence_pack
             from scholar_agent.engine.build_answer_context import build_answer_context
-            import tempfile
+            from scholar_agent.engine.build_evidence_pack import build_evidence_pack
+            from scholar_agent.engine.orchestrate_research import build_decision, generate_web_evidence
 
             warnings: list[str] = []
             generated_web_path: Path | None = None
@@ -135,17 +149,25 @@ class Researcher:
         except ImportError:
             logger.debug("Falling back to subprocess for research")
             import subprocess
+
             args = [
-                query, "--mode", route,
-                "--index", str(self.index_path),
-                "--research-script", str(self.research_script),
+                query,
+                "--mode",
+                route,
+                "--index",
+                str(self.index_path),
+                "--research-script",
+                str(self.research_script),
             ]
             result = subprocess.run(
-                [sys.executable, str(ENGINE_DIR / "build_answer_context.py")] + args,
-                capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
+                [sys.executable, str(ENGINE_DIR / "build_answer_context.py"), *args],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=ENGINE_DIR,
             )
             if result.returncode != 0:
-                raise ResearchError(f"Researcher failed: {result.stderr}")
+                raise ResearchError(f"Researcher failed: {result.stderr}") from None
             return json.loads(result.stdout)
 
     def is_evidence_sufficient(self, answer_context: dict[str, Any]) -> tuple[bool, str]:
@@ -167,6 +189,7 @@ class Researcher:
 
 # ── Synthesizer ────────────────────────────────────────────────────
 
+
 class Synthesizer:
     """Produces a structured answer from evidence using an LLM."""
 
@@ -179,7 +202,8 @@ class Synthesizer:
         Uses in-process call when possible, subprocess fallback otherwise.
         """
         try:
-            from scholar_agent.engine.render_answer_bundle import render_user_prompt, SYSTEM_PROMPT
+            from scholar_agent.engine.render_answer_bundle import SYSTEM_PROMPT, render_user_prompt
+
             user_prompt = render_user_prompt(answer_context)
             return {
                 "system_prompt": SYSTEM_PROMPT,
@@ -193,13 +217,18 @@ class Synthesizer:
         except ImportError:
             logger.debug("Falling back to subprocess for prompt rendering")
             import subprocess
+
             ctx_json = json.dumps(answer_context, ensure_ascii=False)
             result = subprocess.run(
                 [sys.executable, str(ENGINE_DIR / "render_answer_bundle.py"), "--answer-context-json", "-"],
-                input=ctx_json, capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
+                input=ctx_json,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=ENGINE_DIR,
             )
             if result.returncode != 0:
-                raise SynthesisError(f"Synthesizer render failed: {result.stderr}")
+                raise SynthesisError(f"Synthesizer render failed: {result.stderr}") from None
             return json.loads(result.stdout)
 
     def synthesize(self, prompt_bundle: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
@@ -209,26 +238,32 @@ class Synthesizer:
         """
         try:
             from scholar_agent.engine.synthesize_answer import synthesize as _synthesize
+
             return _synthesize(prompt_bundle, self.model or "gpt-4o-mini", dry_run=dry_run)
         except ImportError:
             logger.debug("Falling back to subprocess for synthesis")
             import subprocess
+
             args = ["--prompt-bundle", "-"]
             if self.model:
                 args.extend(["--model", self.model])
             if dry_run:
                 args.append("--dry-run")
             result = subprocess.run(
-                [sys.executable, str(ENGINE_DIR / "synthesize_answer.py")] + args,
+                [sys.executable, str(ENGINE_DIR / "synthesize_answer.py"), *args],
                 input=json.dumps(prompt_bundle, ensure_ascii=False),
-                capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=ENGINE_DIR,
             )
             if result.returncode != 0:
-                raise SynthesisError(f"Synthesizer failed: {result.stderr}")
+                raise SynthesisError(f"Synthesizer failed: {result.stderr}") from None
             return json.loads(result.stdout)
 
 
 # ── Curator ────────────────────────────────────────────────────────
+
 
 class Curator:
     """Manages knowledge lifecycle: distill answers, promote knowledge.
@@ -245,6 +280,7 @@ class Curator:
 
         try:
             from scholar_agent.engine.distill_knowledge import build_markdown
+
             markdown = build_markdown(answer_context)
             return {"markdown": markdown, "status": "draft"}
         except ImportError:
@@ -254,18 +290,25 @@ class Curator:
     def promote(self, draft_path: Path, knowledge_root: Path) -> bool:
         """Promote a draft card into the knowledge tree."""
         import subprocess
+
         result = subprocess.run(
             [
-                sys.executable, str(ENGINE_DIR / "promote_draft.py"),
+                sys.executable,
+                str(ENGINE_DIR / "promote_draft.py"),
                 str(draft_path),
-                "--knowledge-root", str(knowledge_root),
+                "--knowledge-root",
+                str(knowledge_root),
             ],
-            capture_output=True, text=True, encoding="utf-8", cwd=ENGINE_DIR,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=ENGINE_DIR,
         )
         return result.returncode == 0
 
 
 # ── Query refinement ──────────────────────────────────────────────────
+
 
 def refine_query(
     original_query: str,
@@ -306,6 +349,7 @@ def refine_query(
 
 
 # ── Agent ──────────────────────────────────────────────────────────
+
 
 class DomainAgent:
     """Domain-aware agent that orchestrates the full research-answer cycle.
@@ -363,7 +407,10 @@ class DomainAgent:
                     refined = refine_query(query, reason, answer_context)
                     logger.info(
                         "Evidence insufficient (%s), retry %d/%d with refined query: %s",
-                        reason, retries, self.max_retries, refined,
+                        reason,
+                        retries,
+                        self.max_retries,
+                        refined,
                     )
                     transitions[-1]["to"] = f"research_retry_{retries}"
                     query = refined  # update query for next loop iteration
@@ -376,10 +423,7 @@ class DomainAgent:
                 prompt_bundle = self.synthesizer.render_prompt(answer_context)
                 answer = self.synthesizer.synthesize(prompt_bundle, dry_run=dry_run)
 
-                if curate:
-                    state = AgentState.CURATE
-                else:
-                    state = AgentState.DONE
+                state = AgentState.CURATE if curate else AgentState.DONE
                 transitions[-1]["to"] = state.value
 
             elif state == AgentState.CURATE:

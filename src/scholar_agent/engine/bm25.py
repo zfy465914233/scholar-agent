@@ -9,15 +9,33 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Sequence
-
 
 TOKEN_RE = re.compile(r"[a-z0-9_-]+")
 CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
 STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
-    "in", "is", "of", "on", "or", "that", "the", "to", "what", "when",
-    "where", "which", "who",
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "to",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
 }
 
 
@@ -31,7 +49,7 @@ def tokenize(text: str) -> list[str]:
             continue
 
         # Use overlapping bigrams as a lightweight Chinese tokenizer.
-        tokens.extend(chunk[i:i + 2] for i in range(len(chunk) - 1))
+        tokens.extend(chunk[i : i + 2] for i in range(len(chunk) - 1))
 
     return tokens
 

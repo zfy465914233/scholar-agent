@@ -2,9 +2,9 @@
 
 import json
 import subprocess
+import sys
 import unittest
 from pathlib import Path
-import sys
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,7 +28,9 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())
@@ -43,7 +45,9 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         fields = json.loads(result.stdout.strip())
@@ -62,7 +66,9 @@ class CardValidationTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("1", result.stdout.strip())
@@ -80,7 +86,9 @@ class LifecycleTransitionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         parts = result.stdout.strip().split(" ", 1)
@@ -96,7 +104,9 @@ class LifecycleTransitionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("True", result.stdout.strip())
@@ -110,7 +120,9 @@ class LifecycleTransitionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("True", result.stdout.strip())
@@ -131,7 +143,9 @@ class DuplicateDetectionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         parts = result.stdout.strip().split(" ")
@@ -150,7 +164,9 @@ class DuplicateDetectionTest(unittest.TestCase):
         )
         result = subprocess.run(
             [sys.executable, "-c", code],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())
@@ -162,7 +178,9 @@ class GovernanceCLITest(unittest.TestCase):
     def test_scan_command(self) -> None:
         result = subprocess.run(
             [sys.executable, str(ENGINE / "knowledge_governance.py"), "scan"],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertIn("Knowledge base:", result.stdout)
@@ -170,7 +188,9 @@ class GovernanceCLITest(unittest.TestCase):
     def test_validate_command(self) -> None:
         result = subprocess.run(
             [sys.executable, str(ENGINE / "knowledge_governance.py"), "validate", "-v"],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         # May return 1 if there are errors, but should not crash
         self.assertIn("Validated", result.stdout)
@@ -178,7 +198,9 @@ class GovernanceCLITest(unittest.TestCase):
     def test_duplicates_command(self) -> None:
         result = subprocess.run(
             [sys.executable, str(ENGINE / "knowledge_governance.py"), "duplicates"],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertIn("cards", result.stdout.lower())
@@ -186,7 +208,9 @@ class GovernanceCLITest(unittest.TestCase):
     def test_transitions_command(self) -> None:
         result = subprocess.run(
             [sys.executable, str(ENGINE / "knowledge_governance.py"), "transitions"],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertIn("draft", result.stdout)
@@ -195,7 +219,9 @@ class GovernanceCLITest(unittest.TestCase):
     def test_lint_command(self) -> None:
         result = subprocess.run(
             [sys.executable, str(ENGINE / "knowledge_governance.py"), "lint", "--stale-days", "365"],
-            capture_output=True, text=True, encoding="utf-8",
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
         )
         # lint returns 1 if issues found, but should not crash
         self.assertIn("cards", result.stdout.lower())

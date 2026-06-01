@@ -27,23 +27,29 @@ class BuildGraphDataTest(unittest.TestCase):
         self.assertEqual([], data["edges"])
 
     def test_single_node(self) -> None:
-        self._write_index([{
-            "doc_id": "card-1",
-            "title": "Neural Networks",
-            "topic": "ml",
-            "links": [],
-            "backlinks": [],
-        }])
+        self._write_index(
+            [
+                {
+                    "doc_id": "card-1",
+                    "title": "Neural Networks",
+                    "topic": "ml",
+                    "links": [],
+                    "backlinks": [],
+                }
+            ]
+        )
         data = build_graph_data(self.index_path)
         self.assertEqual(1, len(data["nodes"]))
         self.assertEqual("card-1", data["nodes"][0]["id"])
         self.assertEqual([], data["edges"])
 
     def test_edges_from_links(self) -> None:
-        self._write_index([
-            {"doc_id": "a", "title": "A", "topic": "ml", "links": ["b"], "backlinks": []},
-            {"doc_id": "b", "title": "B", "topic": "ml", "links": [], "backlinks": ["a"]},
-        ])
+        self._write_index(
+            [
+                {"doc_id": "a", "title": "A", "topic": "ml", "links": ["b"], "backlinks": []},
+                {"doc_id": "b", "title": "B", "topic": "ml", "links": [], "backlinks": ["a"]},
+            ]
+        )
         data = build_graph_data(self.index_path)
         self.assertEqual(2, len(data["nodes"]))
         self.assertEqual(1, len(data["edges"]))

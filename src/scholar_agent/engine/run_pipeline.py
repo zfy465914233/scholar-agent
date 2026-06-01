@@ -14,8 +14,8 @@ import argparse
 import json
 import logging
 import subprocess
-from pathlib import Path
 import sys
+from pathlib import Path
 
 ENGINE_DIR = Path(__file__).resolve().parent
 DEFAULT_INDEX = Path.cwd() / "indexes" / "local" / "index.json"
@@ -68,7 +68,7 @@ def parse_args() -> argparse.Namespace:
 
 def _run(script: str, args: list[str], stdin_data: str | None = None) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
-        [sys.executable, str(ENGINE_DIR / script)] + args,
+        [sys.executable, str(ENGINE_DIR / script), *args],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -95,9 +95,12 @@ def run_pipeline(
     # Stage 1: Build answer context (includes routing and evidence collection)
     ctx_args = [
         query,
-        "--mode", mode,
-        "--index", str(index),
-        "--research-script", str(research_script),
+        "--mode",
+        mode,
+        "--index",
+        str(index),
+        "--research-script",
+        str(research_script),
     ]
     ctx_result = _run("build_answer_context.py", ctx_args)
     answer_context = json.loads(ctx_result.stdout)

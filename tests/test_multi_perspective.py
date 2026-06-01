@@ -4,14 +4,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
-from scholar_agent.engine.research_harness import PERSPECTIVES, run_multi_perspective
 from scholar_agent.engine.close_knowledge_loop import check_contradictions
+from scholar_agent.engine.research_harness import PERSPECTIVES, run_multi_perspective
 
 
 class MultiPerspectiveTest(unittest.TestCase):
@@ -81,9 +81,7 @@ class ContradictionDetectionTest(unittest.TestCase):
         tmpdir = tempfile.mkdtemp()
         index_path = Path(tmpdir) / "index.json"
         index_path.write_text("{}", encoding="utf-8")
-        mock_retrieve.return_value = {
-            "results": [{"doc_id": "card-x", "title": "Overlap", "score": 2.0}]
-        }
+        mock_retrieve.return_value = {"results": [{"doc_id": "card-x", "title": "Overlap", "score": 2.0}]}
         result = check_contradictions("test query", [], index_path)
         self.assertEqual(1, len(result))
         mock_retrieve.assert_called_once()
@@ -97,6 +95,7 @@ class ContradictionDetectionTest(unittest.TestCase):
         custom_index.write_text("{}", encoding="utf-8")
         mock_retrieve.return_value = {"results": []}
         from scholar_agent.engine.close_knowledge_loop import build_knowledge_card
+
         kr = Path(tmpdir) / "knowledge"
         kr.mkdir()
         answer_data = {"answer": "test answer"}

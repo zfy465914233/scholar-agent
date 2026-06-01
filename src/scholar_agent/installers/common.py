@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def build_shared_env(*, profile: str, toolset: str, academic: bool, scholar_home: str | None = None) -> dict[str, str]:
@@ -19,7 +22,9 @@ def build_shared_env(*, profile: str, toolset: str, academic: bool, scholar_home
     return env
 
 
-def build_stdio_server(*, profile: str, toolset: str, academic: bool, scholar_home: str | None = None) -> dict[str, object]:
+def build_stdio_server(
+    *, profile: str, toolset: str, academic: bool, scholar_home: str | None = None
+) -> dict[str, object]:
     return {
         "type": "stdio",
         "command": sys.executable,
@@ -28,7 +33,9 @@ def build_stdio_server(*, profile: str, toolset: str, academic: bool, scholar_ho
     }
 
 
-def build_local_server(*, profile: str, toolset: str, academic: bool, scholar_home: str | None = None) -> dict[str, object]:
+def build_local_server(
+    *, profile: str, toolset: str, academic: bool, scholar_home: str | None = None
+) -> dict[str, object]:
     return {
         "type": "local",
         "command": [sys.executable, "-m", "scholar_agent.cli", "serve-mcp"],

@@ -1,8 +1,8 @@
 import subprocess
-import tempfile
-from pathlib import Path
-import unittest
 import sys
+import tempfile
+import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,10 +53,19 @@ def _make_draft(path: Path, query: str) -> None:
 class PromoteDraftTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.local_index",
+                "--knowledge-root",
+                "tests/fixtures",
+                "--output",
+                str(INDEX_PATH),
+            ],
             cwd=_ROOT,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -76,7 +85,8 @@ class PromoteDraftTest(unittest.TestCase):
             answer_result = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "scholar_agent.engine.build_answer_context",
+                    "-m",
+                    "scholar_agent.engine.build_answer_context",
                     "what is a markov chain",
                     "--mode",
                     "mixed",
@@ -87,7 +97,8 @@ class PromoteDraftTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, answer_result.returncode, msg=answer_result.stderr)
             answer_context_path.write_text(answer_result.stdout, encoding="utf-8")
@@ -95,7 +106,8 @@ class PromoteDraftTest(unittest.TestCase):
             distill_result = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "scholar_agent.engine.distill_knowledge",
+                    "-m",
+                    "scholar_agent.engine.distill_knowledge",
                     "--answer-context",
                     str(answer_context_path),
                     "--output",
@@ -103,14 +115,16 @@ class PromoteDraftTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, distill_result.returncode, msg=distill_result.stderr)
 
             promote_result = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "scholar_agent.engine.promote_draft",
+                    "-m",
+                    "scholar_agent.engine.promote_draft",
                     "--draft",
                     str(draft_path),
                     "--knowledge-root",
@@ -118,7 +132,8 @@ class PromoteDraftTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, promote_result.returncode, msg=promote_result.stderr)
 
@@ -154,7 +169,8 @@ class PromoteDraftTest(unittest.TestCase):
                 promote_result = subprocess.run(
                     [
                         sys.executable,
-                        "-m", "scholar_agent.engine.promote_draft",
+                        "-m",
+                        "scholar_agent.engine.promote_draft",
                         "--draft",
                         str(draft_path),
                         "--knowledge-root",
@@ -162,7 +178,8 @@ class PromoteDraftTest(unittest.TestCase):
                     ],
                     cwd=_ROOT,
                     capture_output=True,
-                    text=True, encoding="utf-8",
+                    text=True,
+                    encoding="utf-8",
                 )
                 self.assertEqual(0, promote_result.returncode, msg=promote_result.stderr)
                 expected_path = knowledge_root / expected_folder / f"candidate-{query.replace(' ', '-')}.md"

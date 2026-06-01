@@ -1,24 +1,24 @@
 import json
 import sys
-from datetime import date, datetime, timezone
+import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
-import unittest
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
-from scholar_agent.engine.search_providers.base import ProviderResult, SearchCandidate
+from scholar_agent.engine import research_harness
 from scholar_agent.engine.normalizers.evidence_normalizer import normalize_candidate
-from scholar_agent.engine.search_providers.self_hosted_provider import AcademicProvider
 from scholar_agent.engine.search_pipeline import (
-    canonicalize_url,
     candidate_identity,
+    canonicalize_url,
     run_search_pipeline,
 )
-from scholar_agent.engine import research_harness
+from scholar_agent.engine.search_providers.base import ProviderResult, SearchCandidate
+from scholar_agent.engine.search_providers.self_hosted_provider import AcademicProvider
 
 
 class AcademicProviderTest(unittest.TestCase):
@@ -124,7 +124,9 @@ class AcademicProviderTest(unittest.TestCase):
         provider = AcademicProvider()
         with (
             patch("scholar_agent.engine.search_providers.self_hosted_provider.search_openalex") as mock_openalex,
-            patch("scholar_agent.engine.search_providers.self_hosted_provider.search_semanticscholar") as mock_semanticscholar,
+            patch(
+                "scholar_agent.engine.search_providers.self_hosted_provider.search_semanticscholar"
+            ) as mock_semanticscholar,
         ):
             mock_openalex.return_value = [
                 {
@@ -163,7 +165,9 @@ class AcademicProviderTest(unittest.TestCase):
         provider = AcademicProvider()
         with (
             patch("scholar_agent.engine.search_providers.self_hosted_provider.search_openalex") as mock_openalex,
-            patch("scholar_agent.engine.search_providers.self_hosted_provider.search_semanticscholar") as mock_semanticscholar,
+            patch(
+                "scholar_agent.engine.search_providers.self_hosted_provider.search_semanticscholar"
+            ) as mock_semanticscholar,
         ):
             mock_openalex.return_value = [
                 {
@@ -227,7 +231,9 @@ class AcademicProviderTest(unittest.TestCase):
             published_at="2026-01-01",
         )
 
-        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch(
+            "scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"
+        ):
             evidence = normalize_candidate(candidate, fetched_text="")
 
         self.assertEqual("markov chain", evidence["query"])
@@ -257,7 +263,9 @@ class AcademicProviderTest(unittest.TestCase):
             published_at=None,
         )
 
-        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch(
+            "scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"
+        ):
             evidence = normalize_candidate(candidate, fetched_text="")
 
         self.assertTrue(evidence["url"].startswith("urn:scholar-agent:candidate:"))
@@ -290,7 +298,9 @@ class AcademicProviderTest(unittest.TestCase):
             published_at=None,
         )
 
-        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch(
+            "scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"
+        ):
             first_evidence = normalize_candidate(first, fetched_text="")
             second_evidence = normalize_candidate(second, fetched_text="")
 
@@ -309,7 +319,9 @@ class AcademicProviderTest(unittest.TestCase):
             "published_at": datetime(2026, 4, 3, 12, 30, tzinfo=timezone.utc),
         }
 
-        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch(
+            "scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"
+        ):
             evidence = normalize_candidate(candidate, fetched_text="", retrieval_status="succeeded")
 
         self.assertEqual("2026-04-03", evidence["published_at"])
@@ -325,7 +337,9 @@ class AcademicProviderTest(unittest.TestCase):
             "published_at": "   ",
         }
 
-        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch(
+            "scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"
+        ):
             evidence = normalize_candidate(candidate, fetched_text="")
 
         self.assertIsNone(evidence["published_at"])
@@ -340,16 +354,20 @@ class AcademicProviderTest(unittest.TestCase):
             "published_at": "not-a-date",
         }
 
-        with patch("scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"):
+        with patch(
+            "scholar_agent.engine.normalizers.evidence_normalizer.now_iso", return_value="2026-04-03T00:00:00+00:00"
+        ):
             evidence = normalize_candidate(candidate, fetched_text="")
 
         self.assertIsNone(evidence["published_at"])
         self.assertIsNone(evidence["freshness_signals"]["page_updated_date"])
 
     def test_run_discovery_uses_accurate_empty_results_error(self) -> None:
-        with patch.object(research_harness, "run_search_pipeline", return_value={"evidence": []}):
-            with self.assertRaisesRegex(RuntimeError, "No search results returned from configured provider"):
-                research_harness.run_discovery("markov chain", "quick", None)
+        with (
+            patch.object(research_harness, "run_search_pipeline", return_value={"evidence": []}),
+            self.assertRaisesRegex(RuntimeError, "No search results returned from configured provider"),
+        ):
+            research_harness.run_discovery("markov chain", "quick", None)
 
     def test_parse_args_accepts_external_candidates_path(self) -> None:
         batch_path = _ROOT / "tests" / "fixtures" / "external_candidates.json"

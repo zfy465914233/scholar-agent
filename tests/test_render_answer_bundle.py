@@ -1,8 +1,8 @@
 import json
 import subprocess
-from pathlib import Path
-import unittest
 import sys
+import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,10 +14,19 @@ FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 class RenderAnswerBundleTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.local_index",
+                "--knowledge-root",
+                "tests/fixtures",
+                "--output",
+                str(INDEX_PATH),
+            ],
             cwd=_ROOT,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -29,7 +38,8 @@ class RenderAnswerBundleTest(unittest.TestCase):
         answer_result = subprocess.run(
             [
                 sys.executable,
-                "-m", "scholar_agent.engine.build_answer_context",
+                "-m",
+                "scholar_agent.engine.build_answer_context",
                 "what is a markov chain",
                 "--mode",
                 "mixed",
@@ -40,21 +50,24 @@ class RenderAnswerBundleTest(unittest.TestCase):
             ],
             cwd=_ROOT,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, answer_result.returncode, msg=answer_result.stderr)
 
         bundle_result = subprocess.run(
             [
                 sys.executable,
-                "-m", "scholar_agent.engine.render_answer_bundle",
+                "-m",
+                "scholar_agent.engine.render_answer_bundle",
                 "--answer-context-json",
                 "-",
             ],
             cwd=_ROOT,
             input=answer_result.stdout,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, bundle_result.returncode, msg=bundle_result.stderr)
 

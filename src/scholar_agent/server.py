@@ -23,6 +23,7 @@ Usage:
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import logging
@@ -33,17 +34,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from scholar_agent.engine.close_knowledge_loop import (
+    QUALITY_THRESHOLD_CAPTURE_ANSWER,
+    QUALITY_THRESHOLD_SAVE_RESEARCH,
     build_knowledge_card,
-    infer_domain,
     quality_score_answer_data,
     validate_answer_schema,
-    QUALITY_THRESHOLD_SAVE_RESEARCH,
-    QUALITY_THRESHOLD_CAPTURE_ANSWER,
 )
 from scholar_agent.engine.close_knowledge_loop import reindex as _reindex
 from scholar_agent.engine.common import sanitize_title
-from scholar_agent.engine.scholar_config import get_knowledge_dir, get_index_path, get_research_interests, load_config
 from scholar_agent.engine.local_retrieve import retrieve
+from scholar_agent.engine.scholar_config import get_index_path, get_knowledge_dir, get_research_interests, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -52,11 +52,13 @@ SCHOLAR_ACADEMIC = os.environ.get("SCHOLAR_ACADEMIC", "").strip() in ("1", "true
 
 try:
     from fastmcp import FastMCP
+
     mcp = FastMCP("scholar-agent")
     tool = mcp.tool
 except ImportError:
     # Allow running without fastmcp — decorators become no-ops
     mcp = None  # type: ignore[assignment]
+
     def tool(fn):  # type: ignore[misc]
         return fn
 
@@ -84,10 +86,8 @@ def _mark_index_stale(index_path: Path) -> None:
 
 def _clear_index_stale(index_path: Path) -> None:
     marker = _stale_marker_path(index_path)
-    try:
+    with contextlib.suppress(FileNotFoundError):
         marker.unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _acquire_refresh_lock(lock_path: Path) -> bool:
@@ -112,10 +112,8 @@ def _acquire_refresh_lock(lock_path: Path) -> bool:
 
 
 def _release_refresh_lock(lock_path: Path) -> None:
-    try:
+    with contextlib.suppress(FileNotFoundError):
         lock_path.unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _ensure_index_ready() -> tuple[Path, bool, str | None]:
@@ -167,10 +165,12 @@ def query_knowledge(query: str, limit: int = 5) -> str:
     index_path, refreshed, refresh_error = _ensure_index_ready()
 
     if not index_path.exists():
-        return json.dumps({
-            "error": refresh_error or "Knowledge index not found. Run local_index.py first.",
-            "results": [],
-        })
+        return json.dumps(
+            {
+                "error": refresh_error or "Knowledge index not found. Run local_index.py first.",
+                "results": [],
+            }
+        )
 
     result = retrieve(query, index_path, limit)
     if refresh_error:
@@ -260,21 +260,25 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
     # Quality gate
     quality = quality_score_answer_data(answer_data, source="save_research")
     if not quality["passed"]:
-        return json.dumps({
-            "error": (
-                f"Quality gate failed (score: {quality['score']:.2f}, "
-                f"minimum: {QUALITY_THRESHOLD_SAVE_RESEARCH:.2f}). "
-                "Your answer is too thin to create a useful knowledge card."
-            ),
-            "quality_score": quality["score"],
-            "quality_threshold": QUALITY_THRESHOLD_SAVE_RESEARCH,
-            "violations": quality["violations"],
-            "guidance": (
-                "Provide a detailed answer (200+ characters) with at least 1 supporting claim "
-                "referencing evidence. Include inferences, uncertainty, and suggested_next_steps "
-                "for higher quality."
-            ),
-        }, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "error": (
+                    f"Quality gate failed (score: {quality['score']:.2f}, "
+                    f"minimum: {QUALITY_THRESHOLD_SAVE_RESEARCH:.2f}). "
+                    "Your answer is too thin to create a useful knowledge card."
+                ),
+                "quality_score": quality["score"],
+                "quality_threshold": QUALITY_THRESHOLD_SAVE_RESEARCH,
+                "violations": quality["violations"],
+                "guidance": (
+                    "Provide a detailed answer (200+ characters) with at least 1 supporting claim "
+                    "referencing evidence. Include inferences, uncertainty, and suggested_next_steps "
+                    "for higher quality."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
     # Build knowledge card
     try:
@@ -282,8 +286,12 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
         answer_data["language"] = language
         domain_kw = {"domain_override": domain.strip()} if domain and domain.strip() else {}
         card_path = build_knowledge_card(
-            query, answer_data, None, get_knowledge_dir(),
-            index_path=get_index_path(), **domain_kw,
+            query,
+            answer_data,
+            None,
+            get_knowledge_dir(),
+            index_path=get_index_path(),
+            **domain_kw,
         )
     except Exception as e:
         return json.dumps({"error": f"Failed to write card: {e}"})
@@ -291,13 +299,17 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
     index_path = get_index_path()
     _mark_index_stale(index_path)
 
-    return json.dumps({
-        "status": "ok",
-        "card_path": str(card_path),
-        "reindexed": False,
-        "index_pending_refresh": True,
-        "schema_warnings": warnings,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "status": "ok",
+            "card_path": str(card_path),
+            "reindexed": False,
+            "index_pending_refresh": True,
+            "schema_warnings": warnings,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @tool
@@ -312,10 +324,14 @@ def list_knowledge(topic: str | None = None) -> str:
     if topic is not None:
         for char in ("..", "/", "\\"):
             if char in topic:
-                return json.dumps({"error": "topic must not contain path separators or traversal sequences", "cards": [], "total": 0})
+                return json.dumps(
+                    {"error": "topic must not contain path separators or traversal sequences", "cards": [], "total": 0}
+                )
     index_path, refreshed, refresh_error = _ensure_index_ready()
     if not index_path.exists():
-        return json.dumps({"cards": [], "total": 0, "error": refresh_error or "Index not found. Run local_index.py first."})
+        return json.dumps(
+            {"cards": [], "total": 0, "error": refresh_error or "Index not found. Run local_index.py first."}
+        )
 
     try:
         index_data = json.loads(index_path.read_text(encoding="utf-8"))
@@ -328,16 +344,18 @@ def list_knowledge(topic: str | None = None) -> str:
             doc_topic = doc.get("topic", "")
             if doc_topic != topic and not doc_topic.endswith("/" + topic) and not doc_topic.startswith(topic + "/"):
                 continue
-        cards.append({
-            "id": doc.get("doc_id", ""),
-            "title": doc.get("title", ""),
-            "domain": doc.get("domain", ""),
-            "topic": doc.get("topic", ""),
-            "type": doc.get("type", ""),
-            "path": doc.get("path", ""),
-            "links": doc.get("links", []),
-            "backlinks": doc.get("backlinks", []),
-        })
+        cards.append(
+            {
+                "id": doc.get("doc_id", ""),
+                "title": doc.get("title", ""),
+                "domain": doc.get("domain", ""),
+                "topic": doc.get("topic", ""),
+                "type": doc.get("type", ""),
+                "path": doc.get("path", ""),
+                "links": doc.get("links", []),
+                "backlinks": doc.get("backlinks", []),
+            }
+        )
 
     payload = {"cards": cards, "total": len(cards)}
     if refresh_error:
@@ -393,21 +411,25 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
     # Quality gate
     quality = quality_score_answer_data(answer_data, source="capture_answer")
     if not quality["passed"]:
-        return json.dumps({
-            "error": (
-                f"Quality gate failed (score: {quality['score']:.2f}, "
-                f"minimum: {QUALITY_THRESHOLD_CAPTURE_ANSWER:.2f}). "
-                "Your answer is too brief to create a useful knowledge card."
-            ),
-            "quality_score": quality["score"],
-            "quality_threshold": QUALITY_THRESHOLD_CAPTURE_ANSWER,
-            "violations": quality["violations"],
-            "guidance": (
-                "capture_answer is for substantive Q&A captures. Write at least 150 characters "
-                "explaining the answer with context and practical implications. "
-                "For a one-liner, this information is better left uncaptured."
-            ),
-        }, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "error": (
+                    f"Quality gate failed (score: {quality['score']:.2f}, "
+                    f"minimum: {QUALITY_THRESHOLD_CAPTURE_ANSWER:.2f}). "
+                    "Your answer is too brief to create a useful knowledge card."
+                ),
+                "quality_score": quality["score"],
+                "quality_threshold": QUALITY_THRESHOLD_CAPTURE_ANSWER,
+                "violations": quality["violations"],
+                "guidance": (
+                    "capture_answer is for substantive Q&A captures. Write at least 150 characters "
+                    "explaining the answer with context and practical implications. "
+                    "For a one-liner, this information is better left uncaptured."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
     # Build the card
     try:
@@ -418,13 +440,17 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
     index_path = get_index_path()
     _mark_index_stale(index_path)
 
-    return json.dumps({
-        "status": "ok",
-        "card_path": str(card_path),
-        "reindexed": False,
-        "index_pending_refresh": True,
-        "note": "Card created as draft. Verify and promote when confidence is confirmed.",
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "status": "ok",
+            "card_path": str(card_path),
+            "reindexed": False,
+            "index_pending_refresh": True,
+            "note": "Card created as draft. Verify and promote when confidence is confirmed.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @tool
@@ -453,6 +479,7 @@ def ingest_source(source: str, title: str = "", tags: str = "", language: str = 
 
     if is_url:
         from scholar_agent.engine.research_harness import fetch_content
+
         result = fetch_content(source.strip())
         if result["retrieval_status"] == "failed":
             return json.dumps({"error": f"Failed to fetch URL: {result.get('failure_reason', 'unknown')}"})
@@ -481,24 +508,30 @@ def ingest_source(source: str, title: str = "", tags: str = "", language: str = 
     if tags and tags.strip():
         answer_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
     if is_url:
-        answer_data["tags"] = answer_data.get("tags", []) + ["ingested-url"]
+        answer_data["tags"] = [*answer_data.get("tags", []), "ingested-url"]
 
     try:
-        card_path = build_knowledge_card(auto_title, answer_data, None, get_knowledge_dir(), index_path=get_index_path())
+        card_path = build_knowledge_card(
+            auto_title, answer_data, None, get_knowledge_dir(), index_path=get_index_path()
+        )
     except Exception as e:
         return json.dumps({"error": f"Failed to write card: {e}"})
 
     index_path = get_index_path()
     _mark_index_stale(index_path)
 
-    return json.dumps({
-        "status": "ok",
-        "card_path": str(card_path),
-        "reindexed": False,
-        "index_pending_refresh": True,
-        "source_type": "url" if is_url else "text",
-        "title": auto_title,
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "status": "ok",
+            "card_path": str(card_path),
+            "reindexed": False,
+            "index_pending_refresh": True,
+            "source_type": "url" if is_url else "text",
+            "title": auto_title,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 @tool
@@ -521,12 +554,16 @@ def build_graph() -> str:
     output_path = get_knowledge_dir().parent / "graph.html"
     generate_html(graph_data, output_path)
 
-    return json.dumps({
-        "status": "ok",
-        "path": str(output_path),
-        "nodes": len(graph_data["nodes"]),
-        "edges": len(graph_data["edges"]),
-    }, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "status": "ok",
+            "path": str(output_path),
+            "nodes": len(graph_data["nodes"]),
+            "edges": len(graph_data["edges"]),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -611,7 +648,7 @@ if SCHOLAR_ACADEMIC:
             config_path: Optional path to a YAML config file for research interests
                 and scoring weights.
         """
-        from scholar_agent.engine.academic.arxiv_search import search_and_score, _load_config
+        from scholar_agent.engine.academic.arxiv_search import _load_config, search_and_score
 
         # Clamp parameters to safe ranges
         max_results = max(1, min(max_results, 500))
@@ -693,8 +730,8 @@ if SCHOLAR_ACADEMIC:
             top_n: Number of top-scored papers to return (default 10).
             config_path: Optional path to a YAML config file for scoring weights.
         """
-        from scholar_agent.engine.academic.conf_search import search_and_score_conferences, _CONF_CATALOG
         from scholar_agent.engine.academic.arxiv_search import _load_config
+        from scholar_agent.engine.academic.conf_search import _CONF_CATALOG, search_and_score_conferences
 
         if year <= 0:
             year = datetime.now().year
@@ -712,11 +749,13 @@ if SCHOLAR_ACADEMIC:
                 invalid.append(v)
         venue_list = normalized
         if invalid:
-            return json.dumps({
-                "error": f"Unknown venues: {invalid}. Supported: {list(_CONF_CATALOG.keys())}",
-                "papers": [],
-                "total_found": 0,
-            })
+            return json.dumps(
+                {
+                    "error": f"Unknown venues: {invalid}. Supported: {list(_CONF_CATALOG.keys())}",
+                    "papers": [],
+                    "total_found": 0,
+                }
+            )
 
         kws = [k.strip() for k in keywords.split(",") if k.strip()] if keywords else None
         ex_kws = [k.strip() for k in excluded_keywords.split(",") if k.strip()] if excluded_keywords else None
@@ -789,8 +828,8 @@ if SCHOLAR_ACADEMIC:
             pdf_path: Optional local PDF file path. If omitted and paper_json contains
                 an arxiv_id, auto-detects the local PDF in paper-notes/.
         """
-        from scholar_agent.engine.academic.paper_analyzer import generate_note
         from scholar_agent.engine.academic.note_linker import discover_related_notes
+        from scholar_agent.engine.academic.paper_analyzer import generate_note
 
         try:
             paper = json.loads(paper_json)
@@ -848,23 +887,30 @@ if SCHOLAR_ACADEMIC:
             # Auto-extract images when no explicit images_json provided
             try:
                 from scholar_agent.engine.academic.image_extractor import extract_paper_images as _extract_imgs
+
                 arxiv_id = paper.get("arxiv_id", "")
                 img_dir = str(out_path / "images")
                 auto_extracted_images = _extract_imgs(
-                    arxiv_id, img_dir, pdf_path=detected_pdf,
+                    arxiv_id,
+                    img_dir,
+                    pdf_path=detected_pdf,
                 )
                 if auto_extracted_images:
                     images = auto_extracted_images
                     logger.info(
                         "Auto-extracted %d images for %s",
-                        len(auto_extracted_images), paper.get("title", ""),
+                        len(auto_extracted_images),
+                        paper.get("title", ""),
                     )
             except Exception as exc:
                 logger.warning("Auto image extraction failed: %s", exc)
 
         try:
             note_path = generate_note(
-                paper, str(out_path), language=language, images=images,
+                paper,
+                str(out_path),
+                language=language,
+                images=images,
                 local_pdf_path=detected_pdf or "",
             )
         except Exception as e:
@@ -876,6 +922,7 @@ if SCHOLAR_ACADEMIC:
         if detected_pdf and os.path.isfile(detected_pdf):
             try:
                 from scholar_agent.engine.academic.image_extractor import extract_pdf_text
+
                 pdf_text = extract_pdf_text(detected_pdf)
             except Exception:
                 pdf_text = ""
@@ -885,6 +932,7 @@ if SCHOLAR_ACADEMIC:
         if pdf_text:
             try:
                 from scholar_agent.engine.academic.paper_analyzer import fill_note_from_pdf
+
                 fill_result = fill_note_from_pdf(note_path, pdf_text)
                 logger.info("Auto-fill result: %s", fill_result)
             except Exception as exc:
@@ -895,6 +943,7 @@ if SCHOLAR_ACADEMIC:
         quality_check = {"has_issues": False, "issues": [], "placeholder_count": 0}
         try:
             from scholar_agent.engine.academic.paper_analyzer import check_note_quality
+
             quality_check = check_note_quality(note_path)
         except Exception:
             pass
@@ -922,8 +971,7 @@ if SCHOLAR_ACADEMIC:
             "quality_check": quality_check,
             "instructions": instructions,
             "images": [
-                {"filename": img.get("filename", ""), "section": img.get("section", "")}
-                for img in (images or [])
+                {"filename": img.get("filename", ""), "section": img.get("section", "")} for img in (images or [])
             ],
         }
         if fill_result:
@@ -957,11 +1005,13 @@ if SCHOLAR_ACADEMIC:
         """
         arxiv_id = _parse_arxiv_id(paper_id)
         if not arxiv_id:
-            return json.dumps({
-                "error": f"Could not parse arXiv ID from '{paper_id}'. "
-                         "Expected format: '2510.24701', 'https://arxiv.org/abs/2510.24701', etc.",
-                "pdf_path": None,
-            })
+            return json.dumps(
+                {
+                    "error": f"Could not parse arXiv ID from '{paper_id}'. "
+                    "Expected format: '2510.24701', 'https://arxiv.org/abs/2510.24701', etc.",
+                    "pdf_path": None,
+                }
+            )
 
         # Determine folder name: title (sanitized) or arXiv ID
         folder_name = _sanitize_title(title) if title and title.strip() else arxiv_id
@@ -980,19 +1030,24 @@ if SCHOLAR_ACADEMIC:
         pdf_path = paper_dir / pdf_filename
 
         if pdf_path.exists():
-            return json.dumps({
-                "status": "cached",
-                "pdf_path": str(pdf_path),
-                "arxiv_id": arxiv_id,
-                "title": title,
-                "size_bytes": pdf_path.stat().st_size,
-                "zotero_note": "PDF already downloaded. Import into Zotero if not done yet.",
-            }, ensure_ascii=False, indent=2)
+            return json.dumps(
+                {
+                    "status": "cached",
+                    "pdf_path": str(pdf_path),
+                    "arxiv_id": arxiv_id,
+                    "title": title,
+                    "size_bytes": pdf_path.stat().st_size,
+                    "zotero_note": "PDF already downloaded. Import into Zotero if not done yet.",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
 
         paper_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             from scholar_agent.engine.academic.image_extractor import download_arxiv_pdf
+
             # download_arxiv_pdf saves as {arxiv_id}.pdf, rename to title-based name
             local_path = download_arxiv_pdf(arxiv_id, str(paper_dir))
             if not local_path:
@@ -1005,14 +1060,18 @@ if SCHOLAR_ACADEMIC:
             logger.exception("download_paper failed")
             return json.dumps({"error": str(e), "pdf_path": None, "arxiv_id": arxiv_id})
 
-        return json.dumps({
-            "status": "ok",
-            "pdf_path": local_path,
-            "arxiv_id": arxiv_id,
-            "title": title,
-            "size_bytes": Path(local_path).stat().st_size,
-            "zotero_note": "PDF downloaded. Please import into Zotero: drag the PDF file into your Zotero library.",
-        }, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "pdf_path": local_path,
+                "arxiv_id": arxiv_id,
+                "title": title,
+                "size_bytes": Path(local_path).stat().st_size,
+                "zotero_note": "PDF downloaded. Please import into Zotero: drag the PDF file into your Zotero library.",
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
     @tool
     def extract_paper_images(
@@ -1099,10 +1158,8 @@ if SCHOLAR_ACADEMIC:
         if note_path and note_path.strip():
             np = Path(note_path.strip())
             if np.exists():
-                try:
+                with contextlib.suppress(OSError):
                     answer_text = np.read_text(encoding="utf-8")
-                except OSError:
-                    pass
 
         if not answer_text:
             abstract = paper.get("summary") or paper.get("abstract") or ""
@@ -1116,17 +1173,21 @@ if SCHOLAR_ACADEMIC:
 
         if scores:
             rec = scores.get("recommendation", 0)
-            claims.append({
-                "claim": f"Recommendation score: {rec:.1f}",
-                "evidence_ids": [],
-                "confidence": "high" if rec >= 7 else "medium",
-            })
+            claims.append(
+                {
+                    "claim": f"Recommendation score: {rec:.1f}",
+                    "evidence_ids": [],
+                    "confidence": "high" if rec >= 7 else "medium",
+                }
+            )
         if domain:
-            claims.append({
-                "claim": f"Matched research domain: {domain}",
-                "evidence_ids": [],
-                "confidence": "high",
-            })
+            claims.append(
+                {
+                    "claim": f"Matched research domain: {domain}",
+                    "evidence_ids": [],
+                    "confidence": "high",
+                }
+            )
 
         answer_data = {
             "answer": answer_text,
@@ -1145,20 +1206,27 @@ if SCHOLAR_ACADEMIC:
 
         try:
             card_path = build_knowledge_card(
-                title, answer_data, None,
-                get_knowledge_dir(), index_path=get_index_path(),
+                title,
+                answer_data,
+                None,
+                get_knowledge_dir(),
+                index_path=get_index_path(),
             )
         except Exception as e:
             return json.dumps({"error": f"Failed to write card: {e}"})
 
         _mark_index_stale(get_index_path())
 
-        return json.dumps({
-            "status": "ok",
-            "card_path": str(card_path),
-            "paper_title": title,
-            "index_pending_refresh": True,
-        }, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "card_path": str(card_path),
+                "paper_title": title,
+                "index_pending_refresh": True,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
     @tool
     def daily_recommend(
@@ -1181,8 +1249,8 @@ if SCHOLAR_ACADEMIC:
             config_path: Optional YAML config path for research interests.
             dual_track: Use dual-track mode: 2 conference + 2 arXiv (default true).
         """
-        from scholar_agent.engine.academic.daily_workflow import generate_daily_recommendations, build_daily_note
         from scholar_agent.engine.academic.arxiv_search import _load_config
+        from scholar_agent.engine.academic.daily_workflow import build_daily_note, generate_daily_recommendations
 
         top_n = max(1, min(top_n, 50))
         if language not in ("zh", "en"):
@@ -1231,7 +1299,9 @@ if SCHOLAR_ACADEMIC:
         output_dir = str(get_knowledge_dir().parent / "daily-notes")
         try:
             note_path = build_daily_note(
-                date_str, papers, output_dir,
+                date_str,
+                papers,
+                output_dir,
                 language=language,
                 tracks=tracks,
             )
@@ -1242,14 +1312,16 @@ if SCHOLAR_ACADEMIC:
         # Identify papers for deep analysis
         top_for_analysis = []
         for p in papers[:4]:
-            top_for_analysis.append({
-                "title": p.get("title", ""),
-                "arxiv_id": p.get("arxiv_id", ""),
-                "track": p.get("track", ""),
-                "impact_score": round(p.get("_impact_score", 0), 2),
-                "innovation_score": round(p.get("_innovation_final_score", 0), 3),
-                "recommendation_score": p.get("scores", {}).get("recommendation", 0),
-            })
+            top_for_analysis.append(
+                {
+                    "title": p.get("title", ""),
+                    "arxiv_id": p.get("arxiv_id", ""),
+                    "track": p.get("track", ""),
+                    "impact_score": round(p.get("_impact_score", 0), 2),
+                    "innovation_score": round(p.get("_innovation_final_score", 0), 3),
+                    "recommendation_score": p.get("scores", {}).get("recommendation", 0),
+                }
+            )
 
         paper_summaries = []
         for p in papers:
@@ -1267,21 +1339,22 @@ if SCHOLAR_ACADEMIC:
                 entry["recommendation_score"] = p["scores"]["recommendation"]
             paper_summaries.append(entry)
 
-        return json.dumps({
-            "status": "ok",
-            "daily_note_path": note_path,
-            "date": date_str,
-            "total_found": result.get("total_found", 0),
-            "recommended": len(papers),
-            "skipped": skipped,
-            "dual_track": result.get("dual_track", False),
-            "tracks": {
-                k: {"count": v.get("count", 0)}
-                for k, v in (tracks or {}).items()
+        return json.dumps(
+            {
+                "status": "ok",
+                "daily_note_path": note_path,
+                "date": date_str,
+                "total_found": result.get("total_found", 0),
+                "recommended": len(papers),
+                "skipped": skipped,
+                "dual_track": result.get("dual_track", False),
+                "tracks": {k: {"count": v.get("count", 0)} for k, v in (tracks or {}).items()},
+                "top_for_analysis": top_for_analysis,
+                "papers": paper_summaries,
             },
-            "top_for_analysis": top_for_analysis,
-            "papers": paper_summaries,
-        }, ensure_ascii=False, indent=2)
+            ensure_ascii=False,
+            indent=2,
+        )
 
     @tool
     def link_paper_keywords(
@@ -1300,7 +1373,7 @@ if SCHOLAR_ACADEMIC:
             notes_dir: Directory of paper notes. Defaults to paper-notes/
                 under the knowledge root.
         """
-        from scholar_agent.engine.academic.note_linker import build_keyword_index, apply_wiki_links
+        from scholar_agent.engine.academic.note_linker import apply_wiki_links, build_keyword_index
 
         if not notes_dir or not notes_dir.strip():
             notes_dir = str(get_knowledge_dir().parent / "paper-notes")
@@ -1316,12 +1389,14 @@ if SCHOLAR_ACADEMIC:
             return json.dumps({"error": f"Failed to scan keywords: {e}"})
 
         if not keyword_index:
-            return json.dumps({
-                "status": "ok",
-                "notes_processed": 0,
-                "links_added": 0,
-                "message": "No linkable keywords found in existing notes.",
-            })
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "notes_processed": 0,
+                    "links_added": 0,
+                    "message": "No linkable keywords found in existing notes.",
+                }
+            )
 
         total_processed = 0
         total_links = 0
@@ -1342,12 +1417,16 @@ if SCHOLAR_ACADEMIC:
                     total_processed += 1
                     total_links += links
 
-        return json.dumps({
-            "status": "ok",
-            "notes_processed": total_processed,
-            "links_added": total_links,
-            "keywords_indexed": len(keyword_index),
-        }, ensure_ascii=False, indent=2)
+        return json.dumps(
+            {
+                "status": "ok",
+                "notes_processed": total_processed,
+                "links_added": total_links,
+                "keywords_indexed": len(keyword_index),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
     logger.info("Academic tools enabled (SCHOLAR_ACADEMIC=%s)", SCHOLAR_ACADEMIC)
 

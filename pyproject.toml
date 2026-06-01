@@ -5,8 +5,23 @@ description = "Knowledge flywheel MCP server + academic paper research pipeline 
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-authors = [{name = "scholar-agent contributors"}]
+authors = [
+    {name = "Fangyi Zhou", email = "zfy465914233@gmail.com"},
+]
 keywords = ["mcp", "knowledge-management", "arxiv", "academic-research", "obsidian"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Education",
+    "Typing :: Typed",
+]
 
 dependencies = [
     "jsonschema>=4.23,<5",
@@ -24,6 +39,10 @@ embedding = [
 ]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.8",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
 ]
 all = [
     "scholar-agent[academic,embedding]",
@@ -36,6 +55,7 @@ scholar-agent = "scholar_agent.cli:main"
 Homepage = "https://github.com/zfy465914233/scholar-agent"
 Repository = "https://github.com/zfy465914233/scholar-agent"
 Issues = "https://github.com/zfy465914233/scholar-agent/issues"
+Changelog = "https://github.com/zfy465914233/scholar-agent/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["setuptools>=68.0"]
@@ -50,3 +70,54 @@ scholar_agent = ["schemas/**", "templates/**", "config_data/**", "skills/**", "v
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--tb=short -q"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "E402",   # module-level import not at top (common in scripts)
+    "RUF001", # ambiguous unicode character in string (Chinese content)
+    "RUF002", # ambiguous unicode character in docstring (Chinese content)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["scholar_agent"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+exclude = ["tests/", "scripts/"]
+
+[[tool.mypy.overrides]]
+module = ["fitz.*", "pymupdf.*", "fastmcp.*", "sentence_transformers.*"]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["scholar_agent"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 60

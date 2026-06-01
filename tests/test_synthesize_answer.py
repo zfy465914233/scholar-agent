@@ -8,10 +8,10 @@ Tests cover:
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-import sys
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,19 +44,19 @@ SAMPLE_PROMPT_BUNDLE = {
 
 def _run_script(args: list[str], stdin_data: str | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, str(ENGINE / "synthesize_answer.py")] + args,
+        [sys.executable, str(ENGINE / "synthesize_answer.py"), *args],
         capture_output=True,
-        text=True, encoding="utf-8",
+        text=True,
+        encoding="utf-8",
         cwd=ENGINE,
         input=stdin_data,
     )
 
 
 def _write_temp_json(data: dict) -> str:
-    handle = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
-    json.dump(data, handle)
-    handle.close()
-    return handle.name
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
+        json.dump(data, handle)
+        return handle.name
 
 
 class DryRunTest(unittest.TestCase):
@@ -105,11 +105,15 @@ class OutputFileTest(unittest.TestCase):
         bundle_path = _write_temp_json(SAMPLE_PROMPT_BUNDLE)
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "out.json"
-            result = _run_script([
-                "--prompt-bundle", bundle_path,
-                "--dry-run",
-                "--output", str(output_path),
-            ])
+            result = _run_script(
+                [
+                    "--prompt-bundle",
+                    bundle_path,
+                    "--dry-run",
+                    "--output",
+                    str(output_path),
+                ]
+            )
             self.assertEqual(0, result.returncode, msg=result.stderr)
             self.assertTrue(output_path.exists())
             payload = json.loads(output_path.read_text(encoding="utf-8"))

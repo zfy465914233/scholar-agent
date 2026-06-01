@@ -36,10 +36,14 @@ def _claude_config_path(scope: str, cwd: str | Path | None = None) -> Path:
     return Path(cwd) if cwd is not None else Path.cwd() / ".claude.json"
 
 
-def build_user_config_fragment(*, profile: str = "default", toolset: str = "default", academic: bool = True, scholar_home: str | None = None) -> dict[str, object]:
+def build_user_config_fragment(
+    *, profile: str = "default", toolset: str = "default", academic: bool = True, scholar_home: str | None = None
+) -> dict[str, object]:
     return {
         "mcpServers": {
-            "scholar-agent": build_stdio_server(profile=profile, toolset=toolset, academic=academic, scholar_home=scholar_home),
+            "scholar-agent": build_stdio_server(
+                profile=profile, toolset=toolset, academic=academic, scholar_home=scholar_home
+            ),
         }
     }
 
@@ -160,7 +164,7 @@ def _parse_get_output(output: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for line in output.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("To remove this server") or stripped == 'scholar-agent:':
+        if not stripped or stripped.startswith("To remove this server") or stripped == "scholar-agent:":
             continue
         if ":" not in stripped:
             continue
@@ -173,7 +177,9 @@ def get_install_status(*, scope: str = "user", cwd: str | Path | None = None) ->
     # Try CLI first
     if shutil.which("claude") is not None:
         try:
-            completed = _run_claude_command(["claude", "mcp", "get", "scholar-agent"], scope=scope, cwd=cwd, check=False)
+            completed = _run_claude_command(
+                ["claude", "mcp", "get", "scholar-agent"], scope=scope, cwd=cwd, check=False
+            )
             parsed = _parse_get_output(completed.stdout)
             installed = completed.returncode == 0 and parsed.get("scope", "").startswith(_SCOPE_LABELS[scope])
             return {

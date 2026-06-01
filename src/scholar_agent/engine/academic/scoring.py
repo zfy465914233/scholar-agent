@@ -8,10 +8,12 @@ out papers that match exclusion rules.
 from __future__ import annotations
 
 import logging
-import math
 import re
 from datetime import datetime
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -49,48 +51,100 @@ _CATEGORY_PTS = 1.0
 # Sum all matching weights, cap at _CEILING.  No branching logic.
 _QUALITY_WEIGHTS: dict[str, float] = {
     # --- Theoretical rigor signals ---
-    "theorem": 0.50, "proof": 0.50, "proposition": 0.45, "lemma": 0.40,
-    "corollary": 0.40, "formal": 0.45, "formal verification": 0.50,
-    "axiomatic": 0.45, "derivation": 0.35, "rigorous": 0.40,
+    "theorem": 0.50,
+    "proof": 0.50,
+    "proposition": 0.45,
+    "lemma": 0.40,
+    "corollary": 0.40,
+    "formal": 0.45,
+    "formal verification": 0.50,
+    "axiomatic": 0.45,
+    "derivation": 0.35,
+    "rigorous": 0.40,
     # --- Methodological depth ---
-    "principled": 0.45, "methodology": 0.40, "systematic": 0.35,
-    "theoretical analysis": 0.50, "theoretical framework": 0.45,
-    "complexity": 0.35, "convergence": 0.40, "bound": 0.35,
-    "optimal": 0.40, "optimality": 0.45, "guarantee": 0.40,
+    "principled": 0.45,
+    "methodology": 0.40,
+    "systematic": 0.35,
+    "theoretical analysis": 0.50,
+    "theoretical framework": 0.45,
+    "complexity": 0.35,
+    "convergence": 0.40,
+    "bound": 0.35,
+    "optimal": 0.40,
+    "optimality": 0.45,
+    "guarantee": 0.40,
     # --- Statistical / mathematical ---
-    "bayesian": 0.45, "calibration": 0.45, "likelihood": 0.40,
-    "probabilistic": 0.40, "estimation": 0.35, "variance": 0.30,
-    "bias": 0.30, "statistical": 0.40, "distribution": 0.30,
+    "bayesian": 0.45,
+    "calibration": 0.45,
+    "likelihood": 0.40,
+    "probabilistic": 0.40,
+    "estimation": 0.35,
+    "variance": 0.30,
+    "bias": 0.30,
+    "statistical": 0.40,
+    "distribution": 0.30,
     # --- Validation methodology ---
-    "validate": 0.40, "validation": 0.40, "verify": 0.40,
-    "verification": 0.45, "robustness": 0.40, "sensitivity analysis": 0.45,
-    "reproducib": 0.40, "fairness": 0.35,
+    "validate": 0.40,
+    "validation": 0.40,
+    "verify": 0.40,
+    "verification": 0.45,
+    "robustness": 0.40,
+    "sensitivity analysis": 0.45,
+    "reproducib": 0.40,
+    "fairness": 0.35,
     # --- Technical depth (engineering) ---
-    "architecture": 0.30, "framework": 0.30, "algorithm": 0.30,
-    "module": 0.20, "pipeline": 0.25, "encoder": 0.25,
-    "decoder": 0.25, "backbone": 0.20, "attention mechanism": 0.35,
+    "architecture": 0.30,
+    "framework": 0.30,
+    "algorithm": 0.30,
+    "module": 0.20,
+    "pipeline": 0.25,
+    "encoder": 0.25,
+    "decoder": 0.25,
+    "backbone": 0.20,
+    "attention mechanism": 0.35,
     "training scheme": 0.20,
     # --- Empirical rigor ---
-    "ablation": 0.40, "benchmark": 0.30, "baseline comparison": 0.35,
-    "statistical significance": 0.45, "cross-validation": 0.40,
-    "human evaluation": 0.45, "error analysis": 0.35,
+    "ablation": 0.40,
+    "benchmark": 0.30,
+    "baseline comparison": 0.35,
+    "statistical significance": 0.45,
+    "cross-validation": 0.40,
+    "human evaluation": 0.45,
+    "error analysis": 0.35,
     # --- Novelty ---
-    "first": 0.30, "novel": 0.25, "new": 0.15, "unprecedented": 0.35,
-    "breakthrough": 0.40, "pioneering": 0.35, "innovative": 0.25,
+    "first": 0.30,
+    "novel": 0.25,
+    "new": 0.15,
+    "unprecedented": 0.35,
+    "breakthrough": 0.40,
+    "pioneering": 0.35,
+    "innovative": 0.25,
     "previously unexplored": 0.35,
     # --- Performance claims ---
-    "state-of-the-art": 0.40, "sota": 0.40, "outperform": 0.35,
-    "surpass": 0.35, "superior": 0.30, "improves": 0.25,
-    "beats": 0.25, "significantly better": 0.35,
+    "state-of-the-art": 0.40,
+    "sota": 0.40,
+    "outperform": 0.35,
+    "surpass": 0.35,
+    "superior": 0.30,
+    "improves": 0.25,
+    "beats": 0.25,
+    "significantly better": 0.35,
     # --- Quantitative evidence ---
-    "accuracy": 0.20, "f1 score": 0.25, "bleu": 0.20, "rouge": 0.20,
-    "perplexity": 0.20, "auc": 0.20, "recall": 0.15, "precision": 0.15,
+    "accuracy": 0.20,
+    "f1 score": 0.25,
+    "bleu": 0.20,
+    "rouge": 0.20,
+    "perplexity": 0.20,
+    "auc": 0.20,
+    "recall": 0.15,
+    "precision": 0.15,
 }
 
 
 # ---------------------------------------------------------------------------
 # Scorer
 # ---------------------------------------------------------------------------
+
 
 class PaperScorer:
     """Stateless scorer — instantiate once, call ``rank()`` many times."""
@@ -104,8 +158,7 @@ class PaperScorer:
         self.excluded = [kw.lower() for kw in excluded]
         # Precompile exclusion patterns for single-pass rejection
         self._excl_pattern = (
-            re.compile("|".join(re.escape(e) for e in self.excluded), re.IGNORECASE)
-            if self.excluded else None
+            re.compile("|".join(re.escape(e) for e in self.excluded), re.IGNORECASE) if self.excluded else None
         )
         # Precompile domain keyword patterns for single-pass matching
         self._domain_patterns: list[tuple[str, re.Pattern[str], list[str], list[str]]] = []
@@ -163,12 +216,11 @@ class PaperScorer:
         abstract = paper.get("summary", "") or paper.get("abstract", "")
         rigor = self._rigor(abstract)
 
-        weights = _WEIGHTS_CONF if conference else (
-            _WEIGHTS_TRENDING if trending else _WEIGHTS_DEFAULT
-        )
+        weights = WEIGHTS_CONF if conference else (_WEIGHTS_TRENDING if trending else _WEIGHTS_DEFAULT)
 
         rec_val = 0.0 if conference else fresh
         dims_raw = {"fit": fit_score, "freshness": rec_val, "impact": impact, "rigor": rigor}
+
         # Linear normalization: simple, transparent, creates natural score spread.
         def _norm(v: float) -> float:
             """Linear mapping from [0, _CEILING] to [0, 10]."""
@@ -194,13 +246,11 @@ class PaperScorer:
         }
 
     def _fit(
-        self, paper: dict[str, Any],
+        self,
+        paper: dict[str, Any],
     ) -> tuple[float, str | None, list[str]]:
         """Single-pass keyword matching using precompiled regex patterns."""
-        corpus = (
-            paper.get("title", "").lower() + "\n"
-            + (paper.get("summary", "") or paper.get("abstract", "")).lower()
-        )
+        corpus = paper.get("title", "").lower() + "\n" + (paper.get("summary", "") or paper.get("abstract", "")).lower()
         title_text = paper.get("title", "").lower()
         cats = set(paper.get("categories", []))
 

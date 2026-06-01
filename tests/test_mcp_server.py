@@ -11,12 +11,11 @@ _ROOT = Path(__file__).resolve().parents[1]
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 from scholar_agent.engine import scholar_config
-from scholar_agent.server import query_knowledge, save_research, list_knowledge, capture_answer
 from scholar_agent.engine.close_knowledge_loop import (
-    quality_score_answer_data,
     QUALITY_THRESHOLD_SAVE_RESEARCH,
-    QUALITY_THRESHOLD_CAPTURE_ANSWER,
+    quality_score_answer_data,
 )
+from scholar_agent.server import capture_answer, list_knowledge, query_knowledge, save_research
 
 # Force config to always resolve to scholar-agent's own directories
 # regardless of cwd, so tests don't leak files into parent projects.
@@ -46,11 +45,19 @@ def _build_index() -> None:
     if stale_marker.exists():
         stale_marker.unlink()
     subprocess.run(
-        [sys.executable, str(ENGINE / "local_index.py"),
-         "--knowledge-root", str(_TEST_KNOWLEDGE),
-         "--full-rebuild",
-         "--output", str(_TEST_INDEX)],
-        capture_output=True, text=True, encoding="utf-8", cwd=_ROOT,
+        [
+            sys.executable,
+            str(ENGINE / "local_index.py"),
+            "--knowledge-root",
+            str(_TEST_KNOWLEDGE),
+            "--full-rebuild",
+            "--output",
+            str(_TEST_INDEX),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=_ROOT,
     )
 
 
@@ -94,7 +101,11 @@ class SaveResearchTest(unittest.TestCase):
         answer = {
             "answer": "This is a test answer that is long enough to pass the quality gate threshold of 200 characters. It includes substantive content about testing the save_research function in the MCP server, including validation and card building.",
             "supporting_claims": [
-                {"claim": "The save_research function creates knowledge cards from structured JSON data", "evidence_ids": ["e1"], "confidence": "high"},
+                {
+                    "claim": "The save_research function creates knowledge cards from structured JSON data",
+                    "evidence_ids": ["e1"],
+                    "confidence": "high",
+                },
             ],
             "inferences": ["test inference"],
             "uncertainty": [],
@@ -154,13 +165,24 @@ class CaptureAnswerTest(unittest.TestCase):
         self.assertIn("error", result)
 
     def test_success_creates_card(self) -> None:
-        result = json.loads(capture_answer("test capture query", "BM25 is a probabilistic ranking function used in information retrieval systems to estimate the relevance of documents to a given search query based on term frequency and document length."))
+        result = json.loads(
+            capture_answer(
+                "test capture query",
+                "BM25 is a probabilistic ranking function used in information retrieval systems to estimate the relevance of documents to a given search query based on term frequency and document length.",
+            )
+        )
         self.assertEqual("ok", result["status"])
         self.assertIn("card_path", result)
         _cleanup_card(result["card_path"])
 
     def test_tags_passthrough(self) -> None:
-        result = json.loads(capture_answer("test tags capture", "This is a substantive test answer that exceeds the minimum character threshold for the capture_answer quality gate to ensure tags are properly passed through.", tags="ml, search"))
+        result = json.loads(
+            capture_answer(
+                "test tags capture",
+                "This is a substantive test answer that exceeds the minimum character threshold for the capture_answer quality gate to ensure tags are properly passed through.",
+                tags="ml, search",
+            )
+        )
         self.assertEqual("ok", result["status"])
         # Verify tags appear in the card content
         card_path = Path(result["card_path"])
@@ -178,7 +200,11 @@ class QualityGateTest(unittest.TestCase):
         answer = {
             "answer": "Too short",
             "supporting_claims": [
-                {"claim": "this claim is substantive enough to pass validation", "evidence_ids": ["e1"], "confidence": "high"},
+                {
+                    "claim": "this claim is substantive enough to pass validation",
+                    "evidence_ids": ["e1"],
+                    "confidence": "high",
+                },
             ],
         }
         result = json.loads(save_research("thin answer test", json.dumps(answer)))
@@ -216,8 +242,16 @@ class QualityGateTest(unittest.TestCase):
         answer = {
             "answer": "This is a high-quality answer with sufficient length to pass all quality gates. It provides substantive content about the topic being researched and includes enough detail for a useful knowledge card.",
             "supporting_claims": [
-                {"claim": "Quality gates enforce minimum content standards on knowledge cards", "evidence_ids": ["e1"], "confidence": "high"},
-                {"claim": "The scoring function evaluates answer length, claim count, claim depth, and structural richness", "evidence_ids": ["e2"], "confidence": "high"},
+                {
+                    "claim": "Quality gates enforce minimum content standards on knowledge cards",
+                    "evidence_ids": ["e1"],
+                    "confidence": "high",
+                },
+                {
+                    "claim": "The scoring function evaluates answer length, claim count, claim depth, and structural richness",
+                    "evidence_ids": ["e2"],
+                    "confidence": "high",
+                },
             ],
             "inferences": ["Quality gates should reduce the number of thin, uninformative cards"],
             "uncertainty": ["Threshold values may need tuning based on real-world usage"],

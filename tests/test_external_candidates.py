@@ -1,5 +1,5 @@
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -40,9 +40,8 @@ class ExternalCandidateBatchTest(unittest.TestCase):
             {**base_payload, "candidates": None},
             {**base_payload},
         ):
-            with self.subTest(payload=payload):
-                with self.assertRaises(ValueError):
-                    parse_external_candidate_batch(payload)
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                parse_external_candidate_batch(payload)
 
     def test_parse_external_candidate_batch_rejects_non_dict_candidate_entries(self) -> None:
         payload = {
@@ -65,9 +64,8 @@ class ExternalCandidateBatchTest(unittest.TestCase):
             {**base_payload, "candidates": [{**base_payload["candidates"][0], "url": 123}]},
             {**base_payload, "candidates": [{**base_payload["candidates"][0], "url": "   "}]},
         ):
-            with self.subTest(payload=payload):
-                with self.assertRaises(ValueError):
-                    parse_external_candidate_batch(payload)
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                parse_external_candidate_batch(payload)
 
     def test_parse_external_candidate_batch_rejects_missing_candidate_snippet(self) -> None:
         payload = {

@@ -1,9 +1,9 @@
 import json
 import subprocess
-import tempfile
-from pathlib import Path
-import unittest
 import sys
+import tempfile
+import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -65,7 +65,8 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, build_index_result.returncode, msg=build_index_result.stderr)
 
@@ -83,7 +84,8 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, answer_result.returncode, msg=answer_result.stderr)
             answer_context_path.write_text(answer_result.stdout, encoding="utf-8")
@@ -99,7 +101,8 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, distill_result.returncode, msg=distill_result.stderr)
 
@@ -114,7 +117,8 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, promote_result.returncode, msg=promote_result.stderr)
 
@@ -129,7 +133,8 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, rebuild_index_result.returncode, msg=rebuild_index_result.stderr)
 
@@ -145,7 +150,8 @@ A Markov chain is a stochastic process whose next-state distribution depends onl
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, retrieve_result.returncode, msg=retrieve_result.stderr)
 

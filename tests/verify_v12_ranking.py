@@ -11,7 +11,8 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
-from scholar_agent.engine.academic.scoring import PaperScorer, _CEILING
+from scholar_agent.engine.academic.scoring import _CEILING, PaperScorer
+
 
 # Reproduce _norm for analysis
 def _norm(v: float) -> float:
@@ -20,6 +21,7 @@ def _norm(v: float) -> float:
     ratio = v / _CEILING
     return 10.0 * ratio / (ratio + 0.3) * 1.3
 
+
 # ---------------------------------------------------------------------------
 # Config with a single domain that has clear keywords
 # ---------------------------------------------------------------------------
@@ -27,9 +29,16 @@ def _norm(v: float) -> float:
 DOMAIN_CONFIG = {
     "test-domain": {
         "keywords": [
-            "quantum", "entanglement", "qubit", "superposition",
-            "variational", "ansatz", "bell state", "quantum gate",
-            " Measurement ", "quantum circuit",
+            "quantum",
+            "entanglement",
+            "qubit",
+            "superposition",
+            "variational",
+            "ansatz",
+            "bell state",
+            "quantum gate",
+            " Measurement ",
+            "quantum circuit",
         ],
         "arxiv_categories": ["quant-ph"],
     },
@@ -40,6 +49,7 @@ now = datetime.now()
 # ---------------------------------------------------------------------------
 # Paper construction helpers
 # ---------------------------------------------------------------------------
+
 
 def make_paper(
     letter: str,
@@ -73,179 +83,195 @@ def build_mock_papers():
     papers = []
 
     # Paper A: fit=5, impact=high, rigor=high, fresh -> should rank #1
-    papers.append(make_paper(
-        "A",
-        "Quantum Entanglement and Bell State Superposition in Variational Ansatz",
-        (
-            "We present a novel quantum entanglement framework using variational ansatz "
-            "with state-of-the-art results on qubit superposition. Extensive ablation "
-            "studies with benchmark evaluation show statistical significance. "
-            "Our quantum gate architecture outperforms all baselines with superior "
-            "accuracy and f1 score. We provide error analysis and cross-validation."
-        ),
-        ["quant-ph"],
-        days_ago=10,
-        citations=500,
-        fit_desc="fit=5 (title+abstract+cat match)",
-        impact_desc="impact=high (500 cites, 10 days)",
-        rigor_desc="rigor=high (many quality terms)",
-        expected_behavior="RANK #1",
-    ))
+    papers.append(
+        make_paper(
+            "A",
+            "Quantum Entanglement and Bell State Superposition in Variational Ansatz",
+            (
+                "We present a novel quantum entanglement framework using variational ansatz "
+                "with state-of-the-art results on qubit superposition. Extensive ablation "
+                "studies with benchmark evaluation show statistical significance. "
+                "Our quantum gate architecture outperforms all baselines with superior "
+                "accuracy and f1 score. We provide error analysis and cross-validation."
+            ),
+            ["quant-ph"],
+            days_ago=10,
+            citations=500,
+            fit_desc="fit=5 (title+abstract+cat match)",
+            impact_desc="impact=high (500 cites, 10 days)",
+            rigor_desc="rigor=high (many quality terms)",
+            expected_behavior="RANK #1",
+        )
+    )
 
     # Paper B: fit=4, impact=medium, rigor=medium -> should rank high
-    papers.append(make_paper(
-        "B",
-        "Variational Quantum Gate Optimization with Entanglement",
-        (
-            "We study variational quantum gate optimization for entanglement. "
-            "Benchmark experiments on qubit systems show improved performance. "
-            "Our framework achieves better accuracy than previous methods."
-        ),
-        ["quant-ph"],
-        days_ago=15,
-        citations=50,
-        fit_desc="fit=~4 (good keyword match)",
-        impact_desc="impact=medium (50 cites, 15 days)",
-        rigor_desc="rigor=medium (some quality terms)",
-        expected_behavior="RANK HIGH (top 3)",
-    ))
+    papers.append(
+        make_paper(
+            "B",
+            "Variational Quantum Gate Optimization with Entanglement",
+            (
+                "We study variational quantum gate optimization for entanglement. "
+                "Benchmark experiments on qubit systems show improved performance. "
+                "Our framework achieves better accuracy than previous methods."
+            ),
+            ["quant-ph"],
+            days_ago=15,
+            citations=50,
+            fit_desc="fit=~4 (good keyword match)",
+            impact_desc="impact=medium (50 cites, 15 days)",
+            rigor_desc="rigor=medium (some quality terms)",
+            expected_behavior="RANK HIGH (top 3)",
+        )
+    )
 
     # Paper C: fit=3, impact=medium, rigor=medium, older
-    papers.append(make_paper(
-        "C",
-        "Quantum Circuit Design for Qubit Systems",
-        (
-            "A quantum circuit design methodology for qubit manipulation. "
-            "We present baseline comparison results on standard benchmarks."
-        ),
-        ["quant-ph"],
-        days_ago=60,
-        citations=30,
-        fit_desc="fit=~3 (moderate match)",
-        impact_desc="impact=medium (30 cites, 60 days old)",
-        rigor_desc="rigor=medium",
-        expected_behavior="RANK MID",
-    ))
+    papers.append(
+        make_paper(
+            "C",
+            "Quantum Circuit Design for Qubit Systems",
+            (
+                "A quantum circuit design methodology for qubit manipulation. "
+                "We present baseline comparison results on standard benchmarks."
+            ),
+            ["quant-ph"],
+            days_ago=60,
+            citations=30,
+            fit_desc="fit=~3 (moderate match)",
+            impact_desc="impact=medium (30 cites, 60 days old)",
+            rigor_desc="rigor=medium",
+            expected_behavior="RANK MID",
+        )
+    )
 
     # Paper D: fit=2, impact=low, rigor=low
-    papers.append(make_paper(
-        "D",
-        "A Note on Quantum Measurement",
-        (
-            "We discuss some aspects of quantum measurement."
-        ),
-        ["quant-ph"],
-        days_ago=30,
-        citations=5,
-        fit_desc="fit=~2 (low match)",
-        impact_desc="impact=low (5 cites, 30 days)",
-        rigor_desc="rigor=low (no quality terms)",
-        expected_behavior="RANK LOW",
-    ))
+    papers.append(
+        make_paper(
+            "D",
+            "A Note on Quantum Measurement",
+            ("We discuss some aspects of quantum measurement."),
+            ["quant-ph"],
+            days_ago=30,
+            citations=5,
+            fit_desc="fit=~2 (low match)",
+            impact_desc="impact=low (5 cites, 30 days)",
+            rigor_desc="rigor=low (no quality terms)",
+            expected_behavior="RANK LOW",
+        )
+    )
 
     # Paper E: fit=5, impact=low, rigor=medium -> high relevance, no impact
-    papers.append(make_paper(
-        "E",
-        "Quantum Entanglement Superposition Qubit Variational Ansatz Bell State",
-        (
-            "We propose a quantum entanglement superposition scheme with variational "
-            "ansatz and bell state analysis. Framework with benchmark testing shows "
-            "improved results."
-        ),
-        ["quant-ph"],
-        days_ago=10,
-        citations=2,
-        fit_desc="fit=5 (max keyword match)",
-        impact_desc="impact=low (2 cites, 10 days)",
-        rigor_desc="rigor=medium",
-        expected_behavior="HIGH fit but low impact -> should rank mid-high",
-    ))
+    papers.append(
+        make_paper(
+            "E",
+            "Quantum Entanglement Superposition Qubit Variational Ansatz Bell State",
+            (
+                "We propose a quantum entanglement superposition scheme with variational "
+                "ansatz and bell state analysis. Framework with benchmark testing shows "
+                "improved results."
+            ),
+            ["quant-ph"],
+            days_ago=10,
+            citations=2,
+            fit_desc="fit=5 (max keyword match)",
+            impact_desc="impact=low (2 cites, 10 days)",
+            rigor_desc="rigor=medium",
+            expected_behavior="HIGH fit but low impact -> should rank mid-high",
+        )
+    )
 
     # Paper F: fit=1, impact=high, rigor=high -> low relevance, popular
-    papers.append(make_paper(
-        "F",
-        "A Measurement Technique",
-        (
-            "We present a novel measurement technique with state-of-the-art results. "
-            "Extensive ablation studies with benchmark evaluation and statistical "
-            "significance. Our approach outperforms all baselines with superior "
-            "accuracy. Cross-validation and error analysis included."
-        ),
-        ["quant-ph"],
-        days_ago=10,
-        citations=500,
-        fit_desc="fit=~1 (minimal keyword match)",
-        impact_desc="impact=high (500 cites, 10 days)",
-        rigor_desc="rigor=high (many quality terms)",
-        expected_behavior="LOW fit but popular -> should rank mid-low (fit weight=0.38)",
-    ))
+    papers.append(
+        make_paper(
+            "F",
+            "A Measurement Technique",
+            (
+                "We present a novel measurement technique with state-of-the-art results. "
+                "Extensive ablation studies with benchmark evaluation and statistical "
+                "significance. Our approach outperforms all baselines with superior "
+                "accuracy. Cross-validation and error analysis included."
+            ),
+            ["quant-ph"],
+            days_ago=10,
+            citations=500,
+            fit_desc="fit=~1 (minimal keyword match)",
+            impact_desc="impact=high (500 cites, 10 days)",
+            rigor_desc="rigor=high (many quality terms)",
+            expected_behavior="LOW fit but popular -> should rank mid-low (fit weight=0.38)",
+        )
+    )
 
     # Paper G: fit=4, impact=high, rigor=high, but OLD (200 days)
-    papers.append(make_paper(
-        "G",
-        "Variational Quantum Entanglement with Bell State Ansatz",
-        (
-            "We present variational quantum entanglement with bell state ansatz. "
-            "State-of-the-art results with ablation studies, benchmark evaluation, "
-            "and statistical significance. Our framework outperforms baselines "
-            "with superior accuracy and f1 score."
-        ),
-        ["quant-ph"],
-        days_ago=200,
-        citations=200,
-        fit_desc="fit=~4 (good match)",
-        impact_desc="impact=low (citations ignored for old papers, base=0.4)",
-        rigor_desc="rigor=high",
-        expected_behavior="OLD paper -> freshness penalty -> should rank mid",
-    ))
+    papers.append(
+        make_paper(
+            "G",
+            "Variational Quantum Entanglement with Bell State Ansatz",
+            (
+                "We present variational quantum entanglement with bell state ansatz. "
+                "State-of-the-art results with ablation studies, benchmark evaluation, "
+                "and statistical significance. Our framework outperforms baselines "
+                "with superior accuracy and f1 score."
+            ),
+            ["quant-ph"],
+            days_ago=200,
+            citations=200,
+            fit_desc="fit=~4 (good match)",
+            impact_desc="impact=low (citations ignored for old papers, base=0.4)",
+            rigor_desc="rigor=high",
+            expected_behavior="OLD paper -> freshness penalty -> should rank mid",
+        )
+    )
 
     # Paper H: fit=3, impact=low, rigor=low, OLD (300 days)
-    papers.append(make_paper(
-        "H",
-        "Quantum Circuit for Superposition",
-        "A basic quantum circuit for superposition.",
-        ["quant-ph"],
-        days_ago=300,
-        citations=3,
-        fit_desc="fit=~3",
-        impact_desc="impact=low",
-        rigor_desc="rigor=low",
-        expected_behavior="RANK LOW (old + low everything)",
-    ))
+    papers.append(
+        make_paper(
+            "H",
+            "Quantum Circuit for Superposition",
+            "A basic quantum circuit for superposition.",
+            ["quant-ph"],
+            days_ago=300,
+            citations=3,
+            fit_desc="fit=~3",
+            impact_desc="impact=low",
+            rigor_desc="rigor=low",
+            expected_behavior="RANK LOW (old + low everything)",
+        )
+    )
 
     # Paper I: fit=0 -> should be FILTERED OUT
-    papers.append(make_paper(
-        "I",
-        "A Totally Unrelated Paper About Cooking",
-        (
-            "We present a novel recipe for chocolate cake with state-of-the-art "
-            "ablation studies and benchmark evaluation. Statistical significance "
-            "demonstrated with cross-validation."
-        ),
-        [],
-        days_ago=10,
-        citations=500,
-        fit_desc="fit=0 (no keyword match)",
-        impact_desc="impact=high (would be high)",
-        rigor_desc="rigor=high (quality terms but irrelevant)",
-        expected_behavior="FILTERED OUT (fit=0)",
-    ))
+    papers.append(
+        make_paper(
+            "I",
+            "A Totally Unrelated Paper About Cooking",
+            (
+                "We present a novel recipe for chocolate cake with state-of-the-art "
+                "ablation studies and benchmark evaluation. Statistical significance "
+                "demonstrated with cross-validation."
+            ),
+            [],
+            days_ago=10,
+            citations=500,
+            fit_desc="fit=0 (no keyword match)",
+            impact_desc="impact=high (would be high)",
+            rigor_desc="rigor=high (quality terms but irrelevant)",
+            expected_behavior="FILTERED OUT (fit=0)",
+        )
+    )
 
     # Paper J: fit=2, impact=medium, rigor=medium, VERY OLD (365 days)
-    papers.append(make_paper(
-        "J",
-        "Quantum Gate Operations",
-        (
-            "We study quantum gate operations with benchmark comparison."
-        ),
-        ["quant-ph"],
-        days_ago=365,
-        citations=40,
-        fit_desc="fit=~2",
-        impact_desc="impact=medium",
-        rigor_desc="rigor=medium",
-        expected_behavior="VERY OLD -> freshness=0 -> should rank low",
-    ))
+    papers.append(
+        make_paper(
+            "J",
+            "Quantum Gate Operations",
+            ("We study quantum gate operations with benchmark comparison."),
+            ["quant-ph"],
+            days_ago=365,
+            citations=40,
+            fit_desc="fit=~2",
+            impact_desc="impact=medium",
+            rigor_desc="rigor=medium",
+            expected_behavior="VERY OLD -> freshness=0 -> should rank low",
+        )
+    )
 
     return papers
 
@@ -253,6 +279,7 @@ def build_mock_papers():
 # ---------------------------------------------------------------------------
 # Run verification
 # ---------------------------------------------------------------------------
+
 
 def run_ranking_verification():
     papers = build_mock_papers()
@@ -278,14 +305,18 @@ def run_ranking_verification():
     # Report 2: Full ranking with dimension scores
     # -----------------------------------------------------------------------
     print("\n--- FULL RANKING ---")
-    print(f"{'Rank':>4} | {'Paper':>5} | {'Fit':>6} | {'Fresh':>6} | {'Impact':>6} | {'Rigor':>6} | {'Rec':>8} | Expected")
+    print(
+        f"{'Rank':>4} | {'Paper':>5} | {'Fit':>6} | {'Fresh':>6} | {'Impact':>6} | {'Rigor':>6} | {'Rec':>8} | Expected"
+    )
     print("-" * 95)
 
     rank_scores = []
     for i, p in enumerate(ranked, 1):
         s = p["scores"]
         rank_scores.append((p["_letter"], s["recommendation"]))
-        print(f"{i:>4} |     {p['_letter']} | {s['fit']:>6.2f} | {s['freshness']:>6.2f} | {s['impact']:>6.2f} | {s['rigor']:>6.2f} | {s['recommendation']:>8.2f} | {p['_expected']}")
+        print(
+            f"{i:>4} |     {p['_letter']} | {s['fit']:>6.2f} | {s['freshness']:>6.2f} | {s['impact']:>6.2f} | {s['rigor']:>6.2f} | {s['recommendation']:>8.2f} | {p['_expected']}"
+        )
 
     # -----------------------------------------------------------------------
     # Report 3: Detailed per-paper breakdown
@@ -295,9 +326,13 @@ def run_ranking_verification():
         s = p["scores"]
         print(f"\n  Rank #{i}: Paper {p['_letter']} — {p['title'][:60]}")
         print(f"    Design: {p['_fit_desc']}, {p['_impact_desc']}, {p['_rigor_desc']}")
-        print(f"    Scores: fit={s['fit']:.2f}, freshness={s['freshness']:.2f}, impact={s['impact']:.2f}, rigor={s['rigor']:.2f}")
+        print(
+            f"    Scores: fit={s['fit']:.2f}, freshness={s['freshness']:.2f}, impact={s['impact']:.2f}, rigor={s['rigor']:.2f}"
+        )
         print(f"    Recommendation: {s['recommendation']:.2f}")
-        print(f"    Normalized contribution: fit={_norm(s['fit'])*0.38:.2f}, fresh={_norm(s['freshness'])*0.18:.2f}, impact={_norm(s['impact'])*0.32:.2f}, rigor={_norm(s['rigor'])*0.12:.2f}")
+        print(
+            f"    Normalized contribution: fit={_norm(s['fit']) * 0.38:.2f}, fresh={_norm(s['freshness']) * 0.18:.2f}, impact={_norm(s['impact']) * 0.32:.2f}, rigor={_norm(s['rigor']) * 0.12:.2f}"
+        )
 
     # -----------------------------------------------------------------------
     # Check 1: Score spread
@@ -313,10 +348,10 @@ def run_ranking_verification():
     print(f"  Spread assessment: {'GOOD' if spread > 3.0 else 'POOR (too compressed)'}")
 
     # Check pairwise gaps
-    print(f"\n  Pairwise gaps:")
+    print("\n  Pairwise gaps:")
     for i in range(len(ranked) - 1):
-        gap = ranked[i]["scores"]["recommendation"] - ranked[i+1]["scores"]["recommendation"]
-        print(f"    #{i+1}({ranked[i]['_letter']}) - #{i+2}({ranked[i+1]['_letter']}): {gap:.2f}")
+        gap = ranked[i]["scores"]["recommendation"] - ranked[i + 1]["scores"]["recommendation"]
+        print(f"    #{i + 1}({ranked[i]['_letter']}) - #{i + 2}({ranked[i + 1]['_letter']}): {gap:.2f}")
 
     # -----------------------------------------------------------------------
     # Check 2: A > F (high-fit+high-impact > low-fit+high-impact)
@@ -334,7 +369,7 @@ def run_ranking_verification():
             print(f"  PASS: Paper A (rank #{rank_a}, rec={rec_a:.2f}) > Paper F (rank #{rank_f}, rec={rec_f:.2f})")
         else:
             print(f"  FAIL: Paper A (rank #{rank_a}, rec={rec_a:.2f}) <= Paper F (rank #{rank_f}, rec={rec_f:.2f})")
-            print(f"  This means a low-fit but popular paper outranks a high-fit high-impact paper!")
+            print("  This means a low-fit but popular paper outranks a high-fit high-impact paper!")
 
     # -----------------------------------------------------------------------
     # Check 3: Freshness correctly penalizes old papers
@@ -362,7 +397,7 @@ def run_ranking_verification():
     if "J" in paper_map:
         fresh_j = paper_map["J"]["scores"]["freshness"]
         if fresh_j == 0.0:
-            print(f"  PASS: J (365d) has freshness=0.00")
+            print("  PASS: J (365d) has freshness=0.00")
         else:
             print(f"  FAIL: J (365d) has freshness={fresh_j:.2f} (should be 0)")
 
@@ -399,10 +434,14 @@ def run_ranking_verification():
         # Check if _norm ordering matches raw ordering
         for i in range(len(sorted_by_raw) - 1):
             raw_lo, norm_lo = sorted_by_raw[i][1], sorted_by_raw[i][2]
-            raw_hi, norm_hi = sorted_by_raw[i+1][1], sorted_by_raw[i+1][2]
+            raw_hi, norm_hi = sorted_by_raw[i + 1][1], sorted_by_raw[i + 1][2]
             if raw_lo < raw_hi and norm_lo > norm_hi + 1e-9:
-                print(f"  INVERSION in {dim}: raw {sorted_by_raw[i][0]}={raw_lo:.2f} vs {sorted_by_raw[i+1][0]}={raw_hi:.2f}")
-                print(f"    but norm contribution {sorted_by_raw[i][0]}={norm_lo:.4f} vs {sorted_by_raw[i+1][0]}={norm_hi:.4f}")
+                print(
+                    f"  INVERSION in {dim}: raw {sorted_by_raw[i][0]}={raw_lo:.2f} vs {sorted_by_raw[i + 1][0]}={raw_hi:.2f}"
+                )
+                print(
+                    f"    but norm contribution {sorted_by_raw[i][0]}={norm_lo:.4f} vs {sorted_by_raw[i + 1][0]}={norm_hi:.4f}"
+                )
                 inversion_found = True
     if not inversion_found:
         print("  PASS: No dimension-level sigmoid inversions detected")
@@ -437,8 +476,12 @@ def run_ranking_verification():
 
     # D and H should be near bottom
     bottom_letters = {ranked[-1]["_letter"], ranked[-2]["_letter"], ranked[-3]["_letter"]}
-    d_near_bottom = "D" in bottom_letters or any(ranked[i]["_letter"] == "D" for i in range(max(0, len(ranked)-3), len(ranked)))
-    h_near_bottom = "H" in bottom_letters or any(ranked[i]["_letter"] == "H" for i in range(max(0, len(ranked)-3), len(ranked)))
+    d_near_bottom = "D" in bottom_letters or any(
+        ranked[i]["_letter"] == "D" for i in range(max(0, len(ranked) - 3), len(ranked))
+    )
+    h_near_bottom = "H" in bottom_letters or any(
+        ranked[i]["_letter"] == "H" for i in range(max(0, len(ranked) - 3), len(ranked))
+    )
     checks.append(("Paper D near bottom", d_near_bottom))
     checks.append(("Paper H near bottom", h_near_bottom))
 
@@ -466,7 +509,9 @@ def run_ranking_verification():
     extra_total += 1
 
     print(f"\n{'=' * 80}")
-    print(f"SUMMARY: {passed_checks}/{total_checks} sanity checks passed, {extra_passed}/{extra_total} structural checks passed")
+    print(
+        f"SUMMARY: {passed_checks}/{total_checks} sanity checks passed, {extra_passed}/{extra_total} structural checks passed"
+    )
     print(f"Score spread: {spread:.2f}")
     print(f"{'=' * 80}")
 

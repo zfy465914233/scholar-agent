@@ -6,8 +6,10 @@ __pycache__/
 *.egg-info/
 .DS_Store
 indexes/
-changelog.md
+tests/changelog.md
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Generated content
 knowledge/
@@ -21,6 +23,7 @@ scholar/
 # Build artifacts
 dist/
 build/
+*.whl
 
 # Environment and secrets
 .env
@@ -45,3 +48,8 @@ temp_files.txt
 
 # Test artifacts
 tests/sa_*.md
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml

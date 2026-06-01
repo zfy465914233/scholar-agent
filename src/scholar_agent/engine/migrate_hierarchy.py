@@ -15,7 +15,6 @@ import re
 import shutil
 from pathlib import Path
 
-from scholar_agent.engine.common import parse_frontmatter
 from scholar_agent.engine.domain_router import clear_folder_cache
 
 OR_CHILDREN = [

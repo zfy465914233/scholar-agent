@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from scholar_agent.config.paths import build_default_config, get_scholar_root, get_user_config_path
 from scholar_agent.config.profiles import get_active_profile
-
 
 logger = logging.getLogger(__name__)
 _PATH_KEYS = ("knowledge_dir", "index_path", "scholar_dir", "paper_notes_dir", "daily_notes_dir")

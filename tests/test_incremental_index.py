@@ -1,26 +1,24 @@
 """Tests for incremental indexing and cache improvements."""
 
 import json
+import shutil
+import tempfile
 import time
 import unittest
 from pathlib import Path
-
-import tempfile
-import shutil
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 
+from scholar_agent.engine.cache_helper import cache_stats, get, invalidate, put
 from scholar_agent.engine.local_index import (
+    _build_manifest,
+    _save_manifest,
     build_index,
     build_index_incremental,
-    _load_manifest,
-    _save_manifest,
-    _build_manifest,
 )
-from scholar_agent.engine.cache_helper import get, put, invalidate, clear_all, cache_stats, MAX_ENTRIES
 
 
 class IncrementalIndexTest(unittest.TestCase):
@@ -75,12 +73,7 @@ class IncrementalIndexTest(unittest.TestCase):
         # Add a new card
         card2 = self.tmpdir / "test-card-2.md"
         card2.write_text(
-            "---\n"
-            "id: test-2\n"
-            "title: Test Card 2\n"
-            "type: definition\n"
-            "topic: test\n"
-            "---\n\nAnother card.\n",
+            "---\nid: test-2\ntitle: Test Card 2\ntype: definition\ntopic: test\n---\n\nAnother card.\n",
             encoding="utf-8",
         )
         # Touch with different mtime
@@ -137,12 +130,7 @@ class IncrementalIndexTest(unittest.TestCase):
         # Create two cards
         card2 = self.tmpdir / "test-card-2.md"
         card2.write_text(
-            "---\n"
-            "id: test-2\n"
-            "title: Card Two\n"
-            "type: definition\n"
-            "topic: test\n"
-            "---\n\nSecond card.\n",
+            "---\nid: test-2\ntitle: Card Two\ntype: definition\ntopic: test\n---\n\nSecond card.\n",
             encoding="utf-8",
         )
 
@@ -171,11 +159,13 @@ class CacheHelperTest(unittest.TestCase):
         self.tmpdir = Path(tempfile.mkdtemp())
         # Monkey-patch CACHE_DIR for isolation
         from scholar_agent.engine import cache_helper
+
         self._original_cache_dir = cache_helper.CACHE_DIR
         cache_helper.CACHE_DIR = self.tmpdir
 
     def tearDown(self) -> None:
         from scholar_agent.engine import cache_helper
+
         cache_helper.CACHE_DIR = self._original_cache_dir
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
@@ -201,6 +191,7 @@ class CacheHelperTest(unittest.TestCase):
 
     def test_eviction_on_excess(self) -> None:
         from scholar_agent.engine import cache_helper
+
         old_max = cache_helper.MAX_ENTRIES
         cache_helper.MAX_ENTRIES = 3
         try:

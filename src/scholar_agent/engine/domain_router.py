@@ -15,9 +15,9 @@ import json
 import os
 import re
 from pathlib import Path
+from typing import TypedDict
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from typing import TypedDict
 
 from scholar_agent.engine.common import get_package_data_path
 
@@ -67,7 +67,7 @@ def load_routing_skill() -> str:
         return (
             "You are a knowledge base routing assistant. "
             "Decide where a new card should be filed. "
-            "Return JSON: {\"major_domain\":\"...\",\"subdomain\":\"\",\"reason\":\"...\"}"
+            'Return JSON: {"major_domain":"...","subdomain":"","reason":"..."}'
         )
     return SKILL_PATH.read_text(encoding="utf-8")
 
@@ -150,7 +150,8 @@ def _parse_frontmatter_title_tags(text: str) -> tuple[str, list[str]]:
     # Extract title: handle quoted, multi-line folded (>) and literal (|)
     title_match = re.search(
         r"^title:\s*(?:'([^']*)'|\"([^\"]*)\"|>(.*?)$|\|(.*)$|(.*))$",
-        fm, re.MULTILINE,
+        fm,
+        re.MULTILINE,
     )
     if title_match:
         # Groups: 1=single-quoted, 2=double-quoted, 3=folded, 4=literal, 5=plain
@@ -607,7 +608,9 @@ def infer_domain_decision(
     if domain_override and domain_override.strip():
         domain_slug = domain_override.strip()
         route_slug, output_path, subdomain = _build_route(
-            knowledge_root, domain_slug, None,
+            knowledge_root,
+            domain_slug,
+            None,
         )
         if _ensure_dir(output_path):
             clear_folder_cache()
@@ -620,7 +623,7 @@ def infer_domain_decision(
             "reason": "Domain explicitly specified by caller.",
         }
     context = build_routing_context(query, knowledge_root, card_title, card_summary)
-    domain_tree = context.get("existing_folders", {})
+    context.get("existing_folders", {})
 
     # Reconstruct the actual domain_tree with Paths for routing
     actual_tree = get_domain_tree(knowledge_root)
@@ -632,7 +635,9 @@ def infer_domain_decision(
             major_domain = str(ai_result["major_domain"])
             subdomain = str(ai_result["subdomain"])
             route_slug, output_path, normalized_subdomain = _build_route(
-                knowledge_root, major_domain, subdomain,
+                knowledge_root,
+                major_domain,
+                subdomain,
             )
             if _ensure_dir(output_path):
                 clear_folder_cache()
@@ -650,7 +655,9 @@ def infer_domain_decision(
     if matched is not None:
         major_domain, subdomain = matched
         route_slug, output_path, normalized_subdomain = _build_route(
-            knowledge_root, major_domain, subdomain,
+            knowledge_root,
+            major_domain,
+            subdomain,
         )
         if _ensure_dir(output_path):
             clear_folder_cache()
@@ -667,7 +674,9 @@ def infer_domain_decision(
     new_major_domain = _propose_new_major_domain(query)
     if new_major_domain != "general":
         route_slug, output_path, normalized_subdomain = _build_route(
-            knowledge_root, new_major_domain, None,
+            knowledge_root,
+            new_major_domain,
+            None,
         )
         if _ensure_dir(output_path):
             clear_folder_cache()
@@ -681,7 +690,9 @@ def infer_domain_decision(
         }
 
     route_slug, output_path, normalized_subdomain = _build_route(
-        knowledge_root, "general", None,
+        knowledge_root,
+        "general",
+        None,
     )
     if _ensure_dir(output_path):
         clear_folder_cache()
@@ -708,7 +719,10 @@ def infer_domain(
     Returns (route_slug, output_path).
     """
     decision = infer_domain_decision(
-        query, knowledge_root, use_ai_fallback=use_ai_fallback,
-        card_title=card_title, card_summary=card_summary,
+        query,
+        knowledge_root,
+        use_ai_fallback=use_ai_fallback,
+        card_title=card_title,
+        card_summary=card_summary,
     )
     return str(decision["route_slug"]), Path(str(decision["output_path"]))

@@ -7,14 +7,12 @@ domain) and auto-generates ``[[wiki-links]]`` between notes.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
-
-from scholar_agent.engine.common import parse_frontmatter
 from scholar_agent.engine.academic.paper_analyzer import title_to_filename
+from scholar_agent.engine.common import parse_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Related-paper discovery
 # ---------------------------------------------------------------------------
+
 
 def discover_related_notes(
     paper: dict[str, Any],
@@ -36,10 +35,7 @@ def discover_related_notes(
     my_title = paper.get("title", "").lower()
     my_kw = {kw.lower() for kw in paper.get("domain_keywords", [])}
     my_domain = paper.get("best_domain", "")
-    my_authors = {
-        (a.lower() if isinstance(a, str) else str(a).lower())
-        for a in paper.get("authors", [])[:5]
-    }
+    my_authors = {(a.lower() if isinstance(a, str) else str(a).lower()) for a in paper.get("authors", [])[:5]}
 
     _FILLER = {"a", "an", "the", "of", "in", "for", "and", "with", "using"}
     my_words = set(re.sub(r"[^a-z0-9\s]", "", my_title).split()) - _FILLER
@@ -62,18 +58,13 @@ def discover_related_notes(
             score += 1.0
 
         # author overlap
-        other_authors = {
-            (a.lower() if isinstance(a, str) else str(a).lower())
-            for a in other.get("authors", [])[:5]
-        }
+        other_authors = {(a.lower() if isinstance(a, str) else str(a).lower()) for a in other.get("authors", [])[:5]}
         shared_auth = my_authors & other_authors
         if shared_auth:
             score += len(shared_auth) * 1.5
 
         # title word overlap (bonus)
-        other_words = set(
-            re.sub(r"[^a-z0-9\s]", "", other.get("title", "").lower()).split()
-        ) - _FILLER
+        other_words = set(re.sub(r"[^a-z0-9\s]", "", other.get("title", "").lower()).split()) - _FILLER
         overlap = my_words & other_words
         if len(overlap) >= 2:
             score += 0.5 * len(overlap)
@@ -93,7 +84,7 @@ def insert_wikilinks(
     if not related_filenames:
         return False
     try:
-        with open(note_path, "r", encoding="utf-8") as fh:
+        with open(note_path, encoding="utf-8") as fh:
             body = fh.read()
 
         if "## Related Papers" in body:
@@ -127,6 +118,7 @@ def insert_wikilinks(
 # Keyword extraction from note metadata
 # ---------------------------------------------------------------------------
 
+
 def _pull_title_terms(title: str) -> list[str]:
     """Extract link-worthy tokens from a paper title.
 
@@ -154,6 +146,7 @@ def _pull_title_terms(title: str) -> list[str]:
 # KeywordIndex — inverted index with frequency filtering
 # ---------------------------------------------------------------------------
 
+
 class KeywordIndex:
     """Scans notes for linkable keywords, then applies [[wiki-links]].
 
@@ -164,12 +157,36 @@ class KeywordIndex:
       Pass 2: keep only terms with frequency == 1 (unambiguous)
     """
 
-    STOP_WORDS: frozenset[str] = frozenset({
-        "model", "learning", "network", "method", "approach", "based", "using",
-        "system", "data", "training", "task", "paper", "results", "analysis",
-        "performance", "problem", "framework", "algorithm", "feature", "input",
-        "output", "layer", "attention", "deep", "neural", "representation",
-    })
+    STOP_WORDS: frozenset[str] = frozenset(
+        {
+            "model",
+            "learning",
+            "network",
+            "method",
+            "approach",
+            "based",
+            "using",
+            "system",
+            "data",
+            "training",
+            "task",
+            "paper",
+            "results",
+            "analysis",
+            "performance",
+            "problem",
+            "framework",
+            "algorithm",
+            "feature",
+            "input",
+            "output",
+            "layer",
+            "attention",
+            "deep",
+            "neural",
+            "representation",
+        }
+    )
 
     def __init__(self, notes_dir: str, knowledge_dir: str = ""):
         self._mapping: dict[str, str] = {}  # keyword -> note_stem
@@ -211,18 +228,14 @@ class KeywordIndex:
                     inverted.setdefault(low, set()).add(stem)
 
         # Pass 2: Frequency filter — keep only unambiguous (freq == 1)
-        self._mapping = {
-            kw: next(iter(stems))
-            for kw, stems in inverted.items()
-            if len(stems) == 1
-        }
+        self._mapping = {kw: next(iter(stems)) for kw, stems in inverted.items() if len(stems) == 1}
         logger.info("keyword index built: %d unambiguous terms from %s", len(self._mapping), notes_dir)
 
     def as_dict(self) -> dict[str, str]:
         return dict(self._mapping)
 
     @classmethod
-    def from_dict(cls, d: dict[str, str]) -> "KeywordIndex":
+    def from_dict(cls, d: dict[str, str]) -> KeywordIndex:
         idx = cls.__new__(cls)
         idx._mapping = dict(d)
         return idx

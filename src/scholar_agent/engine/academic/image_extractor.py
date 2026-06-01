@@ -29,12 +29,14 @@ logger = logging.getLogger(__name__)
 
 try:
     import fitz  # PyMuPDF
+
     _FITZ_OK = True
 except ImportError:
     _FITZ_OK = False
 
 try:
     import requests as _http
+
     _REQUESTS_OK = True
 except ImportError:
     _REQUESTS_OK = False
@@ -53,15 +55,43 @@ _NOISE_NAMES = {"logo", "icon", "badge", "banner", "watermark"}
 
 # Keywords for heuristic section classification of images
 _FRAMEWORK_KEYWORDS = {
-    "framework", "architecture", "model", "pipeline", "overview",
-    "system", "flowchart", "diagram", "network", "structure",
-    "schema", "overview", "conceptual", "block", "flow",
+    "framework",
+    "architecture",
+    "model",
+    "pipeline",
+    "overview",
+    "system",
+    "flowchart",
+    "diagram",
+    "network",
+    "structure",
+    "schema",
+    "conceptual",
+    "block",
+    "flow",
 }
 _RESULTS_KEYWORDS = {
-    "result", "comparison", "ablation", "performance", "table",
-    "plot", "accuracy", "benchmark", "curve", "chart",
-    "heatmap", "scatter", "histogram", "confusion", "precision",
-    "recall", "f1", "roc", "loss", "training", "convergence",
+    "result",
+    "comparison",
+    "ablation",
+    "performance",
+    "table",
+    "plot",
+    "accuracy",
+    "benchmark",
+    "curve",
+    "chart",
+    "heatmap",
+    "scatter",
+    "histogram",
+    "confusion",
+    "precision",
+    "recall",
+    "f1",
+    "roc",
+    "loss",
+    "training",
+    "convergence",
 }
 
 
@@ -89,6 +119,7 @@ def _classify_image_section(filename: str, index: int, total: int) -> str:
 # HTTP helper
 # ---------------------------------------------------------------------------
 
+
 def _fetch_bytes(url: str, *, timeout: int = 60, ua: str = "scholar-agent/1.0 (research)"):
     """Return (status, bytes) using requests or urllib fallback."""
     headers = {"User-Agent": ua}
@@ -103,6 +134,7 @@ def _fetch_bytes(url: str, *, timeout: int = 60, ua: str = "scholar-agent/1.0 (r
 # ---------------------------------------------------------------------------
 # Selective source tarball extraction (only image files)
 # ---------------------------------------------------------------------------
+
 
 def _pull_source_tarball(paper_id: str, dest: str) -> bool:
     """Download arXiv e-print and selectively extract only image files."""
@@ -119,7 +151,8 @@ def _pull_source_tarball(paper_id: str, dest: str) -> bool:
         # Selective extraction: only image files, skip everything else
         with tarfile.open(tar_path, "r:*") as tf:
             image_members = [
-                m for m in tf.getmembers()
+                m
+                for m in tf.getmembers()
                 if not m.name.startswith("/")
                 and ".." not in m.name
                 and not m.issym()
@@ -131,11 +164,9 @@ def _pull_source_tarball(paper_id: str, dest: str) -> bool:
             else:
                 # Fallback: try full extraction if no image members found
                 safe = [
-                    m for m in tf.getmembers()
-                    if not m.name.startswith("/")
-                    and ".." not in m.name
-                    and not m.issym()
-                    and not m.islnk()
+                    m
+                    for m in tf.getmembers()
+                    if not m.name.startswith("/") and ".." not in m.name and not m.issym() and not m.islnk()
                 ]
                 tf.extractall(path=dest, members=safe)
         return True
@@ -147,6 +178,7 @@ def _pull_source_tarball(paper_id: str, dest: str) -> bool:
 # ---------------------------------------------------------------------------
 # PDF download
 # ---------------------------------------------------------------------------
+
 
 def download_arxiv_pdf(arxiv_id: str, output_dir: str) -> str:
     """Download arXiv PDF to *output_dir*/*arxiv_id*.pdf (with caching)."""
@@ -176,6 +208,7 @@ def download_arxiv_pdf(arxiv_id: str, output_dir: str) -> str:
 # Text extraction (for BM25 indexing)
 # ---------------------------------------------------------------------------
 
+
 def extract_pdf_text(pdf_path: str, max_chars: int = 80000) -> str:
     """Extract plain text from a PDF via PyMuPDF.
 
@@ -200,6 +233,7 @@ def extract_pdf_text(pdf_path: str, max_chars: int = 80000) -> str:
 # Glob-based source image discovery
 # ---------------------------------------------------------------------------
 
+
 def _discover_source_images(scratch_dir: str) -> list[dict[str, Any]]:
     """Use pathlib glob to find images, dynamically choosing the best directory.
 
@@ -221,10 +255,7 @@ def _discover_source_images(scratch_dir: str) -> list[dict[str, Any]]:
         return []
 
     # Filter out noise files
-    filtered = [
-        p for p in all_images
-        if not any(n in p.name.lower() for n in _NOISE_NAMES)
-    ]
+    filtered = [p for p in all_images if not any(n in p.name.lower() for n in _NOISE_NAMES)]
     if not filtered:
         filtered = all_images
 
@@ -244,12 +275,14 @@ def _discover_source_images(scratch_dir: str) -> list[dict[str, Any]]:
         if fn in seen:
             continue
         seen.add(fn)
-        found.append({
-            "kind": "source_archive",
-            "origin": "arxiv-tarball",
-            "path": str(img_path),
-            "filename": fn,
-        })
+        found.append(
+            {
+                "kind": "source_archive",
+                "origin": "arxiv-tarball",
+                "path": str(img_path),
+                "filename": fn,
+            }
+        )
 
     return found
 
@@ -257,6 +290,7 @@ def _discover_source_images(scratch_dir: str) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # PDF image extraction with global area ranking
 # ---------------------------------------------------------------------------
+
 
 def _pull_embedded_images(
     pdf_path: str,
@@ -291,16 +325,18 @@ def _pull_embedded_images(
                 h = payload.get("height", 0)
                 blob = payload["image"]
                 area = w * h
-                candidates.append({
-                    "page": pg_idx + 1,
-                    "seq": img_seq + 1,
-                    "width": w,
-                    "height": h,
-                    "area": area,
-                    "blob": blob,
-                    "ext": payload["ext"],
-                    "size": len(blob),
-                })
+                candidates.append(
+                    {
+                        "page": pg_idx + 1,
+                        "seq": img_seq + 1,
+                        "width": w,
+                        "height": h,
+                        "area": area,
+                        "blob": blob,
+                        "ext": payload["ext"],
+                        "size": len(blob),
+                    }
+                )
         doc.close()
     except Exception as exc:
         logger.error("PDF image extraction error: %s", exc)
@@ -308,10 +344,7 @@ def _pull_embedded_images(
 
     # Phase 2: global ranking by area, filter by minimum size
     candidates.sort(key=lambda c: c["area"], reverse=True)
-    top = [
-        c for c in candidates
-        if c["size"] >= min_bytes
-    ][:max_images]
+    top = [c for c in candidates if c["size"] >= min_bytes][:max_images]
 
     # Phase 3: save only the selected images
     result: list[dict[str, Any]] = []
@@ -320,16 +353,18 @@ def _pull_embedded_images(
         dest = os.path.join(output_dir, fname)
         with open(dest, "wb") as fh:
             fh.write(c["blob"])
-        result.append({
-            "filename": fname,
-            "rel_path": f"images/{fname}",
-            "byte_size": c["size"],
-            "width": c["width"],
-            "height": c["height"],
-            "format": c["ext"],
-            "origin": "pdf-extraction",
-            "section": _classify_image_section(fname, idx, len(top)),
-        })
+        result.append(
+            {
+                "filename": fname,
+                "rel_path": f"images/{fname}",
+                "byte_size": c["size"],
+                "width": c["width"],
+                "height": c["height"],
+                "format": c["ext"],
+                "origin": "pdf-extraction",
+                "section": _classify_image_section(fname, idx, len(top)),
+            }
+        )
 
     return result
 
@@ -337,6 +372,7 @@ def _pull_embedded_images(
 # ---------------------------------------------------------------------------
 # Top-level API
 # ---------------------------------------------------------------------------
+
 
 def extract_paper_images(
     paper_id: str,
@@ -354,16 +390,20 @@ def extract_paper_images(
             for idx, entry in enumerate(source_entries):
                 dest = os.path.join(output_dir, entry["filename"])
                 shutil.copy2(entry["path"], dest)
-                collected.append({
-                    "filename": entry["filename"],
-                    "rel_path": f"images/{entry['filename']}",
-                    "byte_size": os.path.getsize(dest),
-                    "format": os.path.splitext(entry["filename"])[1][1:].lower(),
-                    "origin": entry.get("origin", "arxiv-tarball"),
-                    "section": _classify_image_section(
-                        entry["filename"], idx, len(source_entries),
-                    ),
-                })
+                collected.append(
+                    {
+                        "filename": entry["filename"],
+                        "rel_path": f"images/{entry['filename']}",
+                        "byte_size": os.path.getsize(dest),
+                        "format": os.path.splitext(entry["filename"])[1][1:].lower(),
+                        "origin": entry.get("origin", "arxiv-tarball"),
+                        "section": _classify_image_section(
+                            entry["filename"],
+                            idx,
+                            len(source_entries),
+                        ),
+                    }
+                )
 
         # Stage 2: PDF fallback when source yields too few
         if len(collected) < 2 and pdf_path and _FITZ_OK:

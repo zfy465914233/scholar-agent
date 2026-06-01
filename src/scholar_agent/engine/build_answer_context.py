@@ -6,8 +6,8 @@ import argparse
 import json
 from pathlib import Path
 
-from scholar_agent.engine.orchestrate_research import build_decision, classify_route, generate_web_evidence
 from scholar_agent.engine.build_evidence_pack import build_evidence_pack
+from scholar_agent.engine.orchestrate_research import build_decision, classify_route, generate_web_evidence
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,7 +48,9 @@ def summarize_item(item: dict[str, object]) -> str:
     return f"Web {source_type} source: {title}"
 
 
-def build_answer_context(query: str, route: str, evidence_pack: dict[str, object], warnings: list[str]) -> dict[str, object]:
+def build_answer_context(
+    query: str, route: str, evidence_pack: dict[str, object], warnings: list[str]
+) -> dict[str, object]:
     items = evidence_pack.get("items", [])
     direct_support = []
     citations = []

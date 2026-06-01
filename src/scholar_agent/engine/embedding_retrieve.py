@@ -32,6 +32,7 @@ from urllib.request import Request, urlopen
 _LOCAL_MODEL_AVAILABLE = False
 try:
     from sentence_transformers import SentenceTransformer
+
     _LOCAL_MODEL_AVAILABLE = True
 except ImportError:
     pass
@@ -69,6 +70,7 @@ def _get_local_model() -> Any:
 
 
 # ── Core embedding functions ───────────────────────────────────────
+
 
 def _embed_local(texts: list[str]) -> list[list[float]]:
     """Embed texts using local sentence-transformers model."""
@@ -131,8 +133,9 @@ def embed_query(query: str) -> list[float]:
 
 # ── Similarity ─────────────────────────────────────────────────────
 
+
 def cosine_similarity(a: list[float], b: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
+    dot = sum(x * y for x, y in zip(a, b, strict=False))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
     if norm_a == 0 or norm_b == 0:
@@ -141,6 +144,7 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 
 
 # ── Index building ─────────────────────────────────────────────────
+
 
 def build_embedding_index(documents: list[dict]) -> dict[str, Any]:
     """Compute embeddings for all documents and return an embedding index.
@@ -160,10 +164,10 @@ def build_embedding_index(documents: list[dict]) -> dict[str, Any]:
         if not non_empty:
             all_embeddings.extend([[] for _ in batch])
             continue
-        indices, valid_texts = zip(*non_empty)
+        indices, valid_texts = zip(*non_empty, strict=False)
         batch_embeddings = embed_texts(list(valid_texts))
         result = [[] for _ in batch]
-        for idx, emb in zip(indices, batch_embeddings):
+        for idx, emb in zip(indices, batch_embeddings, strict=False):
             result[idx] = emb
         all_embeddings.extend(result)
 
@@ -176,6 +180,7 @@ def build_embedding_index(documents: list[dict]) -> dict[str, Any]:
 
 
 # ── Retrieval ──────────────────────────────────────────────────────
+
 
 def retrieve_by_embedding(
     query: str,
@@ -195,7 +200,7 @@ def retrieve_by_embedding(
     embeddings = embedding_index.get("embeddings", [])
 
     scores: list[tuple[str, float]] = []
-    for doc_id, doc_emb in zip(doc_ids, embeddings):
+    for doc_id, doc_emb in zip(doc_ids, embeddings, strict=False):
         if not doc_emb:
             continue
         sim = cosine_similarity(query_embedding, doc_emb)
@@ -208,8 +213,10 @@ def retrieve_by_embedding(
 
 # ── CLI ────────────────────────────────────────────────────────────
 
+
 def main() -> int:
     import argparse
+
     parser = argparse.ArgumentParser(description="Build or test embedding index.")
     sub = parser.add_subparsers(dest="command")
 

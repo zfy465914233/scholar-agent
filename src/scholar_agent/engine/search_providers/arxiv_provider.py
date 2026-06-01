@@ -32,9 +32,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CATEGORIES: list[str] = ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
 
-DEFAULT_MAX_RESULTS = 200       # max papers from arXiv Atom API
-DEFAULT_RECENT_DAYS = 30        # look-back window for recent papers
-DEFAULT_HOT_DAYS = 365          # look-back window for hot / influential papers
+DEFAULT_MAX_RESULTS = 200  # max papers from arXiv Atom API
+DEFAULT_RECENT_DAYS = 30  # look-back window for recent papers
+DEFAULT_HOT_DAYS = 365  # look-back window for hot / influential papers
 
 
 class ArxivProvider(SearchProvider):
@@ -125,7 +125,11 @@ class ArxivProvider(SearchProvider):
                 max_results=self.max_results,
             )
             candidates, seen_urls = _extend_candidates(
-                query, raw_arxiv, candidates, seen_urls, limit,
+                query,
+                raw_arxiv,
+                candidates,
+                seen_urls,
+                limit,
             )
         except Exception:
             logger.warning("arXiv search failed for query '%s'", query, exc_info=True)
@@ -142,11 +146,17 @@ class ArxivProvider(SearchProvider):
                     end_date=now,
                 )
                 candidates, seen_urls = _extend_candidates(
-                    query, raw_s2, candidates, seen_urls, limit,
+                    query,
+                    raw_s2,
+                    candidates,
+                    seen_urls,
+                    limit,
                 )
             except Exception:
                 logger.warning(
-                    "Semantic Scholar search failed for query '%s'", query, exc_info=True,
+                    "Semantic Scholar search failed for query '%s'",
+                    query,
+                    exc_info=True,
                 )
 
         return _make_result(query, candidates)
@@ -155,6 +165,7 @@ class ArxivProvider(SearchProvider):
 # ======================================================================
 # Module-level helper functions
 # ======================================================================
+
 
 def _env_categories() -> list[str]:
     """Read arXiv categories from the ``ARXIV_CATEGORIES`` env var."""
@@ -190,6 +201,7 @@ def _default_scoring_config(categories: list[str]) -> dict[str, Any]:
 # Thin wrappers that delegate to ``academic.arxiv_search`` but normalise
 # the output so it can be consumed by the provider pipeline.
 # ----------------------------------------------------------------------
+
 
 def _search_arxiv_raw(
     categories: list[str],
@@ -242,6 +254,7 @@ def _search_semantic_scholar_raw(
 # ----------------------------------------------------------------------
 # Candidate list builder (mirrors AcademicProvider pattern)
 # ----------------------------------------------------------------------
+
 
 def _extend_candidates(
     query: str,

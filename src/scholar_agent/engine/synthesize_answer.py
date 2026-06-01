@@ -21,7 +21,6 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-
 LLM_API_URL = os.environ.get("LLM_API_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
@@ -116,8 +115,7 @@ def call_llm(request_payload: dict[str, Any]) -> dict[str, Any]:
     """Call an OpenAI-compatible chat completions endpoint."""
     if not LLM_API_KEY:
         raise RuntimeError(
-            "LLM_API_KEY environment variable is not set. "
-            "Export it or use --local-answer to skip LLM calls."
+            "LLM_API_KEY environment variable is not set. Export it or use --local-answer to skip LLM calls."
         )
     url = LLM_API_URL.rstrip("/") + "/chat/completions"
     headers = {"Content-Type": "application/json"}
@@ -132,9 +130,7 @@ def call_llm(request_payload: dict[str, Any]) -> dict[str, Any]:
             data = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        raise RuntimeError(
-            f"LLM API returned HTTP {exc.code}: {detail}"
-        ) from exc
+        raise RuntimeError(f"LLM API returned HTTP {exc.code}: {detail}") from exc
     except (URLError, OSError) as exc:
         raise RuntimeError(f"LLM API request failed: {exc}") from exc
 
@@ -161,7 +157,7 @@ def parse_answer(raw_content: str) -> dict[str, Any]:
 
     if text.startswith("```"):
         lines = text.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         text = "\n".join(lines).strip()
 
     try:
@@ -215,9 +211,7 @@ def validate_claims(answer: dict[str, Any], valid_evidence_ids: set[str]) -> dic
         invalid = [eid for eid in ids if str(eid) not in valid_evidence_ids]
 
         if invalid:
-            warnings.append(
-                f"Claim references non-existent evidence IDs: {invalid}"
-            )
+            warnings.append(f"Claim references non-existent evidence IDs: {invalid}")
             cleaned = {**claim, "evidence_ids": valid}
             if not valid:
                 cleaned["_orphaned"] = True
@@ -242,11 +236,7 @@ def build_synthesis_output(
 ) -> dict[str, Any]:
     """Assemble the final synthesis output with metadata."""
     # Validate claim evidence IDs against citations
-    valid_ids = {
-        c.get("evidence_id")
-        for c in prompt_bundle.get("citations", [])
-        if c.get("evidence_id")
-    }
+    valid_ids = {c.get("evidence_id") for c in prompt_bundle.get("citations", []) if c.get("evidence_id")}
     if valid_ids:
         answer = validate_claims(answer, valid_ids)
     return {
@@ -272,9 +262,7 @@ def synthesize(
     If local_answer is provided, it is used directly without calling any API.
     """
     if local_answer is not None:
-        return build_synthesis_output(
-            local_answer, prompt_bundle, model, {"source": "local"}
-        )
+        return build_synthesis_output(local_answer, prompt_bundle, model, {"source": "local"})
 
     request_payload = build_chat_request(prompt_bundle, model)
 

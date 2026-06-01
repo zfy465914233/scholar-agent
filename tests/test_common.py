@@ -3,14 +3,25 @@
 import json
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
-from scholar_agent.engine.common import extract_entities, extract_wiki_links, load_json, normalize_date, now_iso, parse_frontmatter, resolve_link_target, safe_slug, slugify, write_json
+from scholar_agent.engine.common import (
+    extract_entities,
+    extract_wiki_links,
+    load_json,
+    normalize_date,
+    now_iso,
+    parse_frontmatter,
+    resolve_link_target,
+    safe_slug,
+    slugify,
+    write_json,
+)
 
 
 class ParseFrontmatterTest(unittest.TestCase):
@@ -33,7 +44,7 @@ class ParseFrontmatterTest(unittest.TestCase):
         self.assertEqual("Just a body", body)
 
     def test_unclosed_frontmatter(self) -> None:
-        meta, body = parse_frontmatter("---\ntitle: Oops\n")
+        meta, _body = parse_frontmatter("---\ntitle: Oops\n")
         self.assertEqual({}, meta)
 
     def test_quoted_values(self) -> None:
@@ -43,7 +54,7 @@ class ParseFrontmatterTest(unittest.TestCase):
 
     def test_empty_list_value(self) -> None:
         raw = "---\ntags:\n---\nBody"
-        meta, body = parse_frontmatter(raw)
+        meta, _body = parse_frontmatter(raw)
         self.assertEqual([], meta["tags"])
 
     def test_mixed_scalars_and_lists(self) -> None:
@@ -92,7 +103,9 @@ class SafeSlugTest(unittest.TestCase):
         self.assertEqual("untitled", safe_slug(""))
 
     def test_preserves_chinese(self) -> None:
-        self.assertEqual("库存规划的核心框架-关键指标和学习路径是什么", safe_slug("库存规划的核心框架、关键指标和学习路径是什么？"))
+        self.assertEqual(
+            "库存规划的核心框架-关键指标和学习路径是什么", safe_slug("库存规划的核心框架、关键指标和学习路径是什么？")
+        )
 
 
 class LoadJsonTest(unittest.TestCase):

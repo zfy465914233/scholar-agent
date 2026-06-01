@@ -18,7 +18,6 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +42,7 @@ def _key(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()
 
 
-def get(url: str, ttl: int = DEFAULT_TTL) -> Optional[str]:
+def get(url: str, ttl: int = DEFAULT_TTL) -> str | None:
     """Return cached Markdown content for *url*, or None if missing / expired."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     meta_path = CACHE_DIR / f"{_key(url)}.meta.json"

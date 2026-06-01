@@ -15,11 +15,12 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
-from scholar_agent.engine.academic.scoring import PaperScorer, _CEILING
+from scholar_agent.engine.academic.scoring import _CEILING, PaperScorer
 
 # ---------------------------------------------------------------------------
 # Reproduce the _norm function (copied from scoring.py for isolated testing)
 # ---------------------------------------------------------------------------
+
 
 def _norm(v: float) -> float:
     """Sigmoid-like mapping from [0, _CEILING] to [0, 10]."""
@@ -38,6 +39,7 @@ def old_linear_norm(v: float) -> float:
 # Check 1: Output values for grid
 # ---------------------------------------------------------------------------
 
+
 def check_grid_values():
     print("=" * 70)
     print("CHECK 1: Output values for input grid")
@@ -47,14 +49,15 @@ def check_grid_values():
     print("-" * 50)
     for v in grid:
         s = _norm(v)
-        l = old_linear_norm(v)
-        print(f"{v:>8.2f} | {s:>10.4f} | {l:>10.4f} | {s - l:>+10.4f}")
+        old_val = old_linear_norm(v)
+        print(f"{v:>8.2f} | {s:>10.4f} | {old_val:>10.4f} | {s - old_val:>+10.4f}")
     print()
 
 
 # ---------------------------------------------------------------------------
 # Check 2: Monotonicity
 # ---------------------------------------------------------------------------
+
 
 def check_monotonicity():
     print("=" * 70)
@@ -81,6 +84,7 @@ def check_monotonicity():
 # ---------------------------------------------------------------------------
 # Check 3: Output range [0, 10]
 # ---------------------------------------------------------------------------
+
 
 def check_range():
     print("=" * 70)
@@ -115,6 +119,7 @@ def check_range():
 # Check 4: Effective spread
 # ---------------------------------------------------------------------------
 
+
 def check_spread():
     print("=" * 70)
     print("CHECK 4: Effective spread")
@@ -125,7 +130,7 @@ def check_spread():
     print(f"Old linear spread (0->5): {linear_spread:.2f}")
 
     # Sigmoid: spread between practical bounds
-    sig_min = _norm(0.5)   # low-but-nonzero input
+    sig_min = _norm(0.5)  # low-but-nonzero input
     sig_max = _norm(_CEILING)  # max input
     sig_spread = sig_max - sig_min
     print(f"Sigmoid spread (0.5->5):  {sig_spread:.2f}")
@@ -137,19 +142,19 @@ def check_spread():
     # Spread in the "interesting" middle range (1-4)
     sig_mid_spread = _norm(4) - _norm(1)
     lin_mid_spread = old_linear_norm(4) - old_linear_norm(1)
-    print(f"\nMid-range spread (1->4):")
+    print("\nMid-range spread (1->4):")
     print(f"  Sigmoid: {sig_mid_spread:.2f}")
     print(f"  Linear:  {lin_mid_spread:.2f}")
     print(f"  Ratio (sig/lin): {sig_mid_spread / lin_mid_spread:.2%}")
 
     # Compression ratio
-    print(f"\nCompression analysis:")
-    print(f"  Linear maps [0,5] -> [0,10] with slope 2.0 everywhere")
+    print("\nCompression analysis:")
+    print("  Linear maps [0,5] -> [0,10] with slope 2.0 everywhere")
     print(f"  Sigmoid maps [0,5] -> [0,{_norm(_CEILING):.2f}]")
     print(f"  Sigmoid 'loses' {10.0 - _norm(_CEILING):.2f} units of range")
 
     # Check derivative-like behavior: how much does _norm change per unit?
-    print(f"\nLocal sensitivity (delta_norm / delta_input):")
+    print("\nLocal sensitivity (delta_norm / delta_input):")
     for lo, hi in [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]:
         delta_out = _norm(hi) - _norm(lo)
         print(f"  [{lo},{hi}]: delta_out = {delta_out:.4f}  (linear would be 2.0)")
@@ -159,6 +164,7 @@ def check_spread():
 # ---------------------------------------------------------------------------
 # Check 5: Recommendation score sanity
 # ---------------------------------------------------------------------------
+
 
 def check_recommendation():
     print("=" * 70)

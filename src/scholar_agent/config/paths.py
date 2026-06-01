@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Mapping
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 APP_NAME = "scholar-agent"
 _SCHOLAR_HOME_DIR = "scholar"
@@ -63,8 +66,16 @@ def build_default_config(*, env: Mapping[str, str] | None = None, scholar_root: 
             "search": {
                 "sources": ["arxiv", "dblp", "semantic_scholar"],
                 "default_conferences": [
-                    "CVPR", "ICCV", "ECCV", "ICLR", "AAAI",
-                    "NeurIPS", "ICML", "ACL", "EMNLP", "MICCAI",
+                    "CVPR",
+                    "ICCV",
+                    "ECCV",
+                    "ICLR",
+                    "AAAI",
+                    "NeurIPS",
+                    "ICML",
+                    "ACL",
+                    "EMNLP",
+                    "MICCAI",
                 ],
                 "max_results": 20,
                 "date_range_days": 30,

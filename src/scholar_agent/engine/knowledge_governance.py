@@ -11,19 +11,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
+from scholar_agent.engine.common import resolve_link_target
 from scholar_agent.engine.knowledge_lifecycle import (
+    VALID_TRANSITIONS,
     LifecycleState,
     detect_duplicates,
     parse_frontmatter,
     scan_knowledge_dir,
     transition_card,
     validate_card,
-    VALID_TRANSITIONS,
 )
-from scholar_agent.engine.common import resolve_link_target
 from scholar_agent.engine.scholar_config import get_knowledge_dir
 
 DEFAULT_KNOWLEDGE_ROOT = get_knowledge_dir()
@@ -87,13 +86,13 @@ def cmd_scan(knowledge_root: Path) -> int:
         by_topic[topic] = by_topic.get(topic, 0) + 1
 
     print(f"Knowledge base: {len(cards)} cards in {knowledge_root}")
-    print(f"\nBy lifecycle status:")
+    print("\nBy lifecycle status:")
     for status, count in sorted(by_status.items()):
         print(f"  {status}: {count}")
-    print(f"\nBy type:")
+    print("\nBy type:")
     for card_type, count in sorted(by_type.items()):
         print(f"  {card_type}: {count}")
-    print(f"\nBy topic:")
+    print("\nBy topic:")
     for topic, count in sorted(by_topic.items()):
         print(f"  {topic}: {count}")
 
@@ -173,8 +172,8 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
       - Broken wiki-links (links pointing to non-existent cards)
       - Schema drift (frontmatter missing required fields)
     """
-    from datetime import datetime, timedelta, timezone
     import re
+    from datetime import datetime, timedelta, timezone
 
     cards = scan_knowledge_dir(knowledge_root)
     if not cards:
@@ -255,7 +254,6 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
 
     # Check for potential contradictions (cards with high textual overlap)
     if len(cards) >= 2:
-        from scholar_agent.engine.common import safe_slug
         titles = [(c.get("id", ""), c.get("title", "").lower().split()) for c in cards if c.get("title")]
         contradictions = []
         for i, (id_a, words_a) in enumerate(titles):
@@ -271,7 +269,9 @@ def cmd_lint(knowledge_root: Path, stale_days: int = 90) -> int:
                     contradictions.append((id_a, id_b, jaccard))
         if contradictions:
             total_issues += len(contradictions)
-            print(f"\n[OVERLAP] {len(contradictions)} card pair(s) with high title similarity (potential duplicates/contradictions):")
+            print(
+                f"\n[OVERLAP] {len(contradictions)} card pair(s) with high title similarity (potential duplicates/contradictions):"
+            )
             for id_a, id_b, score in contradictions:
                 print(f"  {id_a} <-> {id_b} (Jaccard: {score:.2f})")
 
@@ -293,7 +293,9 @@ def main() -> int:
     parser.add_argument("--card-id", help="Card ID for transition command.")
     parser.add_argument("--state", help="Target lifecycle state for transition.")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show warnings.")
-    parser.add_argument("--stale-days", type=int, default=90, help="Days after which a card is considered stale (default 90).")
+    parser.add_argument(
+        "--stale-days", type=int, default=90, help="Days after which a card is considered stale (default 90)."
+    )
 
     args = parser.parse_args()
 

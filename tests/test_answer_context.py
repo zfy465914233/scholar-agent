@@ -1,9 +1,9 @@
 import json
 import subprocess
-import tempfile
-from pathlib import Path
-import unittest
 import sys
+import tempfile
+import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,10 +15,19 @@ FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 class AnswerContextTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", "tests/fixtures", "--output", str(INDEX_PATH)],
+            [
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.local_index",
+                "--knowledge-root",
+                "tests/fixtures",
+                "--output",
+                str(INDEX_PATH),
+            ],
             cwd=_ROOT,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -29,7 +38,8 @@ class AnswerContextTest(unittest.TestCase):
     def test_answer_context_separates_direct_support_inference_and_uncertainty(self) -> None:
         command = [
             sys.executable,
-            "-m", "scholar_agent.engine.build_answer_context",
+            "-m",
+            "scholar_agent.engine.build_answer_context",
             "what is a markov chain",
             "--index",
             str(INDEX_PATH),
@@ -71,7 +81,8 @@ class AnswerContextTest(unittest.TestCase):
             build_index = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "scholar_agent.engine.local_index",
+                    "-m",
+                    "scholar_agent.engine.local_index",
                     "--knowledge-root",
                     str(empty_knowledge),
                     "--output",
@@ -79,14 +90,16 @@ class AnswerContextTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
             self.assertEqual(0, build_index.returncode, msg=build_index.stderr)
 
             result = subprocess.run(
                 [
                     sys.executable,
-                    "-m", "scholar_agent.engine.build_answer_context",
+                    "-m",
+                    "scholar_agent.engine.build_answer_context",
                     "what is qpe",
                     "--mode",
                     "local-led",
@@ -95,7 +108,8 @@ class AnswerContextTest(unittest.TestCase):
                 ],
                 cwd=_ROOT,
                 capture_output=True,
-                text=True, encoding="utf-8",
+                text=True,
+                encoding="utf-8",
             )
 
             self.assertEqual(0, result.returncode, msg=result.stderr)
@@ -131,7 +145,8 @@ class AnswerContextTest(unittest.TestCase):
         result = subprocess.run(
             [
                 sys.executable,
-                "-m", "scholar_agent.engine.build_answer_context",
+                "-m",
+                "scholar_agent.engine.build_answer_context",
                 "what is a markov chain",
                 "--mode",
                 "local-led",
@@ -142,7 +157,8 @@ class AnswerContextTest(unittest.TestCase):
             ],
             cwd=_ROOT,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         web_path.unlink(missing_ok=True)
 

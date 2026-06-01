@@ -1,7 +1,6 @@
 """V13: Search recall quality — verify query construction logic."""
-import sys, os
 
-from scholar_agent.engine.academic.arxiv_search import collect_hot_papers, _CATEGORY_PHRASES
+from scholar_agent.engine.academic.arxiv_search import _CATEGORY_PHRASES
 
 # ============================================================
 # Test 1: Query phrase construction from config domains
@@ -38,32 +37,32 @@ config = {
 
 # Replicate the phrase-building logic from collect_hot_papers
 phrases = []
-for domain_name, dcfg in config["research_domains"].items():
+for _domain_name, dcfg in config["research_domains"].items():
     kws = dcfg.get("keywords", [])
     cats = dcfg.get("arxiv_categories", [])
     if kws:
         query_parts = kws[:2]
-        if domain_name and len(query_parts) < 3:
-            query_parts.append(domain_name)
+        if _domain_name and len(query_parts) < 3:
+            query_parts.append(_domain_name)
         phrases.append(" ".join(query_parts))
     elif cats:
         phrases.extend(_CATEGORY_PHRASES.get(c, c) for c in cats[:2])
 
 print("\n--- Query Phrases Generated ---")
 for i, p in enumerate(phrases, 1):
-    print(f"  {i}. \"{p}\"")
+    print(f'  {i}. "{p}"')
 
 # Verify
 expected = [
     "deep learning neural network deep-learning",  # top 2 kw + domain_name
-    "language model text generation NLP",           # top 2 kw + domain_name
+    "language model text generation NLP",  # top 2 kw + domain_name
     "image recognition object detection computer-vision",  # top 2 kw + domain_name
-    "reinforcement-learning single-kw",              # 1 kw + domain_name (len < 3)
+    "reinforcement-learning single-kw",  # 1 kw + domain_name (len < 3)
 ]
 print("\n--- Verification ---")
-for i, (got, exp) in enumerate(zip(phrases, expected)):
+for i, (got, exp) in enumerate(zip(phrases, expected, strict=False)):
     match = "PASS" if got == exp else "FAIL"
-    print(f"  Query {i+1}: {match}")
+    print(f"  Query {i + 1}: {match}")
     if got != exp:
         print(f"    Expected: {exp}")
         print(f"    Got:      {got}")
@@ -73,14 +72,14 @@ for i, (got, exp) in enumerate(zip(phrases, expected)):
 # ============================================================
 print("\n--- OLD vs NEW Query Comparison ---")
 old_phrases = []
-for domain_name, dcfg in config["research_domains"].items():
+for _domain_name, dcfg in config["research_domains"].items():
     kws = dcfg.get("keywords", [])
     if kws:
         old_phrases.append(" ".join(kws[:3]))  # OLD: top 3 keywords
 
 print(f"{'Domain':<20} {'OLD (top 3 kw)':<45} {'NEW (top 2 kw + domain)':<45}")
 print("-" * 110)
-for (domain_name, dcfg), old_p in zip(config["research_domains"].items(), old_phrases):
+for (domain_name, dcfg), old_p in zip(config["research_domains"].items(), old_phrases, strict=False):
     kws = dcfg.get("keywords", [])
     new_parts = kws[:2]
     if domain_name and len(new_parts) < 3:
@@ -126,9 +125,9 @@ queries_with_domain = [
 for q in queries_with_domain:
     # Check: does the query contain meaningful search terms?
     parts = q.split()
-    meaningful = [p for p in parts if len(p) > 2 and "-" not in p or len(p) > 5]
+    meaningful = [p for p in parts if (len(p) > 2 and "-" not in p) or len(p) > 5]
     domain_parts = [p for p in parts if "-" in p]
-    print(f"  Query: \"{q}\"")
+    print(f'  Query: "{q}"')
     print(f"    Meaningful terms: {meaningful}")
     print(f"    Domain labels:    {domain_parts}")
     print(f"    Assessment:       {'GOOD' if len(meaningful) >= 2 else 'WEAK'}")

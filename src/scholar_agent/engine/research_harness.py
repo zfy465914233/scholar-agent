@@ -10,25 +10,25 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from scholar_agent.engine.cache_helper import get as cache_get
 from scholar_agent.engine.cache_helper import put as cache_put
 from scholar_agent.engine.common import now_iso
-from scholar_agent.engine.retry import retry_with_backoff
 from scholar_agent.engine.search_pipeline import run_search_pipeline
-from scholar_agent.engine.search_providers.base import SearchCandidate, SearchProvider
 from scholar_agent.engine.search_providers.self_hosted_provider import AcademicProvider
+
+if TYPE_CHECKING:
+    from scholar_agent.engine.search_providers.base import SearchCandidate, SearchProvider
 
 logger = logging.getLogger(__name__)
 
@@ -80,11 +80,13 @@ class TextExtractor(HTMLParser):
             attr_dict = dict(attrs)
             src = attr_dict.get("src", "")
             if src:
-                self.images.append({
-                    "url": src,
-                    "alt_text": attr_dict.get("alt", ""),
-                    "title": attr_dict.get("title", ""),
-                })
+                self.images.append(
+                    {
+                        "url": src,
+                        "alt_text": attr_dict.get("alt", ""),
+                        "title": attr_dict.get("title", ""),
+                    }
+                )
 
     def handle_endtag(self, tag: str) -> None:
         if tag in {"script", "style", "noscript"} and self._skip_depth > 0:
@@ -139,6 +141,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     from scholar_agent.engine.common import get_package_data_path
+
     schema = load_schema(get_package_data_path("schemas", "evidence.schema.json"))
 
     try:
@@ -173,7 +176,7 @@ def main() -> int:
 def run_discovery(
     query: str,
     depth: str,
-    limit: Optional[int],
+    limit: int | None,
     provider: SearchProvider | None = None,
     external_batch: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
@@ -209,17 +212,21 @@ def formulate_queries(query: str, depth: str) -> list[str]:
     year = datetime.now(timezone.utc).year
     variants = [query]
     if depth in {"medium", "deep"}:
-        variants.extend([
-            f"{query} latest",
-            f"{query} {year}",
-            f"{query} open source",
-        ])
+        variants.extend(
+            [
+                f"{query} latest",
+                f"{query} {year}",
+                f"{query} open source",
+            ]
+        )
     if depth == "deep":
-        variants.extend([
-            f"{query} comparison",
-            f"{query} benchmark",
-            f"{query} 综述",
-        ])
+        variants.extend(
+            [
+                f"{query} comparison",
+                f"{query} benchmark",
+                f"{query} 综述",
+            ]
+        )
     seen: set[str] = set()
     ordered: list[str] = []
     for item in variants:
@@ -372,25 +379,42 @@ def _is_decorative_image(img: dict[str, str]) -> bool:
     src = img.get("url", "").lower()
     alt = img.get("alt_text", "").lower()
     decorative_keywords = [
-        "icon", "logo", "badge", "spinner", "loading", "avatar",
-        "pixel", "tracker", "spacer", "bullet", "arrow",
+        "icon",
+        "logo",
+        "badge",
+        "spinner",
+        "loading",
+        "avatar",
+        "pixel",
+        "tracker",
+        "spacer",
+        "bullet",
+        "arrow",
     ]
     decorative_patterns = [
-        r"/icon", r"/logo", r"/badge", r"/favicon",
-        r"/spinner", r"/loading", r"/avatar", r"/pixel",
-        r"width[=:]\s*[01]\b", r"height[=:]\s*[01]\b",
-        r"\.svg$", r"1x1", r"blank\.",
+        r"/icon",
+        r"/logo",
+        r"/badge",
+        r"/favicon",
+        r"/spinner",
+        r"/loading",
+        r"/avatar",
+        r"/pixel",
+        r"width[=:]\s*[01]\b",
+        r"height[=:]\s*[01]\b",
+        r"\.svg$",
+        r"1x1",
+        r"blank\.",
     ]
     if alt in ("", " "):
         # No alt text — likely decorative, but keep if filename looks content-rich
-        if any(re.search(p, src) for p in [r"/chart", r"/diagram", r"/figure", r"/graph", r"/plot", r"/image", r"/photo", r"/screenshot"]):
-            return False
-        return True
+        return not any(
+            re.search(p, src)
+            for p in [r"/chart", r"/diagram", r"/figure", r"/graph", r"/plot", r"/image", r"/photo", r"/screenshot"]
+        )
     if any(kw in alt for kw in decorative_keywords):
         return True
-    if any(re.search(p, src) for p in decorative_patterns):
-        return True
-    return False
+    return bool(any(re.search(p, src) for p in decorative_patterns))
 
 
 def extract_title_from_cached(markdown: str) -> str:
@@ -438,7 +462,7 @@ def pick_evidence_spans(text: str, fallback: str) -> list[str]:
     return spans[:2]
 
 
-def score_evidence(source_type: str, published_at: Optional[str], retrieval_status: str) -> dict[str, float]:
+def score_evidence(source_type: str, published_at: str | None, retrieval_status: str) -> dict[str, float]:
     freshness = score_freshness(published_at)
     credibility_map = {
         "docs": 5,
@@ -469,7 +493,7 @@ def score_evidence(source_type: str, published_at: Optional[str], retrieval_stat
     }
 
 
-def score_freshness(published_at: Optional[str]) -> int:
+def score_freshness(published_at: str | None) -> int:
     if not published_at:
         return 0
     try:
@@ -522,9 +546,7 @@ def basic_validate_evidence_items(evidence: list[dict[str, Any]]) -> list[str]:
         if item.get("source_type") not in VALID_SOURCE_TYPES:
             errors.append(f"evidence[{index}].source_type: invalid value '{item.get('source_type')}'")
         if item.get("retrieval_status") not in VALID_RETRIEVAL_STATUS:
-            errors.append(
-                f"evidence[{index}].retrieval_status: invalid value '{item.get('retrieval_status')}'"
-            )
+            errors.append(f"evidence[{index}].retrieval_status: invalid value '{item.get('retrieval_status')}'")
         if item.get("confidence") not in VALID_CONFIDENCE:
             errors.append(f"evidence[{index}].confidence: invalid value '{item.get('confidence')}'")
     return errors
@@ -554,10 +576,7 @@ def fetch_batch_concurrent(
     """
     results: dict[str, dict[str, str]] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_url = {
-            executor.submit(fetch_content, url): url
-            for url in urls
-        }
+        future_to_url = {executor.submit(fetch_content, url): url for url in urls}
         for future in as_completed(future_to_url, timeout=60):
             url = future_to_url[future]
             try:

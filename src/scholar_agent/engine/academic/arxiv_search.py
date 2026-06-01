@@ -16,19 +16,22 @@ import re
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib import request as _url_lib
 
 from scholar_agent.engine.academic.scoring import score_papers
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
 try:
     import requests as _http
+
     _HAS_REQUESTS = True
 except ImportError:
     _HAS_REQUESTS = False
@@ -39,9 +42,7 @@ except ImportError:
 
 _S2_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 _S2_FIELDS = (
-    "externalIds,title,abstract,publicationDate,"
-    "influentialCitationCount,citationCount,url,"
-    "authors,authors.affiliations"
+    "externalIds,title,abstract,publicationDate,influentialCitationCount,citationCount,url,authors,authors.affiliations"
 )
 
 _ATOM_NS = {
@@ -69,10 +70,12 @@ _S2_KEY = os.environ.get("S2_API_KEY", "")
 # Config loader
 # ---------------------------------------------------------------------------
 
+
 def _load_config(config_path: str) -> dict[str, Any]:
     """Read a YAML research-interests file and return a config dict."""
     try:
         import yaml
+
         with open(config_path, encoding="utf-8") as fh:
             cfg = yaml.safe_load(fh) or {}
         global _S2_KEY
@@ -97,6 +100,7 @@ def _load_config(config_path: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Generic retry helper
 # ---------------------------------------------------------------------------
+
 
 def _with_retry(
     fn,
@@ -123,6 +127,7 @@ def _with_retry(
 # DateWindow dataclass
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class DateWindow:
     """Encapsulates the two date ranges used by the search pipeline."""
@@ -133,7 +138,7 @@ class DateWindow:
     year_end: datetime
 
     @classmethod
-    def from_target(cls, target: datetime | None = None) -> "DateWindow":
+    def from_target(cls, target: datetime | None = None) -> DateWindow:
         """Build windows relative to *target* (defaults to now)."""
         ref = target or datetime.now()
         return cls(
@@ -147,6 +152,7 @@ class DateWindow:
 # ---------------------------------------------------------------------------
 # PaperRecord dataclass — bulk XML extraction
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class PaperRecord:
@@ -182,7 +188,7 @@ class PaperRecord:
         }
 
     @classmethod
-    def from_atom_entry(cls, entry, ns: dict) -> "PaperRecord | None":
+    def from_atom_entry(cls, entry, ns: dict) -> PaperRecord | None:
         """Build a PaperRecord by bulk-extracting all child text into a flat dict.
 
         Instead of per-field find() calls, this collects all direct children
@@ -213,9 +219,7 @@ class PaperRecord:
         # Parse published date
         if rec.published:
             try:
-                rec.published_date = datetime.fromisoformat(
-                    rec.published.replace("Z", "+00:00")
-                )
+                rec.published_date = datetime.fromisoformat(rec.published.replace("Z", "+00:00"))
             except (ValueError, TypeError):
                 rec.published_date = None
 
@@ -235,9 +239,7 @@ class PaperRecord:
         rec.affiliations = affils
 
         # Categories from attributes
-        rec.categories = [
-            c.get("term") for c in entry.findall("a:category", ns) if c.get("term")
-        ]
+        rec.categories = [c.get("term") for c in entry.findall("a:category", ns) if c.get("term")]
 
         # PDF link from link elements
         for link in entry.findall("a:link", ns):
@@ -248,7 +250,7 @@ class PaperRecord:
         return rec
 
     @classmethod
-    def parse_feed(cls, xml_text: str) -> list["PaperRecord"]:
+    def parse_feed(cls, xml_text: str) -> list[PaperRecord]:
         """Parse a full Atom feed into a list of PaperRecord instances."""
         try:
             root = ET.fromstring(xml_text)
@@ -267,6 +269,7 @@ class PaperRecord:
 # arXiv search
 # ---------------------------------------------------------------------------
 
+
 def _fetch_arxiv_xml(url: str) -> str:
     """Fetch raw XML body from arXiv (single attempt, may raise)."""
     with _url_lib.urlopen(url, timeout=60) as resp:
@@ -282,10 +285,7 @@ def query_arxiv(
 ) -> list[dict[str, Any]]:
     """Fetch recent papers from arXiv Atom API."""
     cat_part = "+OR+".join(f"cat:{c}" for c in categories)
-    date_part = (
-        f"submittedDate:[{from_dt.strftime('%Y%m%d')}0000"
-        f"+TO+{to_dt.strftime('%Y%m%d')}2359]"
-    )
+    date_part = f"submittedDate:[{from_dt.strftime('%Y%m%d')}0000+TO+{to_dt.strftime('%Y%m%d')}2359]"
     url = (
         f"https://export.arxiv.org/api/query?"
         f"search_query=({cat_part})+AND+{date_part}&"
@@ -294,8 +294,11 @@ def query_arxiv(
     logger.info("arxiv query %s..%s", from_dt.date(), to_dt.date())
 
     body = _with_retry(
-        _fetch_arxiv_xml, url,
-        max_tries=retries, backoff_base=2, log_prefix="arxiv",
+        _fetch_arxiv_xml,
+        url,
+        max_tries=retries,
+        backoff_base=2,
+        log_prefix="arxiv",
     )
     if body is None:
         return []
@@ -306,6 +309,7 @@ def query_arxiv(
 # ---------------------------------------------------------------------------
 # Semantic Scholar search — functional pipeline
 # ---------------------------------------------------------------------------
+
 
 def _fetch_s2_json(url: str, params: dict, headers: dict) -> dict:
     """Fetch a single S2 API page (may raise)."""
@@ -390,8 +394,13 @@ def query_semantic_scholar(
     logger.info("s2 query '%s' range=%s..%s", phrase, from_dt.date(), to_dt.date())
 
     payload = _with_retry(
-        _fetch_s2_json, _S2_SEARCH_URL, params, hdrs,
-        max_tries=retries, backoff_base=2, log_prefix="s2",
+        _fetch_s2_json,
+        _S2_SEARCH_URL,
+        params,
+        hdrs,
+        max_tries=retries,
+        backoff_base=2,
+        log_prefix="s2",
     )
     if payload is None:
         return []
@@ -404,6 +413,7 @@ def query_semantic_scholar(
 # ---------------------------------------------------------------------------
 # Concurrent hot-paper sweep
 # ---------------------------------------------------------------------------
+
 
 def collect_hot_papers(
     categories: list[str],
@@ -471,9 +481,11 @@ def collect_hot_papers(
 # Pluggable pipeline
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class _PipelineStep:
     """A single stage in the search pipeline."""
+
     name: str
     execute: Callable[[], list[dict[str, Any]]]
     is_hot: bool = False
@@ -514,18 +526,22 @@ def search_and_score(
     ]
 
     if not skip_hot:
-        steps.append(_PipelineStep(
-            name="hot_papers",
-            execute=lambda: collect_hot_papers(categories, dw.year_start, dw.year_end, per_cat=5, config=config),
-            is_hot=True,
-        ))
+        steps.append(
+            _PipelineStep(
+                name="hot_papers",
+                execute=lambda: collect_hot_papers(categories, dw.year_start, dw.year_end, per_cat=5, config=config),
+                is_hot=True,
+            )
+        )
 
     if query and query.strip():
-        steps.append(_PipelineStep(
-            name="user_query",
-            execute=lambda: query_semantic_scholar(query.strip(), dw.year_start, dw.year_end, top_k=10),
-            is_hot=True,
-        ))
+        steps.append(
+            _PipelineStep(
+                name="user_query",
+                execute=lambda: query_semantic_scholar(query.strip(), dw.year_start, dw.year_end, top_k=10),
+                is_hot=True,
+            )
+        )
 
     # Execute each step and score
     scored: list[dict[str, Any]] = []

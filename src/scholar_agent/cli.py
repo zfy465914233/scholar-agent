@@ -10,18 +10,20 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import TYPE_CHECKING
 
-from scholar_agent.engine import scholar_config
-
+from scholar_agent import runtime as runtime_manager
+from scholar_agent.adapters import mcp_server as mcp_adapter
 from scholar_agent.config.loader import resolve_config
 from scholar_agent.config.manager import initialize_user_home, migrate_to_user_home
 from scholar_agent.config.paths import get_user_config_path, get_user_home
-from scholar_agent.adapters import mcp_server as mcp_adapter
+from scholar_agent.engine import scholar_config
 from scholar_agent.installers import claude as claude_installer
 from scholar_agent.installers import opencode as opencode_installer
 from scholar_agent.installers import vscode as vscode_installer
-from scholar_agent import runtime as runtime_manager
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 
 def _append_text_lines(lines: list[str], key: str, value: object, *, indent: str = "") -> None:
@@ -431,7 +433,9 @@ def _format_doctor_text(payload: dict[str, object]) -> str:
             icon = "ok" if ok else "MISSING"
             lines.append(f"  {name}: {icon}")
             if not ok and name == "PyMuPDF":
-                problems.append("PyMuPDF not installed — PDF image extraction will not work. Install with: pip install PyMuPDF")
+                problems.append(
+                    "PyMuPDF not installed — PDF image extraction will not work. Install with: pip install PyMuPDF"
+                )
             if not ok and name == "fastmcp":
                 problems.append("fastmcp not found — MCP server will not start. Install with: pip install -e .")
 
@@ -457,7 +461,9 @@ def _format_doctor_text(payload: dict[str, object]) -> str:
         lines.append(f"  python -m scholar_agent.cli: {'ok' if module_ok else 'BROKEN'}")
         lines.append(f"  python: {exe_info.get('python_executable', '?')}")
         if not module_ok:
-            problems.append("scholar_agent.cli module not importable — MCP server will not start. Reinstall with: pip install -e .")
+            problems.append(
+                "scholar_agent.cli module not importable — MCP server will not start. Reinstall with: pip install -e ."
+            )
 
     # Directory checks
     checks = payload.get("checks", [])
@@ -472,11 +478,11 @@ def _format_doctor_text(payload: dict[str, object]) -> str:
             if name == "index":
                 valid = c.get("valid", False)
                 if not exists:
-                    lines.append(f"  index: not found (will build on first query)")
+                    lines.append("  index: not found (will build on first query)")
                 elif not valid:
-                    lines.append(f"  index: empty (will rebuild on first query)")
+                    lines.append("  index: empty (will rebuild on first query)")
                 else:
-                    lines.append(f"  index: ok")
+                    lines.append("  index: ok")
             else:
                 writable = c.get("writable", False)
                 icon = "ok" if exists and writable else "MISSING" if not exists else "NOT WRITABLE"
@@ -514,8 +520,7 @@ def _run_doctor(output_format: str) -> int:
     _print_payload(payload, output_format, text_formatter=_format_doctor_text)
     checks = payload.get("checks", [])
     has_problem = any(
-        not isinstance(c, dict) or (not c.get("exists", True) and c.get("check") != "index")
-        for c in checks
+        not isinstance(c, dict) or (not c.get("exists", True) and c.get("check") != "index") for c in checks
     )
     deps = payload.get("dependencies", {})
     if isinstance(deps, dict) and not all(deps.values()):
@@ -725,6 +730,7 @@ def _run_init(
     try:
         from scholar_agent.engine.local_index import write_index
         from scholar_agent.engine.scholar_config import load_config
+
         knowledge_dir = Path(load_config()["knowledge_dir"])
         index_path = Path(load_config()["index_path"])
         write_index(knowledge_dir, index_path)
@@ -746,13 +752,18 @@ def _run_init(
             try:
                 if h == "claude":
                     result = claude_installer.install_user_config(
-                        academic=academic, scope=scope,
+                        academic=academic,
+                        scope=scope,
                         scholar_home=scholar_home_env or None,
                     )
                 elif h == "vscode":
-                    result = vscode_installer.write_user_config(academic=academic, scholar_home=scholar_home_env or None)
+                    result = vscode_installer.write_user_config(
+                        academic=academic, scholar_home=scholar_home_env or None
+                    )
                 elif h == "opencode":
-                    result = opencode_installer.write_user_config(academic=academic, scholar_home=scholar_home_env or None)
+                    result = opencode_installer.write_user_config(
+                        academic=academic, scholar_home=scholar_home_env or None
+                    )
                 else:
                     continue
                 register_results.append(result)
@@ -773,15 +784,15 @@ def _run_init(
         print("=== Scholar Agent Setup Complete ===")
         print()
         print(f"Data directory: {user_home}")
-        print(f"  config/        - Configuration files")
-        print(f"  knowledge/     - Knowledge cards")
-        print(f"  paper-notes/   - Paper analysis notes")
-        print(f"  daily-notes/   - Daily paper recommendations")
-        print(f"  indexes/       - BM25 search index")
+        print("  config/        - Configuration files")
+        print("  knowledge/     - Knowledge cards")
+        print("  paper-notes/   - Paper analysis notes")
+        print("  daily-notes/   - Daily paper recommendations")
+        print("  indexes/       - BM25 search index")
         if index_built:
-            print(f"  (Search index initialized)")
+            print("  (Search index initialized)")
         else:
-            print(f"  (Index will be built on first query)")
+            print("  (Index will be built on first query)")
         print()
         if register_results:
             has_error = False
@@ -790,8 +801,8 @@ def _run_init(
                     print(f"MCP registered: {r.get('host', 'unknown')} ({r.get('scope', 'user')} scope)")
                 elif r.get("status") == "error":
                     has_error = True
-                    host_name = r.get('host', 'unknown')
-                    msg = r.get('message', 'unknown error')
+                    host_name = r.get("host", "unknown")
+                    msg = r.get("message", "unknown error")
                     print(f"MCP registration ({host_name}): {msg}")
             if has_error:
                 print()
@@ -874,7 +885,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.runtime_command == "build-wheel":
             return _run_runtime_build_wheel(source=args.source, output_dir=args.output_dir, output_format=args.format)
         if args.runtime_command == "install-standalone":
-            return _run_runtime_install_standalone(source=args.source, with_deps=args.with_deps, output_format=args.format)
+            return _run_runtime_install_standalone(
+                source=args.source, with_deps=args.with_deps, output_format=args.format
+            )
         if args.runtime_command == "install-pipx":
             return _run_runtime_install_pipx(
                 source=args.source,

@@ -8,9 +8,8 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
 
-FORBIDDEN_PATTERNS: List[Tuple[str, str]] = [
+FORBIDDEN_PATTERNS: list[tuple[str, str]] = [
     (r"status\s*:\s*skeleton\b", "skeleton_status"),
     (r"\[SCORE\]\s*/\s*10", "placeholder_score"),
     (r"<!--\s*LLM:", "llm_placeholder_comment"),
@@ -51,7 +50,10 @@ MIN_SECTION_CHARS = 24
 _LATEX_INLINE = re.compile(r"(?<!\$)\$(?!\$).+?\$(?!\$)")
 _LATEX_BLOCK = re.compile(r"\$\$.+?\$\$", re.DOTALL)
 _LATEX_ENV = re.compile(r"\\begin\{(?:equation|align|gather|multline|eqnarray)")
-_MATH_SYMBOL_TABLE = re.compile(r"\|.*\$.*\\(?:alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|mathbb|mathcal|boldsymbol|x?hat|bar|tilde).*\$\s*\|", re.IGNORECASE)
+_MATH_SYMBOL_TABLE = re.compile(
+    r"\|.*\$.*\\(?:alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|mathbb|mathcal|boldsymbol|x?hat|bar|tilde).*\$\s*\|",
+    re.IGNORECASE,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -96,9 +98,9 @@ def load_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def split_frontmatter(text: str) -> Tuple[Dict[str, str], str, List[str]]:
-    errors: List[str] = []
-    metadata: Dict[str, str] = {}
+def split_frontmatter(text: str) -> tuple[dict[str, str], str, list[str]]:
+    errors: list[str] = []
+    metadata: dict[str, str] = {}
     body = text
     if not text.startswith("---\n"):
         return metadata, body, errors
@@ -118,7 +120,7 @@ def split_frontmatter(text: str) -> Tuple[Dict[str, str], str, List[str]]:
         match = re.match(r"^([A-Za-z0-9_-]+):\s*(.*)$", line)
         if match:
             key, value = match.groups()
-            metadata[key] = value.strip().strip('"\'')
+            metadata[key] = value.strip().strip("\"'")
 
     duplicate_pattern = re.compile(r"(?m)^---\n[A-Za-z0-9_-]+:\s")
     if duplicate_pattern.search(body):
@@ -127,9 +129,9 @@ def split_frontmatter(text: str) -> Tuple[Dict[str, str], str, List[str]]:
     return metadata, body, errors
 
 
-def extract_sections(body: str) -> Dict[str, str]:
+def extract_sections(body: str) -> dict[str, str]:
     matches = list(re.finditer(r"(?m)^(#{1,6})\s+(.+?)\s*$", body))
-    sections: Dict[str, str] = {}
+    sections: dict[str, str] = {}
     if not matches:
         return sections
 
@@ -142,7 +144,7 @@ def extract_sections(body: str) -> Dict[str, str]:
     return sections
 
 
-def find_section(sections: Dict[str, str], aliases: List[str]) -> Tuple[str | None, str | None]:
+def find_section(sections: dict[str, str], aliases: list[str]) -> tuple[str | None, str | None]:
     for title, content in sections.items():
         lowered = title.lower()
         for alias in aliases:
@@ -159,16 +161,16 @@ def has_substantive_text(text: str) -> bool:
     return len(letters) >= max(12, MIN_SECTION_CHARS // 2)
 
 
-def collect_forbidden_errors(text: str) -> List[str]:
-    errors: List[str] = []
+def collect_forbidden_errors(text: str) -> list[str]:
+    errors: list[str] = []
     for pattern, name in FORBIDDEN_PATTERNS:
         if re.search(pattern, text, flags=re.IGNORECASE):
             errors.append(name)
     return errors
 
 
-def collect_unknown_metadata_errors(metadata: Dict[str, str]) -> List[str]:
-    errors: List[str] = []
+def collect_unknown_metadata_errors(metadata: dict[str, str]) -> list[str]:
+    errors: list[str] = []
     for key, value in metadata.items():
         normalized = value.strip().lower()
         if normalized in UNKNOWN_VALUES:
@@ -177,13 +179,13 @@ def collect_unknown_metadata_errors(metadata: Dict[str, str]) -> List[str]:
 
 
 def validate_core_sections(
-    sections: Dict[str, str],
+    sections: dict[str, str],
     dataset_policy: str,
     body: str,
-) -> Tuple[List[str], List[str], Dict[str, str]]:
-    errors: List[str] = []
-    warnings: List[str] = []
-    resolved: Dict[str, str] = {}
+) -> tuple[list[str], list[str], dict[str, str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    resolved: dict[str, str] = {}
 
     keys = ["motivation", "method", "dataset", "findings", "limitations"]
     if dataset_policy == "fallback":
@@ -244,16 +246,15 @@ def count_quantitative_results(text: str) -> int:
     return len(pattern.findall(text))
 
 
-def type_specific_checks(paper_type: str, sections: Dict[str, str], resolved: Dict[str, str]) -> List[str]:
-    errors: List[str] = []
+def type_specific_checks(paper_type: str, sections: dict[str, str], resolved: dict[str, str]) -> list[str]:
+    errors: list[str] = []
     combined = "\n".join(sections.values())
     findings_text = ""
     if "findings" in resolved:
         findings_text = sections[resolved["findings"]]
 
-    if paper_type == "empirical":
-        if count_quantitative_results(findings_text or combined) < 2:
-            errors.append("empirical_requires_two_quantitative_results")
+    if paper_type == "empirical" and count_quantitative_results(findings_text or combined) < 2:
+        errors.append("empirical_requires_two_quantitative_results")
 
     if paper_type == "theory":
         theory_markers = ["问题定义", "problem definition", "assumption", "假设", "theorem", "命题", "mechanism"]
@@ -278,8 +279,8 @@ def type_specific_checks(paper_type: str, sections: Dict[str, str], resolved: Di
     return errors
 
 
-def provenance_checks(metadata: Dict[str, str], body: str) -> List[str]:
-    errors: List[str] = []
+def provenance_checks(metadata: dict[str, str], body: str) -> list[str]:
+    errors: list[str] = []
     source_keys = {"pdf_path", "source_pdf", "arxiv_id", "paper_id", "doi"}
     has_source_key = any(key in metadata and metadata[key].strip() for key in source_keys)
     evidence_pattern = re.compile(
@@ -293,9 +294,9 @@ def provenance_checks(metadata: Dict[str, str], body: str) -> List[str]:
     return errors
 
 
-def math_depth_checks(metadata: Dict[str, str], body: str, sections: Dict[str, str]) -> List[str]:
+def math_depth_checks(metadata: dict[str, str], body: str, sections: dict[str, str]) -> list[str]:
     """Check that math-heavy papers have LaTeX formulas in the note."""
-    errors: List[str] = []
+    errors: list[str] = []
     math_depth = metadata.get("math_depth", "").strip().lower()
 
     if math_depth not in ("heavy", "light"):
@@ -316,7 +317,9 @@ def math_depth_checks(metadata: Dict[str, str], body: str, sections: Dict[str, s
             for title, content in sections.items():
                 if any(kw in title.lower() for kw in ["method", "方法", "模块"]):
                     method_text += content
-            symbol_inline = re.compile(r"\$\\\\(?:alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|mathbb|mathcal|x?hat)\$")
+            symbol_inline = re.compile(
+                r"\$\\\\(?:alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|mathbb|mathcal|x?hat)\$"
+            )
             if not symbol_inline.search(method_text):
                 errors.append("heavy_math_requires_symbol_definitions")
 
@@ -327,9 +330,9 @@ def math_depth_checks(metadata: Dict[str, str], body: str, sections: Dict[str, s
     return errors
 
 
-def image_checks(metadata: Dict[str, str], body: str) -> List[str]:
+def image_checks(metadata: dict[str, str], body: str) -> list[str]:
     """Check that notes with images directory have embedded image references."""
-    warnings: List[str] = []
+    warnings: list[str] = []
     # Check if images directory exists relative to the note
     # This is a soft check — just warn if no image embeds found
     has_image_embed = bool(re.search(r"!\[\[images/", body))
@@ -340,9 +343,9 @@ def image_checks(metadata: Dict[str, str], body: str) -> List[str]:
     return warnings
 
 
-def content_density_checks(sections: Dict[str, str], paper_type: str) -> List[str]:
+def content_density_checks(sections: dict[str, str], paper_type: str) -> list[str]:
     """Check that core sections have substantive content, not just bullet points."""
-    errors: List[str] = []
+    errors: list[str] = []
 
     for key in ("method", "findings"):
         for title, content in sections.items():
@@ -351,7 +354,8 @@ def content_density_checks(sections: Dict[str, str], paper_type: str) -> List[st
                 # Method section should have at least one paragraph of prose
                 paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
                 prose_paragraphs = [
-                    p for p in paragraphs
+                    p
+                    for p in paragraphs
                     if not p.startswith("|")  # not a table
                     and not p.startswith("#")  # not a heading
                     and not p.startswith("-")  # not a list
@@ -365,11 +369,9 @@ def content_density_checks(sections: Dict[str, str], paper_type: str) -> List[st
                 has_table = bool(re.search(r"\|.+\|.+\|", content))
                 paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
                 prose_paragraphs = [
-                    p for p in paragraphs
-                    if not p.startswith("|")
-                    and not p.startswith("#")
-                    and not p.startswith("<!")
-                    and len(p) > 50
+                    p
+                    for p in paragraphs
+                    if not p.startswith("|") and not p.startswith("#") and not p.startswith("<!") and len(p) > 50
                 ]
                 if not has_table and len(prose_paragraphs) < 1:
                     errors.append("findings_section_lacks_substance")
@@ -392,13 +394,10 @@ def main() -> int:
 
     effective_dataset_policy = args.dataset_policy
     if args.dataset_policy == "auto":
-        if args.paper_type in {"empirical", "benchmark"}:
-            effective_dataset_policy = "required"
-        else:
-            effective_dataset_policy = "fallback"
+        effective_dataset_policy = "required" if args.paper_type in {"empirical", "benchmark"} else "fallback"
 
-    errors: List[str] = []
-    warnings: List[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
     errors.extend(frontmatter_errors)
     errors.extend(collect_forbidden_errors(text))
     errors.extend(collect_unknown_metadata_errors(metadata))

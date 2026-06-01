@@ -7,7 +7,6 @@ import json
 import sys
 from pathlib import Path
 
-
 SYSTEM_PROMPT = """You are a knowledge synthesis engine for scholar-agent. Produce structured answers from evidence.
 
 Core principles:

@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Tests for _propose_new_major_domain and infer_domain_decision domain_override."""
 
-import os
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-
 
 from scholar_agent.engine.domain_router import _propose_new_major_domain, infer_domain_decision
 
@@ -80,7 +78,9 @@ class TestDomainOverride:
 
     def test_override_skips_routing(self):
         result = infer_domain_decision(
-            "some query", self.knowledge_root, use_ai_fallback=False,
+            "some query",
+            self.knowledge_root,
+            use_ai_fallback=False,
             domain_override="quant-backtest",
         )
         assert result["major_domain"] == "quant-backtest"
@@ -88,28 +88,36 @@ class TestDomainOverride:
 
     def test_override_empty_falls_through(self):
         result = infer_domain_decision(
-            "machine learning", self.knowledge_root, use_ai_fallback=False,
+            "machine learning",
+            self.knowledge_root,
+            use_ai_fallback=False,
             domain_override="",
         )
         assert result["decision_mode"] != "domain_override"
 
     def test_override_none_falls_through(self):
         result = infer_domain_decision(
-            "machine learning", self.knowledge_root, use_ai_fallback=False,
+            "machine learning",
+            self.knowledge_root,
+            use_ai_fallback=False,
             domain_override=None,
         )
         assert result["decision_mode"] != "domain_override"
 
     def test_override_creates_directory(self):
         infer_domain_decision(
-            "test query", self.knowledge_root, use_ai_fallback=False,
+            "test query",
+            self.knowledge_root,
+            use_ai_fallback=False,
             domain_override="new-domain",
         )
         assert (self.knowledge_root / "new-domain").is_dir()
 
     def test_override_whitespace_trimmed(self):
         result = infer_domain_decision(
-            "test query", self.knowledge_root, use_ai_fallback=False,
+            "test query",
+            self.knowledge_root,
+            use_ai_fallback=False,
             domain_override="  my-domain  ",
         )
         assert result["major_domain"] == "my-domain"
@@ -117,4 +125,5 @@ class TestDomainOverride:
 
 if __name__ == "__main__":
     import pytest
+
     pytest.main([__file__, "-v"])

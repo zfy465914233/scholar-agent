@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import requests as _requests
+
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
@@ -30,12 +31,14 @@ except ImportError:
 
 from dataclasses import dataclass
 
+
 @dataclass(frozen=True)
 class _VenueSpec:
     """DBLP venue specification with optional TOC path and arXiv categories."""
-    dblp_prefix: str          # e.g. "conf/cvpr"
-    toc_fmt: str | None       # e.g. "cvpr{year}" — None means use venue_query
-    venue_label: str          # e.g. "CVPR" — used in venue:year queries
+
+    dblp_prefix: str  # e.g. "conf/cvpr"
+    toc_fmt: str | None  # e.g. "cvpr{year}" — None means use venue_query
+    venue_label: str  # e.g. "CVPR" — used in venue:year queries
     arxiv_cats: tuple[str, ...] = ()
 
     def toc_path(self, year: int) -> str | None:
@@ -43,17 +46,18 @@ class _VenueSpec:
             return None
         return f"toc:db/{self.dblp_prefix}/{self.toc_fmt.format(year=year)}.bht:"
 
+
 _CONF_CATALOG: dict[str, _VenueSpec] = {
-    "CVPR":    _VenueSpec("conf/cvpr",   "cvpr{year}",    "CVPR",    ("cs.CV",)),
-    "ICCV":    _VenueSpec("conf/iccv",   "iccv{year}",    "ICCV",    ("cs.CV",)),
-    "ECCV":    _VenueSpec("conf/eccv",   None,            "ECCV",    ("cs.CV",)),
-    "ICLR":    _VenueSpec("conf/iclr",   "iclr{year}",    "ICLR",    ("cs.LG", "cs.AI")),
-    "AAAI":    _VenueSpec("conf/aaai",   "aaai{year}",    "AAAI",    ("cs.AI",)),
-    "NeurIPS": _VenueSpec("conf/nips",   "neurips{year}", "NeurIPS", ("cs.LG", "cs.AI", "cs.CL")),
-    "ICML":    _VenueSpec("conf/icml",   "icml{year}",    "ICML",    ("cs.LG",)),
-    "MICCAI":  _VenueSpec("conf/miccai", None,            "MICCAI",  ("cs.CV", "eess.IV")),
-    "ACL":     _VenueSpec("conf/acl",    "acl{year}",     "ACL",     ("cs.CL",)),
-    "EMNLP":   _VenueSpec("conf/emnlp",  None,            "EMNLP",   ("cs.CL",)),
+    "CVPR": _VenueSpec("conf/cvpr", "cvpr{year}", "CVPR", ("cs.CV",)),
+    "ICCV": _VenueSpec("conf/iccv", "iccv{year}", "ICCV", ("cs.CV",)),
+    "ECCV": _VenueSpec("conf/eccv", None, "ECCV", ("cs.CV",)),
+    "ICLR": _VenueSpec("conf/iclr", "iclr{year}", "ICLR", ("cs.LG", "cs.AI")),
+    "AAAI": _VenueSpec("conf/aaai", "aaai{year}", "AAAI", ("cs.AI",)),
+    "NeurIPS": _VenueSpec("conf/nips", "neurips{year}", "NeurIPS", ("cs.LG", "cs.AI", "cs.CL")),
+    "ICML": _VenueSpec("conf/icml", "icml{year}", "ICML", ("cs.LG",)),
+    "MICCAI": _VenueSpec("conf/miccai", None, "MICCAI", ("cs.CV", "eess.IV")),
+    "ACL": _VenueSpec("conf/acl", "acl{year}", "ACL", ("cs.CL",)),
+    "EMNLP": _VenueSpec("conf/emnlp", None, "EMNLP", ("cs.CL",)),
 }
 
 _S2_SEARCH_ENDPOINT = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -70,8 +74,9 @@ def _load_s2_key() -> str:
         return _S2_KEY
     try:
         import yaml
-        from pathlib import Path
+
         from scholar_agent.engine.common import get_package_data_path
+
         cfg_path = get_package_data_path("config_data", "config.yaml")
         if cfg_path.exists():
             cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
@@ -85,6 +90,7 @@ def _load_s2_key() -> str:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _fingerprint(text: str) -> str:
     """Normalize text for dedup comparison via slugify."""
     return re.sub(r"[-\s]+", "-", re.sub(r"[^a-z0-9\s-]", "", text.lower())).strip("-")
@@ -92,8 +98,10 @@ def _fingerprint(text: str) -> str:
 
 def _dice_title_overlap(a: str, b: str) -> float:
     """Dice coefficient on normalized title words."""
+
     def _norm(s: str) -> set[str]:
         return set(re.sub(r"[^a-z0-9\s]", "", s.lower()).strip().split())
+
     wa = _norm(a)
     wb = _norm(b)
     if not wa or not wb:
@@ -105,6 +113,7 @@ def _dice_title_overlap(a: str, b: str) -> float:
 # ---------------------------------------------------------------------------
 # DBLP: separated query builder, fetcher, parser
 # ---------------------------------------------------------------------------
+
 
 def _build_dblp_url(venue_key: str, year: int, offset: int, batch_size: int) -> str | None:
     """Build a DBLP API URL for a given venue/year/offset."""
@@ -133,7 +142,7 @@ def _fetch_dblp_page(url: str, max_retries: int = 3) -> dict | None:
         except Exception as e:
             logger.warning("dblp request failed try %d/%d: %s", attempt + 1, max_retries, e)
             if attempt < max_retries - 1:
-                time.sleep(int(1.5 ** attempt * 4))
+                time.sleep(int(1.5**attempt * 4))
     return None
 
 
@@ -161,17 +170,19 @@ def _parse_dblp_hits(data: dict, venue_key: str, year: int) -> tuple[list[dict[s
             raw_authors = [raw_authors]
         author_names = [a.get("text", "") for a in raw_authors if a.get("text")]
 
-        papers.append({
-            "title": title,
-            "authors": author_names,
-            "year": int(info.get("year", year)),
-            "conference": venue_key,
-            "doi": info.get("doi", ""),
-            "venue": info.get("venue", venue_key),
-            "categories": list(spec.arxiv_cats) if spec else [],
-            "dblp_url": info.get("url", ""),
-            "source": "dblp",
-        })
+        papers.append(
+            {
+                "title": title,
+                "authors": author_names,
+                "year": int(info.get("year", year)),
+                "conference": venue_key,
+                "doi": info.get("doi", ""),
+                "venue": info.get("venue", venue_key),
+                "categories": list(spec.arxiv_cats) if spec else [],
+                "dblp_url": info.get("url", ""),
+                "source": "dblp",
+            }
+        )
 
     return papers, total
 
@@ -244,6 +255,7 @@ def gather_venue_papers(
 # Semantic Scholar: two-phase enrichment
 # ---------------------------------------------------------------------------
 
+
 def _batch_search_s2(
     titles: list[str],
     headers: dict,
@@ -290,7 +302,7 @@ def _batch_search_s2(
                     logger.warning("s2 throttled...")
                     time.sleep(_S2_THROTTLE)
                 elif attempt < 2:
-                    time.sleep(2 ** attempt)
+                    time.sleep(2**attempt)
 
     return cache
 
@@ -384,6 +396,7 @@ def enrich_paper_batch(papers: list[dict[str, Any]], max_retries: int = 3) -> li
 # Conference search pipeline
 # ---------------------------------------------------------------------------
 
+
 def search_and_score_conferences(
     config: dict[str, Any],
     year: int,
@@ -431,6 +444,7 @@ def search_and_score_conferences(
 # ---------------------------------------------------------------------------
 # Multi-year conference search (for daily_recommend dual-track)
 # ---------------------------------------------------------------------------
+
 
 def search_conferences_multi_year(
     config: dict[str, Any],

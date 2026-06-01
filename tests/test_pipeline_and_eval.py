@@ -2,9 +2,9 @@
 
 import json
 import subprocess
+import sys
 import unittest
 from pathlib import Path
-import sys
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -17,9 +17,18 @@ def _ensure_index() -> None:
     if INDEX_PATH.exists():
         return
     result = subprocess.run(
-        [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", str(_ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
+        [
+            sys.executable,
+            "-m",
+            "scholar_agent.engine.local_index",
+            "--knowledge-root",
+            str(_ROOT / "tests" / "fixtures"),
+            "--output",
+            str(INDEX_PATH),
+        ],
         capture_output=True,
-        text=True, encoding="utf-8",
+        text=True,
+        encoding="utf-8",
     )
     assert result.returncode == 0, f"Index build failed: {result.stderr}"
 
@@ -34,15 +43,21 @@ class PipelineDryRunTest(unittest.TestCase):
     def test_pipeline_dry_run_local_led(self) -> None:
         result = subprocess.run(
             [
-                sys.executable, "-m", "scholar_agent.engine.run_pipeline",
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.run_pipeline",
                 "what is a markov chain",
-                "--mode", "auto",
-                "--index", str(INDEX_PATH),
-                "--research-script", str(FAKE_HARNESS),
+                "--mode",
+                "auto",
+                "--index",
+                str(INDEX_PATH),
+                "--research-script",
+                str(FAKE_HARNESS),
                 "--dry-run",
             ],
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -57,15 +72,21 @@ class PipelineDryRunTest(unittest.TestCase):
     def test_pipeline_dry_run_web_led(self) -> None:
         result = subprocess.run(
             [
-                sys.executable, "-m", "scholar_agent.engine.run_pipeline",
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.run_pipeline",
                 "latest SOTA quantization methods",
-                "--mode", "auto",
-                "--index", str(INDEX_PATH),
-                "--research-script", str(FAKE_HARNESS),
+                "--mode",
+                "auto",
+                "--index",
+                str(INDEX_PATH),
+                "--research-script",
+                str(FAKE_HARNESS),
                 "--dry-run",
             ],
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -74,15 +95,20 @@ class PipelineDryRunTest(unittest.TestCase):
     def test_pipeline_keep_intermediate(self) -> None:
         result = subprocess.run(
             [
-                sys.executable, "-m", "scholar_agent.engine.run_pipeline",
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.run_pipeline",
                 "what is a markov chain",
-                "--mode", "local-led",
-                "--index", str(INDEX_PATH),
+                "--mode",
+                "local-led",
+                "--index",
+                str(INDEX_PATH),
                 "--dry-run",
                 "--keep-intermediate",
             ],
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         payload = json.loads(result.stdout)
@@ -102,7 +128,8 @@ class EvalRunnerTest(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, "-m", "scholar_agent.engine.run_eval", "--dry-run"],
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         report = json.loads(result.stdout)
@@ -117,7 +144,8 @@ class EvalRunnerTest(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, "-m", "scholar_agent.engine.run_eval", "--dry-run", "--category", "definition"],
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         report = json.loads(result.stdout)
@@ -129,7 +157,8 @@ class EvalRunnerTest(unittest.TestCase):
         result = subprocess.run(
             [sys.executable, "-m", "scholar_agent.engine.run_eval", "--dry-run"],
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
         report = json.loads(result.stdout)

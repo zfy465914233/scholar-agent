@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 from scholar_agent.engine.common import parse_frontmatter
 
-
 # ---------------------------------------------------------------------------
 # Already-read dedup
 # ---------------------------------------------------------------------------
+
 
 def get_analyzed_paper_ids(paper_notes_dir: str) -> set[str]:
     """Scan paper-notes/ for already-analyzed arxiv IDs."""
@@ -66,10 +66,13 @@ def filter_already_analyzed(
 # Diversity helpers
 # ---------------------------------------------------------------------------
 
+
 def _title_word_overlap(title_a: str, title_b: str) -> float:
     """Jaccard overlap of normalized title words."""
+
     def _words(s: str) -> set[str]:
         return set(re.sub(r"[^a-z0-9\s]", "", s.lower()).split())
+
     wa = _words(title_a)
     wb = _words(title_b)
     if not wa or not wb:
@@ -94,6 +97,7 @@ def _diversity_filter(papers: list[dict[str, Any]], top_n: int = 2, threshold: f
 # ---------------------------------------------------------------------------
 # Dual-track recommendation
 # ---------------------------------------------------------------------------
+
 
 def _generate_track_conference(
     config: dict[str, Any],
@@ -141,7 +145,7 @@ def _generate_track_arxiv_innovation(
 ) -> dict[str, Any]:
     """Track 2: arXiv innovation papers — heuristic + LLM batch scoring."""
     from scholar_agent.engine.academic.arxiv_search import query_arxiv
-    from scholar_agent.engine.academic.innovation_scorer import innovation_pre_filter, innovation_llm_batch_score
+    from scholar_agent.engine.academic.innovation_scorer import innovation_llm_batch_score, innovation_pre_filter
 
     cats = categories or ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
     now = target_date or datetime.now()
@@ -192,7 +196,13 @@ def generate_daily_recommendations(
 
     if not dual_track:
         return _generate_single_track(
-            config, paper_notes_dir, categories, top_n, skip_existing, target_date, date_str,
+            config,
+            paper_notes_dir,
+            categories,
+            top_n,
+            skip_existing,
+            target_date,
+            date_str,
         )
 
     dc = daily_config or {}
@@ -286,6 +296,7 @@ def _generate_single_track(
 # Daily note builder
 # ---------------------------------------------------------------------------
 
+
 def build_daily_note(
     date_str: str,
     papers: list[dict[str, Any]],
@@ -300,11 +311,7 @@ def build_daily_note(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    filename = (
-        f"{date_str}-paper-recommendations.md"
-        if language == "en"
-        else f"{date_str}论文推荐.md"
-    )
+    filename = f"{date_str}-paper-recommendations.md" if language == "en" else f"{date_str}论文推荐.md"
     note_path = out / filename
 
     lines: list[str] = []
@@ -322,11 +329,11 @@ def build_daily_note(
         track_names = list(tracks.keys())
 
     lines.append("---")
-    lines.append(f'keywords: [{kw_yaml}]')
+    lines.append(f"keywords: [{kw_yaml}]")
     lines.append('tags: ["llm-generated", "daily-paper-recommend"]')
     lines.append(f'date: "{date_str}"')
     if track_names:
-        lines.append(f'tracks: {json.dumps(track_names)}')
+        lines.append(f"tracks: {json.dumps(track_names)}")
     lines.append("---")
     lines.append("")
 
@@ -352,6 +359,7 @@ def build_daily_note(
 # Note rendering helpers
 # ---------------------------------------------------------------------------
 
+
 def _render_dual_sections(
     lines: list[str],
     all_papers: list[dict[str, Any]],
@@ -363,7 +371,9 @@ def _render_dual_sections(
     if language == "en":
         lines.append("## Today's Overview")
         lines.append("")
-        lines.append("<!-- LLM: Summarize the 4 recommended papers: identify shared themes across conference and arXiv tracks, highlight complementary insights -->")
+        lines.append(
+            "<!-- LLM: Summarize the 4 recommended papers: identify shared themes across conference and arXiv tracks, highlight complementary insights -->"
+        )
     else:
         lines.append("## 今日概览")
         lines.append("")
@@ -400,7 +410,9 @@ def _render_dual_sections(
     if language == "en":
         lines.append("## Cross-Track Insights")
         lines.append("")
-        lines.append("<!-- LLM: Compare the conference and arXiv papers above. Identify shared themes, complementary insights, and suggest a reading order. -->")
+        lines.append(
+            "<!-- LLM: Compare the conference and arXiv papers above. Identify shared themes, complementary insights, and suggest a reading order. -->"
+        )
     else:
         lines.append("## 综合建议")
         lines.append("")
@@ -443,7 +455,7 @@ def _render_paper_block(
     impact = p.get("_impact_score")
     innovation = p.get("_innovation_final_score")
     llm_comment = p.get("_llm_comment", "")
-    track = p.get("track", "")
+    p.get("track", "")
 
     lines.append(f"### {title}")
     lines.append("")
@@ -457,7 +469,9 @@ def _render_paper_block(
         if innovation is not None:
             lines.append(f"- **Innovation Score**: {innovation:.2f}")
         if arxiv_id:
-            lines.append(f"- **Links**: [arXiv](https://arxiv.org/abs/{arxiv_id}) | [PDF](https://arxiv.org/pdf/{arxiv_id})")
+            lines.append(
+                f"- **Links**: [arXiv](https://arxiv.org/abs/{arxiv_id}) | [PDF](https://arxiv.org/pdf/{arxiv_id})"
+            )
     else:
         lines.append(f"- **作者**：{authors}")
         if domain:
@@ -467,7 +481,9 @@ def _render_paper_block(
         if innovation is not None:
             lines.append(f"- **创新性**：{innovation:.2f}")
         if arxiv_id:
-            lines.append(f"- **链接**：[arXiv](https://arxiv.org/abs/{arxiv_id}) | [PDF](https://arxiv.org/pdf/{arxiv_id})")
+            lines.append(
+                f"- **链接**：[arXiv](https://arxiv.org/abs/{arxiv_id}) | [PDF](https://arxiv.org/pdf/{arxiv_id})"
+            )
 
     lines.append("")
 

@@ -3,10 +3,15 @@
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![MCP Ready](https://img.shields.io/badge/MCP-Ready-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-276%20passing-brightgreen.svg)
 
 [中文](README.zh-CN.md)
 
 > General-purpose LLMs are often inaccurate and outdated in specialized domains. Scholar Agent combines **online research + local knowledge accumulation** into a sustainable knowledge flywheel, making your AI smarter in your domain over time. It also builds a human-readable knowledge base for quick learning. Integrates seamlessly with Claude Code and VS Code Copilot via MCP.
+
+## Demo
+
+> **TODO**: Add a demo GIF showing the knowledge flywheel in action — query → research → accumulate → retrieve cycle.
 
 ## What It Does
 
@@ -87,9 +92,16 @@ Add `scholar/` to `.gitignore` if you don't want knowledge cards in version cont
 ```bash
 git clone https://github.com/zfy465914233/scholar-agent.git
 cd scholar-agent
-pip install -e .
-scholar-agent config init
+pip install -e ".[dev]"
+pre-commit install
 python -m pytest tests/ -v
+```
+
+### Docker
+
+```bash
+docker build -t scholar-agent .
+docker run -v ~/scholar:/data scholar-agent serve-mcp
 ```
 
 ## CLI Reference
@@ -228,7 +240,7 @@ scholar-agent/
 │   ├── installers/            # MCP registration for Claude/VSCode/OpenCode
 │   ├── skills/                # Claude Code skill definition
 │   └── validation/            # Note validation + normalization scripts
-└── tests/                     # 266 tests
+└── tests/                     # 276 tests
 ```
 
 ## More Features
@@ -238,13 +250,18 @@ scholar-agent/
 - **Knowledge governance CLI** — Validate frontmatter, detect orphaned cards, find duplicates, manage lifecycle
 - **Provider fault tolerance** — Each search source fails independently; falls back to local retrieval when offline
 
-## Testing
+## Development
 
 ```bash
-python -m pytest tests/ -v
+make dev       # Install with dev dependencies + pre-commit hooks
+make lint      # Run ruff + mypy
+make test      # Run test suite
+make coverage  # Run tests with coverage report
+make build     # Build distribution package
+make docker    # Build Docker image
 ```
 
-266 tests, ~6s. No external services needed.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## License
 

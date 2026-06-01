@@ -41,9 +41,21 @@ def infer_card_type(query: str) -> str:
     """Infer card type from query. Returns 'method' if procedural, else 'knowledge'."""
     normalized = query.lower().strip()
     procedural_keywords = (
-        "how to ", "implement", "deploy", "train", "build",
-        "configure", "setup", "install", "run ", "optimize",
-        "tune ", "debug", "fix ", "procedure", "algorithm",
+        "how to ",
+        "implement",
+        "deploy",
+        "train",
+        "build",
+        "configure",
+        "setup",
+        "install",
+        "run ",
+        "optimize",
+        "tune ",
+        "debug",
+        "fix ",
+        "procedure",
+        "algorithm",
     )
     if any(kw in normalized for kw in procedural_keywords):
         return "method"

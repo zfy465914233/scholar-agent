@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from scholar_agent.engine.inputs.external_candidates import ExternalCandidateBatch, parse_external_candidate_batch
 from scholar_agent.engine.normalizers.evidence_normalizer import normalize_candidate
-from scholar_agent.engine.search_providers.base import ProviderResult, SearchProvider
+
+if TYPE_CHECKING:
+    from scholar_agent.engine.search_providers.base import ProviderResult, SearchProvider
 
 
 def canonicalize_url(url: str | None) -> str | None:
@@ -34,7 +36,9 @@ def candidate_identity(candidate: Any) -> str:
 
     payload = "|".join(
         [
-            str(_candidate_value(candidate, "provider", "") or _candidate_value(candidate, "provider_name", "") or "").strip(),
+            str(
+                _candidate_value(candidate, "provider", "") or _candidate_value(candidate, "provider_name", "") or ""
+            ).strip(),
             str(_candidate_value(candidate, "query", "") or "").strip(),
             str(_candidate_value(candidate, "title", "") or "").strip(),
             str(_candidate_value(candidate, "snippet", "") or "").strip(),
@@ -97,7 +101,7 @@ def run_search_pipeline(
     evidence = [
         normalize_candidate(
             candidate,
-            fetched_text="" if not fetch_contents else "",
+            fetched_text="",
         )
         for candidate in merged_candidates
     ]

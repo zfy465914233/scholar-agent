@@ -1,9 +1,9 @@
 import json
 import subprocess
-import tempfile
-from pathlib import Path
-import unittest
 import sys
+import tempfile
+import unittest
+from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,10 +15,19 @@ FAKE_HARNESS = _ROOT / "tests" / "fake_research_harness.py"
 class ResearchOrchestratorTest(unittest.TestCase):
     def setUp(self) -> None:
         build_index = subprocess.run(
-            [sys.executable, "-m", "scholar_agent.engine.local_index", "--knowledge-root", str(_ROOT / "tests" / "fixtures"), "--output", str(INDEX_PATH)],
+            [
+                sys.executable,
+                "-m",
+                "scholar_agent.engine.local_index",
+                "--knowledge-root",
+                str(_ROOT / "tests" / "fixtures"),
+                "--output",
+                str(INDEX_PATH),
+            ],
             cwd=_ROOT,
             capture_output=True,
-            text=True, encoding="utf-8",
+            text=True,
+            encoding="utf-8",
         )
         if build_index.returncode != 0:
             self.fail(
@@ -29,7 +38,8 @@ class ResearchOrchestratorTest(unittest.TestCase):
     def test_auto_mode_prefers_web_led_for_latest_queries(self) -> None:
         command = [
             sys.executable,
-            "-m", "scholar_agent.engine.orchestrate_research",
+            "-m",
+            "scholar_agent.engine.orchestrate_research",
             "latest markov chain tutorial",
             "--index",
             str(INDEX_PATH),
@@ -47,7 +57,8 @@ class ResearchOrchestratorTest(unittest.TestCase):
     def test_auto_mode_prefers_local_led_for_definition_queries(self) -> None:
         command = [
             sys.executable,
-            "-m", "scholar_agent.engine.orchestrate_research",
+            "-m",
+            "scholar_agent.engine.orchestrate_research",
             "what is a markov chain",
             "--index",
             str(INDEX_PATH),
@@ -86,7 +97,8 @@ class ResearchOrchestratorTest(unittest.TestCase):
 
         command = [
             sys.executable,
-            "-m", "scholar_agent.engine.orchestrate_research",
+            "-m",
+            "scholar_agent.engine.orchestrate_research",
             "what is a markov chain",
             "--mode",
             "local-led",
@@ -131,7 +143,8 @@ class ResearchOrchestratorTest(unittest.TestCase):
 
         command = [
             sys.executable,
-            "-m", "scholar_agent.engine.orchestrate_research",
+            "-m",
+            "scholar_agent.engine.orchestrate_research",
             "markov chain overview",
             "--mode",
             "mixed",
@@ -152,7 +165,8 @@ class ResearchOrchestratorTest(unittest.TestCase):
     def test_web_led_can_generate_web_evidence_via_harness_script(self) -> None:
         command = [
             sys.executable,
-            "-m", "scholar_agent.engine.orchestrate_research",
+            "-m",
+            "scholar_agent.engine.orchestrate_research",
             "latest markov chain tutorial",
             "--index",
             str(INDEX_PATH),

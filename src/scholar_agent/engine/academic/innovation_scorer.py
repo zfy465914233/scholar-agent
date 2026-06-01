@@ -15,14 +15,32 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _INNOVATION_SIGNALS = [
-    "novel", "first", "paradigm", "unified", "breakthrough",
-    "state-of-the-art", "sota", "pioneering", "new framework",
-    "new method", "new approach", "innovative", "fundamental",
+    "novel",
+    "first",
+    "paradigm",
+    "unified",
+    "breakthrough",
+    "state-of-the-art",
+    "sota",
+    "pioneering",
+    "new framework",
+    "new method",
+    "new approach",
+    "innovative",
+    "fundamental",
 ]
 
 _QUANTITATIVE_SIGNALS = [
-    "outperforms", "improves by", "achieves", "accuracy",
-    "f1", "bleu", "rouge", "beats", "surpasses", "reduces by",
+    "outperforms",
+    "improves by",
+    "achieves",
+    "accuracy",
+    "f1",
+    "bleu",
+    "rouge",
+    "beats",
+    "surpasses",
+    "reduces by",
 ]
 
 _RED_FLAG_TITLES = ["survey", "review", "tutorial", "workshop", "special session"]
@@ -35,6 +53,7 @@ _MAX_HEURISTIC_ABSTRACT_BOOST = 3.0
 # ---------------------------------------------------------------------------
 # Heuristic pre-filter
 # ---------------------------------------------------------------------------
+
 
 def innovation_pre_filter(
     papers: list[dict[str, Any]],
@@ -98,6 +117,7 @@ def innovation_pre_filter(
 # LLM batch scoring
 # ---------------------------------------------------------------------------
 
+
 def innovation_llm_batch_score(
     candidates: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -120,8 +140,8 @@ def innovation_llm_batch_score(
     user_prompt = (
         "Evaluate the following research preprints for **innovation** and **credibility**.\n"
         "For each paper provide:\n"
-        '- novelty (1-5): How novel/original is the approach vs existing work?\n'
-        '- credibility (1-5): How credible are the claims? Consider: specific '
+        "- novelty (1-5): How novel/original is the approach vs existing work?\n"
+        "- credibility (1-5): How credible are the claims? Consider: specific "
         "benchmark results, ablation mentions, code release promises, author track record cues.\n"
         "- comment: One-line assessment.\n\n"
         + "\n".join(papers_block)
@@ -141,6 +161,7 @@ def innovation_llm_batch_score(
 
     try:
         from scholar_agent.engine.synthesize_answer import call_llm
+
         result = call_llm(request_payload)
         raw = result.get("raw_content", "")
         evaluations = _parse_llm_response(raw, len(candidates))
@@ -176,12 +197,13 @@ def innovation_llm_batch_score(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_llm_response(raw: str, expected: int) -> list[dict]:
     """Parse JSON from LLM response, tolerating markdown fences."""
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         text = "\n".join(lines)
 
     # Try to find JSON object

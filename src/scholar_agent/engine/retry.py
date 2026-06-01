@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 T = TypeVar("T")
 
@@ -51,9 +54,9 @@ def retry_with_backoff(
             last_exc = exc
             if attempt >= max_retries:
                 break
-            delay = min(base_delay * (2 ** attempt), max_delay)
+            delay = min(base_delay * (2**attempt), max_delay)
             if jitter:
-                delay *= (0.5 + random.random())
+                delay *= 0.5 + random.random()
             if on_retry:
                 on_retry(attempt + 1, exc, delay)
             time.sleep(delay)
