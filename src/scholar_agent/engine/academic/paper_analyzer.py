@@ -71,7 +71,7 @@ _MATH_HEAVY_KEYWORDS = re.compile(
 )
 
 _LATEX_MARKERS = re.compile(
-    r"(?:\$\$.*?\$\\$|\$[^$]+\$|\\begin\{equation|\\end\{equation|"
+    r"(?:\$\$.*?\$\$|\$[^$]+\$|\\begin\{equation|\\end\{equation|"
     r"\\frac\{|\\sum_|\\int_|\\prod_|\\mathbb\{|\\mathcal\{|\\boldsymbol)",
     re.DOTALL,
 )

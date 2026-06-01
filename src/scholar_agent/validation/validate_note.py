@@ -318,7 +318,7 @@ def math_depth_checks(metadata: dict[str, str], body: str, sections: dict[str, s
                 if any(kw in title.lower() for kw in ["method", "方法", "模块"]):
                     method_text += content
             symbol_inline = re.compile(
-                r"\$\\\\(?:alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|mathbb|mathcal|x?hat)\$"
+                r"\$\\(?:alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|mathbb|mathcal|x?hat)\$"
             )
             if not symbol_inline.search(method_text):
                 errors.append("heavy_math_requires_symbol_definitions")
