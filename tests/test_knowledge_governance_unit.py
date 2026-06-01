@@ -150,7 +150,9 @@ class TestCmdLintStaleness(unittest.TestCase):
             _write_card(
                 root,
                 "recent.md",
-                _valid_frontmatter({"id": "fresh-insight", "updated_at": recent, "title": "Fresh Insight on LLM Scaling"}),
+                _valid_frontmatter(
+                    {"id": "fresh-insight", "updated_at": recent, "title": "Fresh Insight on LLM Scaling"}
+                ),
                 body="Fresh content. See [[baseline-method]].",
             )
             _write_card(

@@ -113,7 +113,11 @@ class TestValidateCardMissingRequired(unittest.TestCase):
     def test_empty_string_counts_as_missing(self):
         card = {"id": "", "title": "", "type": "", "topic": "", "confidence": "", "updated_at": ""}
         issues = validate_card(card)
-        error_fields = [i.field for i in issues if i.severity == "error" and i.field in {"id", "title", "type", "topic", "confidence", "updated_at"}]
+        error_fields = [
+            i.field
+            for i in issues
+            if i.severity == "error" and i.field in {"id", "title", "type", "topic", "confidence", "updated_at"}
+        ]
         # All 6 should be flagged as missing (empty string is falsy)
         self.assertEqual(len(error_fields), 6)
 
@@ -123,8 +127,12 @@ class TestValidateCardInvalidValues(unittest.TestCase):
 
     def _base(self, **overrides):
         base = {
-            "id": "x", "title": "T", "type": "knowledge", "topic": "t",
-            "confidence": "confirmed", "updated_at": "2026-04-01",
+            "id": "x",
+            "title": "T",
+            "type": "knowledge",
+            "topic": "t",
+            "confidence": "confirmed",
+            "updated_at": "2026-04-01",
         }
         base.update(overrides)
         return base

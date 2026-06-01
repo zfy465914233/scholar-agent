@@ -207,7 +207,9 @@ class TestDetectInstallManager(unittest.TestCase):
 
     def test_detects_pipx_when_under_pipx_venvs(self):
         pipx_home = Path("/fake/home/.local/pipx").resolve()
-        dist_info = (pipx_home / "venvs" / "scholar-agent" / "lib" / "site-packages" / "scholar_agent-1.0.dist-info").resolve()
+        dist_info = (
+            pipx_home / "venvs" / "scholar-agent" / "lib" / "site-packages" / "scholar_agent-1.0.dist-info"
+        ).resolve()
         package_root = (pipx_home / "venvs" / "scholar-agent" / "lib" / "site-packages" / "scholar_agent").resolve()
         env = {
             "PIPX_HOME": str(pipx_home),

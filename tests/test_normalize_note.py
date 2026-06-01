@@ -104,11 +104,16 @@ class TestMainDryRun(unittest.TestCase):
             old_argv = sys.argv
             sys.argv = [
                 "normalize_note",
-                "--source", str(src),
-                "--paper-notes-root", str(root),
-                "--domain", "ml",
-                "--paper-folder", "test-paper",
-                "--filename-mode", "folder",
+                "--source",
+                str(src),
+                "--paper-notes-root",
+                str(root),
+                "--domain",
+                "ml",
+                "--paper-folder",
+                "test-paper",
+                "--filename-mode",
+                "folder",
                 "--allow-non-staging",
             ]
             try:
@@ -135,10 +140,14 @@ class TestMainDryRun(unittest.TestCase):
             old_argv = sys.argv
             sys.argv = [
                 "normalize_note",
-                "--source", str(Path(tmp) / "nonexistent.md"),
-                "--paper-notes-root", tmp,
-                "--domain", "ml",
-                "--paper-folder", "test",
+                "--source",
+                str(Path(tmp) / "nonexistent.md"),
+                "--paper-notes-root",
+                tmp,
+                "--domain",
+                "ml",
+                "--paper-folder",
+                "test",
                 "--allow-non-staging",
             ]
             try:

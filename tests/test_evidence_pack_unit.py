@@ -16,7 +16,14 @@ class TestNormalizeLocalItems(unittest.TestCase):
     def test_converts_results(self) -> None:
         payload = {
             "results": [
-                {"doc_id": "d1", "type": "knowledge", "title": "Test", "path": "/x.md", "score": 0.9, "matched_terms": ["a"]},
+                {
+                    "doc_id": "d1",
+                    "type": "knowledge",
+                    "title": "Test",
+                    "path": "/x.md",
+                    "score": 0.9,
+                    "matched_terms": ["a"],
+                },
             ],
         }
         items = normalize_local_items("query", payload)
@@ -53,11 +60,16 @@ class TestBuildEvidencePack(unittest.TestCase):
     def test_local_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             index = Path(tmp) / "index.json"
-            index.write_text(json.dumps({
-                "documents": [
-                    {"doc_id": "d1", "type": "k", "title": "T", "path": "/x.md", "topic": "t"},
-                ],
-            }), encoding="utf-8")
+            index.write_text(
+                json.dumps(
+                    {
+                        "documents": [
+                            {"doc_id": "d1", "type": "k", "title": "T", "path": "/x.md", "topic": "t"},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
             result = build_evidence_pack("test query", index, None, 5)
             self.assertEqual(result["query"], "test query")
             self.assertGreaterEqual(result["local_count"], 0)
@@ -67,10 +79,15 @@ class TestBuildEvidencePack(unittest.TestCase):
             index = Path(tmp) / "index.json"
             index.write_text(json.dumps({"documents": []}), encoding="utf-8")
             web = Path(tmp) / "web.json"
-            web.write_text(json.dumps({
-                "query": "q",
-                "evidence": [{"url": "https://example.com", "title": "T"}],
-            }), encoding="utf-8")
+            web.write_text(
+                json.dumps(
+                    {
+                        "query": "q",
+                        "evidence": [{"url": "https://example.com", "title": "T"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
             result = build_evidence_pack("q", index, web, 5)
             self.assertEqual(result["web_count"], 1)
 

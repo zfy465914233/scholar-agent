@@ -19,7 +19,6 @@ from scholar_agent.engine.promote_draft import (
 
 
 class TestExtractSection(unittest.TestCase):
-
     def test_existing_section(self):
         text = "## Query\n\nWhat is markov chain?\n\n## Route\n\nmixed"
         lines = extract_section(text, "Query")
@@ -95,7 +94,6 @@ class TestExtractSection(unittest.TestCase):
 
 
 class TestParseQuery(unittest.TestCase):
-
     def test_extract_query_from_section(self):
         text = "## Query\n\nWhat is a markov chain?\n\n## Route\n\nmixed"
         result = parse_query(text)
@@ -126,7 +124,6 @@ class TestParseQuery(unittest.TestCase):
 
 
 class TestInferCardType(unittest.TestCase):
-
     def test_how_to_keyword(self):
         self.assertEqual(infer_card_type("How to train a model"), "method")
 
@@ -198,7 +195,6 @@ class TestInferCardType(unittest.TestCase):
 
 
 class TestCollectCitationIds(unittest.TestCase):
-
     def test_single_citation(self):
         text = "## Citations\n\n`cite-001` (local / definition): Title | /path"
         ids = collect_citation_ids(text)
@@ -243,7 +239,6 @@ class TestCollectCitationIds(unittest.TestCase):
 
 
 class TestBuildCandidateMarkdown(unittest.TestCase):
-
     def test_basic_output(self):
         md = build_candidate_markdown(
             "What is a markov chain",
@@ -362,9 +357,7 @@ class TestParseArgs(unittest.TestCase):
 
         from scholar_agent.engine.promote_draft import parse_args
 
-        with unittest.mock.patch(
-            "sys.argv", ["promote_draft", "--draft", "/tmp/d.md", "--knowledge-root", "/data/kb"]
-        ):
+        with unittest.mock.patch("sys.argv", ["promote_draft", "--draft", "/tmp/d.md", "--knowledge-root", "/data/kb"]):
             args = parse_args()
         self.assertEqual(Path(args.knowledge_root), Path("/data/kb"))
 
@@ -406,9 +399,7 @@ class TestMain(unittest.TestCase):
             draft.write_text(draft_content, encoding="utf-8")
             kb = root / "kb"
 
-            with unittest.mock.patch(
-                "sys.argv", ["promote_draft", "--draft", str(draft), "--knowledge-root", str(kb)]
-            ):
+            with unittest.mock.patch("sys.argv", ["promote_draft", "--draft", str(draft), "--knowledge-root", str(kb)]):
                 ret = main()
             self.assertEqual(ret, 0)
             # Should have created a candidate file

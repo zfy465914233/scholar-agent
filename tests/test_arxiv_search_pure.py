@@ -54,9 +54,7 @@ class TestDateWindow(unittest.TestCase):
         dw_none = DateWindow.from_target(None)
         dw_default = DateWindow.from_target()
         # Both should be close to now
-        self.assertLessEqual(
-            abs((dw_none.recent_end - dw_default.recent_end).total_seconds()), 5
-        )
+        self.assertLessEqual(abs((dw_none.recent_end - dw_default.recent_end).total_seconds()), 5)
 
 
 class TestPaperRecordToDict(unittest.TestCase):
@@ -218,10 +216,12 @@ class TestPaperRecordParseFeed(unittest.TestCase):
         return ET.tostring(root, encoding="unicode")
 
     def test_parses_multiple_entries(self):
-        xml = self._make_feed([
-            ("Paper One", "http://arxiv.org/abs/2501.11111v1"),
-            ("Paper Two", "http://arxiv.org/abs/2501.22222v1"),
-        ])
+        xml = self._make_feed(
+            [
+                ("Paper One", "http://arxiv.org/abs/2501.11111v1"),
+                ("Paper Two", "http://arxiv.org/abs/2501.22222v1"),
+            ]
+        )
         records = PaperRecord.parse_feed(xml)
         self.assertEqual(len(records), 2)
         self.assertEqual(records[0].title, "Paper One")
@@ -246,9 +246,11 @@ class TestPaperRecordParseFeed(unittest.TestCase):
         self.assertEqual(len(records), 0)
 
     def test_extracts_arxiv_ids(self):
-        xml = self._make_feed([
-            ("Paper", "http://arxiv.org/abs/2405.99999v1"),
-        ])
+        xml = self._make_feed(
+            [
+                ("Paper", "http://arxiv.org/abs/2405.99999v1"),
+            ]
+        )
         records = PaperRecord.parse_feed(xml)
         self.assertEqual(records[0].arxiv_id, "2405.99999")
 
@@ -406,10 +408,7 @@ class TestNormalizeS2Results(unittest.TestCase):
 
     def test_respects_top_k_limit(self):
         payload = {
-            "data": [
-                {"title": f"Paper {i}", "abstract": "abs", "influentialCitationCount": i}
-                for i in range(20)
-            ]
+            "data": [{"title": f"Paper {i}", "abstract": "abs", "influentialCitationCount": i} for i in range(20)]
         }
         result = _normalize_s2_results(payload, 5)
         self.assertEqual(len(result), 5)

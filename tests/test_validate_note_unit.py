@@ -27,7 +27,6 @@ from scholar_agent.validation.validate_note import (
 
 
 class TestSplitFrontmatter(unittest.TestCase):
-
     def test_basic_frontmatter_and_body(self):
         text = "---\ntitle: My Title\ntype: knowledge\n---\n\n## Section\n\nBody text."
         metadata, body, errors = split_frontmatter(text)
@@ -94,7 +93,6 @@ class TestSplitFrontmatter(unittest.TestCase):
 
 
 class TestExtractSections(unittest.TestCase):
-
     def test_single_section(self):
         body = "## Method\n\nThis is the method section."
         sections = extract_sections(body)
@@ -142,7 +140,6 @@ class TestExtractSections(unittest.TestCase):
 
 
 class TestFindSection(unittest.TestCase):
-
     def test_exact_alias_match(self):
         sections = {"Method": "Method content here."}
         title, content = find_section(sections, ["method"])
@@ -184,7 +181,6 @@ class TestFindSection(unittest.TestCase):
 
 
 class TestHasSubstantiveText(unittest.TestCase):
-
     def test_substantive_english_text(self):
         self.assertTrue(has_substantive_text("This is a substantive piece of text with enough content."))
 
@@ -218,7 +214,6 @@ class TestHasSubstantiveText(unittest.TestCase):
 
 
 class TestCollectForbiddenErrors(unittest.TestCase):
-
     def test_skeleton_status(self):
         text = "status: skeleton"
         errors = collect_forbidden_errors(text)
@@ -259,7 +254,6 @@ class TestCollectForbiddenErrors(unittest.TestCase):
 
 
 class TestCollectUnknownMetadataErrors(unittest.TestCase):
-
     def test_unknown_value(self):
         metadata = {"author": "unknown", "title": "My Paper"}
         errors = collect_unknown_metadata_errors(metadata)
@@ -309,7 +303,6 @@ class TestCollectUnknownMetadataErrors(unittest.TestCase):
 
 
 class TestValidateCoreSections(unittest.TestCase):
-
     def _make_body(self, include_all=True, overrides=None):
         """Build a body with all core sections."""
         overrides = overrides or {}
@@ -396,7 +389,6 @@ class TestValidateCoreSections(unittest.TestCase):
 
 
 class TestCountQuantitativeResults(unittest.TestCase):
-
     def test_percentage(self):
         text = "The model achieved 95.3% accuracy."
         self.assertGreaterEqual(count_quantitative_results(text), 1)
@@ -430,7 +422,6 @@ class TestCountQuantitativeResults(unittest.TestCase):
 
 
 class TestTypeSpecificChecks(unittest.TestCase):
-
     def test_empirical_with_enough_quantitative(self):
         sections = {"Findings": "AUC 0.92 and F1 0.88 and accuracy 95%"}
         resolved = {"findings": "Findings"}
@@ -512,7 +503,6 @@ class TestTypeSpecificChecks(unittest.TestCase):
 
 
 class TestProvenanceChecks(unittest.TestCase):
-
     def test_with_source_key(self):
         metadata = {"pdf_path": "/path/to/paper.pdf"}
         errors = provenance_checks(metadata, "No evidence markers here.")
@@ -568,7 +558,6 @@ class TestProvenanceChecks(unittest.TestCase):
 
 
 class TestMathDepthChecks(unittest.TestCase):
-
     def test_no_math_depth_no_errors(self):
         metadata = {}
         errors = math_depth_checks(metadata, "Body with $x = 1$.", {"Method": "content"})
@@ -642,12 +631,11 @@ class TestMathDepthChecks(unittest.TestCase):
 
 
 class TestContentDensityChecks(unittest.TestCase):
-
     def test_method_with_prose_passes(self):
         sections = {
             "Method": "This is a well-written method section that contains substantive prose "
-                      "describing the approach. It goes into detail about the algorithm and "
-                      "its implementation, providing more than fifty characters of prose.",
+            "describing the approach. It goes into detail about the algorithm and "
+            "its implementation, providing more than fifty characters of prose.",
         }
         errors = content_density_checks(sections, "generic")
         self.assertNotIn("method_section_lacks_prose", errors)
@@ -669,7 +657,7 @@ class TestContentDensityChecks(unittest.TestCase):
     def test_findings_with_prose_passes(self):
         sections = {
             "Results": "Our experimental results show significant improvements over baseline methods. "
-                       "The model achieves state-of-the-art performance across all metrics evaluated.",
+            "The model achieves state-of-the-art performance across all metrics evaluated.",
         }
         errors = content_density_checks(sections, "generic")
         self.assertNotIn("findings_section_lacks_substance", errors)

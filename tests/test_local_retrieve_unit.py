@@ -19,16 +19,18 @@ def _make_documents(n: int = 5) -> list[dict]:
     docs = []
     topics = ["physics", "math", "biology", "chemistry", "computer science"]
     for i in range(n):
-        docs.append({
-            "doc_id": f"doc-{i}",
-            "path": f"/path/to/doc_{i}.md",
-            "title": f"Document {i} about {topics[i % len(topics)]}",
-            "type": "knowledge",
-            "topic": topics[i % len(topics)],
-            "search_text": f"This is document number {i} about {topics[i % len(topics)]}. "
-            + ("markov chain probability " * (i % 2))
-            + ("neural network deep learning " * ((i + 1) % 2)),
-        })
+        docs.append(
+            {
+                "doc_id": f"doc-{i}",
+                "path": f"/path/to/doc_{i}.md",
+                "title": f"Document {i} about {topics[i % len(topics)]}",
+                "type": "knowledge",
+                "topic": topics[i % len(topics)],
+                "search_text": f"This is document number {i} about {topics[i % len(topics)]}. "
+                + ("markov chain probability " * (i % 2))
+                + ("neural network deep learning " * ((i + 1) % 2)),
+            }
+        )
     return docs
 
 
@@ -375,9 +377,11 @@ class TestMain(unittest.TestCase):
             emb.write_text('{"data": true}', encoding="utf-8")
             mock_mod = types.ModuleType("scholar_agent.engine.embedding_retrieve")
             mock_mod.retrieve_by_embedding = lambda q, i, k: [("doc-0", 0.9)]
-            with patch.dict("sys.modules", {"scholar_agent.engine.embedding_retrieve": mock_mod}), patch(
-                "sys.argv", ["local_retrieve", "markov", "--index", str(idx), "--embedding-index", str(emb)]
-            ), patch("builtins.print"):
+            with (
+                patch.dict("sys.modules", {"scholar_agent.engine.embedding_retrieve": mock_mod}),
+                patch("sys.argv", ["local_retrieve", "markov", "--index", str(idx), "--embedding-index", str(emb)]),
+                patch("builtins.print"),
+            ):
                 ret = main()
             self.assertEqual(ret, 0)
 

@@ -115,7 +115,10 @@ class TestMatchRoute(unittest.TestCase):
     def test_matches_policy(self) -> None:
         policy = {
             "major_domains": {
-                "ml": {"label": "Machine Learning", "subdomains": {"nlp": {"label": "NLP", "aliases": ["natural language processing"]}}},
+                "ml": {
+                    "label": "Machine Learning",
+                    "subdomains": {"nlp": {"label": "NLP", "aliases": ["natural language processing"]}},
+                },
             },
         }
         tree = {"ml": {"nlp": Path("/tmp/ml/nlp")}}

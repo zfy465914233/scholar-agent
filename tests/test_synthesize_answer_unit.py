@@ -40,14 +40,16 @@ class TestBuildChatRequest(unittest.TestCase):
 
 class TestParseAnswer(unittest.TestCase):
     def test_valid_json(self) -> None:
-        raw = json.dumps({
-            "answer": "test",
-            "supporting_claims": [{"claim": "c", "evidence_ids": ["e1"], "confidence": "high"}],
-            "inferences": ["i"],
-            "uncertainty": ["u"],
-            "missing_evidence": ["m"],
-            "suggested_next_steps": ["s"],
-        })
+        raw = json.dumps(
+            {
+                "answer": "test",
+                "supporting_claims": [{"claim": "c", "evidence_ids": ["e1"], "confidence": "high"}],
+                "inferences": ["i"],
+                "uncertainty": ["u"],
+                "missing_evidence": ["m"],
+                "suggested_next_steps": ["s"],
+            }
+        )
         result = parse_answer(raw)
         self.assertEqual(result["answer"], "test")
         self.assertEqual(len(result["supporting_claims"]), 1)
@@ -126,7 +128,9 @@ class TestBuildSynthesisOutput(unittest.TestCase):
         }
         result = build_synthesis_output(answer, SAMPLE_BUNDLE, "m", {})
         # ev-fake is not in SAMPLE_BUNDLE citations (ev-1 is)
-        self.assertIn("non-existent", result["answer"].get("uncertainty", [""])[0] if result["answer"].get("uncertainty") else "")
+        self.assertIn(
+            "non-existent", result["answer"].get("uncertainty", [""])[0] if result["answer"].get("uncertainty") else ""
+        )
 
 
 class TestSynthesizeDryRun(unittest.TestCase):

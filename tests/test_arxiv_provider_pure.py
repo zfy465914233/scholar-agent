@@ -95,9 +95,7 @@ class TestExtendCandidates(unittest.TestCase):
     def test_deduplicate_with_existing_seen(self) -> None:
         url = "https://arxiv.org/abs/2501.12345"
         items = [self._make_item(url)]
-        candidates, _seen = _extend_candidates(
-            "query", items, [], {url}, None
-        )
+        candidates, _seen = _extend_candidates("query", items, [], {url}, None)
         self.assertEqual(len(candidates), 0)
 
     def test_skip_empty_url(self) -> None:
@@ -146,7 +144,14 @@ class TestExtendCandidates(unittest.TestCase):
         self.assertIn("https://arxiv.org/abs/2501.12345", seen)
 
     def test_candidate_fields_populated(self) -> None:
-        items = [{"url": "https://arxiv.org/abs/2501.12345", "title": "My Paper", "content": "Abstract", "publishedDate": "2025-01-15"}]
+        items = [
+            {
+                "url": "https://arxiv.org/abs/2501.12345",
+                "title": "My Paper",
+                "content": "Abstract",
+                "publishedDate": "2025-01-15",
+            }
+        ]
         candidates, _ = _extend_candidates("transformers", items, [], set(), None)
         c = candidates[0]
         self.assertEqual(c.query, "transformers")
