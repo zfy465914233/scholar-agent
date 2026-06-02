@@ -56,3 +56,10 @@ coverage.xml
 
 # Agent metadata
 .claude/
+
+# Marketing/promotion drafts
+promotion.md
+
+# Internal reviews and reports
+docs/demo-review.md
+reviews/
