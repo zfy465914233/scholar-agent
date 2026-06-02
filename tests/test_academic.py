@@ -513,7 +513,6 @@ class TestDailyWorkflow(unittest.TestCase):
     def test_generate_paper_notes_for_daily_skips_existing(self):
         from scholar_agent.engine.academic.daily_workflow import (
             generate_paper_notes_for_daily,
-            get_analyzed_paper_ids,
         )
 
         with tempfile.TemporaryDirectory() as tmp:

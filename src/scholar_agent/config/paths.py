@@ -60,7 +60,7 @@ def build_default_config(*, env: Mapping[str, str] | None = None, scholar_root: 
         "index_path": str((user_home / "indexes" / "local" / "index.json").resolve()),
         "scholar_dir": str(resolved_root),
         "profile": profile,
-        "paperpulse_url": "https://pulse.mindpulse.ai",
+        "paperpulse_url": "https://mindpulse.top",
         "paperpulse_token": "",
         "academic": {
             "paper_notes_dir": str((user_home / "paper-notes").resolve()),

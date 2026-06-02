@@ -4,7 +4,6 @@ import re
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
 
 
 def _parse_content_disposition_filename(content_disposition: str, default: str) -> str:
@@ -25,7 +24,7 @@ def import_from_url(
     Args:
         paper_id: The UUID or identifier of the paper to import.
         token: Optional Bearer token for authentication.
-        base_url: Base URL of the remote source (e.g. "https://pulse.mindpulse.ai").
+        base_url: Base URL of the remote source (e.g. "https://mindpulse.top").
         knowledge_dir: Local directory to save the markdown file.
         index_path: Path to the search index file.
 

@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pulse.mindpulse.ai">
+  <a href="https://mindpulse.top">
     <img src="https://img.shields.io/badge/MindPulse-Academic%20Suite-blueviolet?style=for-the-badge&logo=ai" alt="MindPulse Academic Suite" />
   </a>
 </p>
@@ -31,7 +31,7 @@
 Scholar Agent 是 **MindPulse 学术套件** 的一部分，形成了本地开源工具与云端全托管服务之间的强大协同：
 
 * 🌌 **Scholar Agent** (开源 & 本地): 一个本地优先的知识飞轮，通过 MCP (Model Context Protocol) 与您的 IDE 深度集成。它将研究成果保存为本地 Markdown 知识卡片，逐步构建您的专属个人 LLM-Wiki。
-* ⚡ **[PaperPulse](https://pulse.mindpulse.ai)** (云端 SaaS): 一个全托管的每日学术简报 SaaS，监控 arXiv/Semantic Scholar，基于您的个性化科研偏好对论文进行自动打分，并将提炼出的文献精读直接推送到您的微信或邮箱。
+* ⚡ **[PaperPulse](https://mindpulse.top)** (云端 SaaS): 一个全托管的每日学术简报 SaaS，监控 arXiv/Semantic Scholar，基于您的个性化科研偏好对论文进行自动打分，并将提炼出的文献精读直接推送到您的微信或邮箱。
 
 | 功能特性 | Scholar Agent (本地) | PaperPulse (云端 SaaS) |
 | :--- | :--- | :--- |

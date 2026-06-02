@@ -1561,7 +1561,7 @@ def import_paperpulse_note(paper_id: str, api_token: str | None = None) -> str:
 
     config = load_config()
     token = api_token or config.get("paperpulse_token", "")
-    base_url = config.get("paperpulse_url", "https://pulse.mindpulse.ai").rstrip("/")
+    base_url = config.get("paperpulse_url", "https://mindpulse.top").rstrip("/")
     knowledge_dir = Path(get_knowledge_dir())
     index_path = Path(config["index_path"])
 
@@ -1577,7 +1577,6 @@ def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
     allowed = (
-        "https://pulse.mindpulse.ai",
         "https://mindpulse.top",
         "http://localhost:",
         "http://127.0.0.1:",
@@ -1597,6 +1596,9 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.send_header("Access-Control-Max-Age", "86400")
+            # Required for Chrome Private Network Access (public HTTPS → localhost HTTP)
+            if self.headers.get("Access-Control-Request-Private-Network"):
+                self.send_header("Access-Control-Allow-Private-Network", "true")
             self.end_headers()
         else:
             self.send_response(403)
@@ -1644,21 +1646,36 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 return
 
             try:
-                from scholar_agent.engine.import_service import import_markdown
                 config = load_config()
                 knowledge_dir = Path(get_knowledge_dir())
                 index_path = Path(config["index_path"])
 
-                msg, safe_filename = import_markdown(filename, markdown_content, knowledge_dir, index_path)
+                # Save file immediately (fast)
+                from pathlib import Path as _Path
 
-                if safe_filename is None:
-                    self.send_error_response(500, msg, origin)
-                else:
-                    self.send_success_response(origin, {
-                        "status": "success",
-                        "filename": safe_filename,
-                        "message": msg
-                    })
+                from scholar_agent.engine.close_knowledge_loop import reindex as _do_reindex
+
+                # Sanitize & save (same logic as import_markdown but split out the slow part)
+                safe_filename = _Path(filename).name
+                if not safe_filename.endswith(".md"):
+                    safe_filename += ".md"
+                knowledge_dir.mkdir(parents=True, exist_ok=True)
+                (knowledge_dir / safe_filename).write_text(markdown_content, encoding="utf-8")
+
+                # Return success immediately, reindex in background
+                self.send_success_response(origin, {
+                    "status": "success",
+                    "filename": safe_filename,
+                    "message": f"Successfully saved: {safe_filename}"
+                })
+
+                # Kick off reindex asynchronously so we don't block the response
+                _idx_root = knowledge_dir
+                _idx_path = index_path
+                threading.Thread(
+                    target=lambda: _do_reindex(_idx_root, _idx_path),
+                    daemon=True,
+                ).start()
             except Exception as e:
                 self.send_error_response(500, f"Internal Error: {e!s}", origin)
         else:

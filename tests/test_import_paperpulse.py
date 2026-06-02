@@ -18,7 +18,7 @@ class TestImportPaperPulse(unittest.TestCase):
         scholar_config._config_cache = {
             "knowledge_dir": str(self.test_dir),
             "index_path": str(self.index_path),
-            "paperpulse_url": "https://pulse.mindpulse.ai",
+            "paperpulse_url": "https://mindpulse.top",
             "paperpulse_token": "mock-token",
         }
 
@@ -68,7 +68,6 @@ class TestImportPaperPulse(unittest.TestCase):
         self.assertIn("CLI Mocked Paper", card_file.read_text(encoding="utf-8"))
     def test_allowed_origin_matching(self) -> None:
         from scholar_agent.server import _is_allowed_origin
-        self.assertTrue(_is_allowed_origin("https://pulse.mindpulse.ai"))
         self.assertTrue(_is_allowed_origin("https://mindpulse.top"))
         self.assertTrue(_is_allowed_origin("http://localhost:3000"))
         self.assertTrue(_is_allowed_origin("http://127.0.0.1:8080"))
@@ -95,7 +94,7 @@ class TestImportPaperPulse(unittest.TestCase):
             # 1. Health check
             req = urllib.request.Request(
                 f"http://127.0.0.1:{port}/health",
-                headers={"Origin": "https://pulse.mindpulse.ai"}
+                headers={"Origin": "https://mindpulse.top"}
             )
             with urllib.request.urlopen(req) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
@@ -113,7 +112,7 @@ class TestImportPaperPulse(unittest.TestCase):
                 data=body,
                 headers={
                     "Content-Type": "application/json",
-                    "Origin": "https://pulse.mindpulse.ai"
+                    "Origin": "https://mindpulse.top"
                 },
                 method="POST"
             )
@@ -142,7 +141,7 @@ class TestImportPaperPulse(unittest.TestCase):
                 data=b"{invalid-json}",
                 headers={
                     "Content-Type": "application/json",
-                    "Origin": "https://pulse.mindpulse.ai"
+                    "Origin": "https://mindpulse.top"
                 },
                 method="POST"
             )
@@ -159,7 +158,7 @@ class TestImportPaperPulse(unittest.TestCase):
                 data=json.dumps(post_missing).encode('utf-8'),
                 headers={
                     "Content-Type": "application/json",
-                    "Origin": "https://pulse.mindpulse.ai"
+                    "Origin": "https://mindpulse.top"
                 },
                 method="POST"
             )

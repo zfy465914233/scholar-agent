@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pulse.mindpulse.ai">
+  <a href="https://mindpulse.top">
     <img src="https://img.shields.io/badge/MindPulse-Academic%20Suite-blueviolet?style=for-the-badge&logo=ai" alt="MindPulse Academic Suite" />
   </a>
 </p>
@@ -32,7 +32,7 @@
 Scholar Agent is part of the **MindPulse Academic Suite**, forming a powerful synergy between local open-source tools and fully-managed cloud services:
 
 * 🌌 **Scholar Agent** (Open Source & Local): A local-first knowledge flywheel that integrates with your IDE via MCP (Model Context Protocol). It saves research answers as local Markdown knowledge cards, building your custom personal LLM-Wiki.
-* ⚡ **[PaperPulse](https://pulse.mindpulse.ai)** (Cloud SaaS): A fully-managed daily academic digest SaaS that monitors arXiv/Semantic Scholar, scores papers based on your personalized research preferences, and delivers distilled summaries straight to your WeChat or Email.
+* ⚡ **[PaperPulse](https://mindpulse.top)** (Cloud SaaS): A fully-managed daily academic digest SaaS that monitors arXiv/Semantic Scholar, scores papers based on your personalized research preferences, and delivers distilled summaries straight to your WeChat or Email.
 
 | Feature | Scholar Agent (Local) | PaperPulse (Cloud SaaS) |
 | :--- | :--- | :--- |

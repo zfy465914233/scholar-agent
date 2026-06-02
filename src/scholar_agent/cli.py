@@ -79,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("serve-mcp", help="Start the Scholar Agent MCP server.")
+    subparsers.add_parser("serve-http", help="Start the standalone HTTP sync server for PaperPulse import.")
 
     init_parser = subparsers.add_parser(
         "init",
@@ -853,6 +854,18 @@ def _run_serve_mcp() -> int:
     return mcp_adapter.main()
 
 
+def _run_serve_http() -> int:
+    from scholar_agent import __version__
+    from scholar_agent.server import start_local_server
+
+    sys.stderr.write(
+        f"\nScholar Agent v{__version__} — HTTP Sync Server\n\n"
+    )
+    sys.stderr.flush()
+    start_local_server()
+    return 0
+
+
 def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
     from pathlib import Path
 
@@ -861,7 +874,7 @@ def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
 
     config = load_config()
     effective_token = token or config.get("paperpulse_token", "")
-    base_url = url or config.get("paperpulse_url", "https://pulse.mindpulse.ai").rstrip("/")
+    base_url = url or config.get("paperpulse_url", "https://mindpulse.top").rstrip("/")
     knowledge_dir = Path(get_knowledge_dir())
     index_path = Path(config["index_path"])
 
@@ -888,6 +901,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if command == "serve-mcp":
         return _run_serve_mcp()
+    if command == "serve-http":
+        return _run_serve_http()
     if command == "init":
         return _run_init(
             force=args.force,
