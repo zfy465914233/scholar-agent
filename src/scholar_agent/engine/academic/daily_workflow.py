@@ -4,7 +4,8 @@ Provides:
   - get_analyzed_paper_ids: scan paper-notes/ for already-analyzed papers
   - filter_already_analyzed: remove already-analyzed papers from a list
   - generate_daily_recommendations: dual-track (conference + arXiv) pipeline
-  - build_daily_note: generate a daily recommendation markdown note
+  - generate_paper_notes_for_daily: create per-paper notes for recommended papers
+  - build_daily_note: generate a daily recommendation markdown note with wiki-links
 """
 
 from __future__ import annotations
@@ -293,6 +294,60 @@ def _generate_single_track(
 
 
 # ---------------------------------------------------------------------------
+# Per-paper note generation for daily pipeline
+# ---------------------------------------------------------------------------
+
+
+def generate_paper_notes_for_daily(
+    papers: list[dict[str, Any]],
+    paper_notes_dir: str,
+    language: str = "zh",
+) -> dict[str, str]:
+    """Generate skeleton paper notes for each recommended paper.
+
+    Creates a full structured note in paper-notes/ for every paper that
+    doesn't already have one, reusing the canonical ``generate_note()``
+    from ``paper_analyzer``.  Returns a mapping of ``{title: stem}`` that
+    callers can use to render ``[[wiki-links]]``.
+
+    Args:
+        papers: List of paper dicts (must have ``title``; ``arxiv_id``
+            is used for dedup).
+        paper_notes_dir: Path to the ``paper-notes/`` directory.
+        language: ``"zh"`` or ``"en"``.
+
+    Returns:
+        Mapping of ``{paper_title: sanitize_title(title)}`` for all papers
+        (including pre-existing ones) so callers always have the stem.
+    """
+    from scholar_agent.engine.academic.paper_analyzer import generate_note
+    from scholar_agent.engine.common import sanitize_title
+
+    existing_ids = get_analyzed_paper_ids(paper_notes_dir)
+
+    stems: dict[str, str] = {}
+    for p in papers:
+        title = p.get("title", "")
+        stem = sanitize_title(title)
+        stems[title] = stem
+
+        # Skip if already analyzed
+        arxiv_id = p.get("arxiv_id") or p.get("paper_id") or ""
+        normalized = re.sub(r"^arXiv:\\s*", "", str(arxiv_id)).strip()
+        if normalized and normalized in existing_ids:
+            logger.debug("Skipping note generation for existing paper %s", arxiv_id)
+            continue
+
+        try:
+            generate_note(p, paper_notes_dir, language=language)
+            logger.info("Generated paper note for: %s", title)
+        except Exception:
+            logger.warning("Failed to generate note for: %s", title, exc_info=True)
+
+    return stems
+
+
+# ---------------------------------------------------------------------------
 # Daily note builder
 # ---------------------------------------------------------------------------
 
@@ -303,10 +358,13 @@ def build_daily_note(
     output_dir: str,
     language: str = "zh",
     tracks: dict[str, Any] | None = None,
+    paper_note_stems: dict[str, str] | None = None,
 ) -> str:
     """Generate a daily recommendation note.
 
     When *tracks* is provided, renders a dual-section layout.
+    When *paper_note_stems* is provided, renders [[wiki-links]] to per-paper
+    notes inside each paper block.
     """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -346,9 +404,9 @@ def build_daily_note(
 
     # --- Body ---
     if tracks:
-        _render_dual_sections(lines, papers, tracks, language)
+        _render_dual_sections(lines, papers, tracks, language, paper_note_stems)
     else:
-        _render_flat_section(lines, papers, language)
+        _render_flat_section(lines, papers, language, paper_note_stems)
 
     content = "\n".join(lines)
     note_path.write_text(content, encoding="utf-8")
@@ -365,6 +423,7 @@ def _render_dual_sections(
     all_papers: list[dict[str, Any]],
     tracks: dict[str, Any],
     language: str,
+    paper_note_stems: dict[str, str] | None = None,
 ) -> None:
     """Render two sections: conference picks + arXiv innovation."""
     # Overview
@@ -389,7 +448,8 @@ def _render_dual_sections(
     lines.append("")
     if conf_papers:
         for p in conf_papers:
-            _render_paper_block(lines, p, language, is_top=True)
+            stem = (paper_note_stems or {}).get(p.get("title", ""), "")
+            _render_paper_block(lines, p, language, is_top=True, paper_note_stem=stem)
     else:
         lines.append("<!-- No conference recommendations today. -->")
 
@@ -402,7 +462,8 @@ def _render_dual_sections(
     lines.append("")
     if arxiv_papers:
         for p in arxiv_papers:
-            _render_paper_block(lines, p, language, is_top=True)
+            stem = (paper_note_stems or {}).get(p.get("title", ""), "")
+            _render_paper_block(lines, p, language, is_top=True, paper_note_stem=stem)
     else:
         lines.append("<!-- No arXiv innovation recommendations today. -->")
 
@@ -423,6 +484,7 @@ def _render_flat_section(
     lines: list[str],
     papers: list[dict[str, Any]],
     language: str,
+    paper_note_stems: dict[str, str] | None = None,
 ) -> None:
     """Render original flat list of papers."""
     if language == "en":
@@ -436,7 +498,8 @@ def _render_flat_section(
     lines.append("")
 
     for i, p in enumerate(papers):
-        _render_paper_block(lines, p, language, is_top=(i < 3))
+        stem = (paper_note_stems or {}).get(p.get("title", ""), "")
+        _render_paper_block(lines, p, language, is_top=(i < 3), paper_note_stem=stem)
 
 
 def _render_paper_block(
@@ -444,6 +507,7 @@ def _render_paper_block(
     p: dict[str, Any],
     language: str,
     is_top: bool = True,
+    paper_note_stem: str = "",
 ) -> None:
     """Render a single paper entry."""
     title = p.get("title", "Untitled")
@@ -459,6 +523,14 @@ def _render_paper_block(
 
     lines.append(f"### {title}")
     lines.append("")
+
+    # Wiki-link to per-paper note in paper-notes/
+    if paper_note_stem:
+        if language == "en":
+            lines.append(f"> Paper note: [[{paper_note_stem}]]")
+        else:
+            lines.append(f"> 论文笔记：[[{paper_note_stem}]]")
+        lines.append("")
 
     if language == "en":
         lines.append(f"- **Authors**: {authors}")

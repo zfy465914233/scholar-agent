@@ -1319,7 +1319,11 @@ if SCHOLAR_ACADEMIC:
             dual_track: Use dual-track mode: 2 conference + 2 arXiv (default true).
         """
         from scholar_agent.engine.academic.arxiv_search import _load_config
-        from scholar_agent.engine.academic.daily_workflow import build_daily_note, generate_daily_recommendations
+        from scholar_agent.engine.academic.daily_workflow import (
+            build_daily_note,
+            generate_daily_recommendations,
+            generate_paper_notes_for_daily,
+        )
 
         top_n = max(1, min(top_n, 50))
         if language not in ("zh", "en"):
@@ -1367,7 +1371,16 @@ if SCHOLAR_ACADEMIC:
         skipped = result.get("skipped", 0)
         tracks = result.get("tracks")
 
-        # Build daily note
+        # Generate per-paper skeleton notes in paper-notes/
+        paper_note_stems: dict[str, str] = {}
+        try:
+            paper_note_stems = generate_paper_notes_for_daily(
+                papers, paper_notes_dir, language=language
+            )
+        except Exception:
+            logger.warning("Per-paper note generation partially failed", exc_info=True)
+
+        # Build daily note with wiki-links to per-paper notes
         output_dir = str(get_knowledge_dir().parent / "daily-notes")
         try:
             note_path = build_daily_note(
@@ -1376,10 +1389,28 @@ if SCHOLAR_ACADEMIC:
                 output_dir,
                 language=language,
                 tracks=tracks,
+                paper_note_stems=paper_note_stems or None,
             )
         except Exception as e:
             logger.exception("daily_recommend note generation failed")
             return json.dumps({"error": f"Note generation failed: {e}", "papers": papers})
+
+        # Auto wiki-link: cross-link paper-notes/ and the daily note
+        wiki_linked = False
+        try:
+            from scholar_agent.engine.academic.note_linker import apply_wiki_links, build_keyword_index
+
+            pn_path = get_knowledge_dir().parent / "paper-notes"
+            if pn_path.exists():
+                keyword_index = build_keyword_index(str(pn_path))
+                if keyword_index:
+                    for md_file in pn_path.rglob("*.md"):
+                        apply_wiki_links(str(md_file), keyword_index)
+                    # Also linkify the daily note
+                    apply_wiki_links(note_path, keyword_index)
+                    wiki_linked = True
+        except Exception:
+            logger.warning("Auto wiki-linking failed", exc_info=True)
 
         # Identify papers for deep analysis
         top_for_analysis = []
@@ -1421,6 +1452,8 @@ if SCHOLAR_ACADEMIC:
                 "skipped": skipped,
                 "dual_track": result.get("dual_track", False),
                 "tracks": {k: {"count": v.get("count", 0)} for k, v in (tracks or {}).items()},
+                "paper_notes_created": list(paper_note_stems.values()),
+                "wiki_linked": wiki_linked,
                 "top_for_analysis": top_for_analysis,
                 "papers": paper_summaries,
             },
@@ -1492,6 +1525,15 @@ if SCHOLAR_ACADEMIC:
                 if modified:
                     total_processed += 1
                     total_links += links
+
+            # Also linkify daily-notes/ if it exists
+            daily_notes_path = get_knowledge_dir().parent / "daily-notes"
+            if daily_notes_path.exists():
+                for md_file in daily_notes_path.rglob("*.md"):
+                    modified, links = apply_wiki_links(str(md_file), keyword_index)
+                    if modified:
+                        total_processed += 1
+                        total_links += links
 
         return json.dumps(
             {

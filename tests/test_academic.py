@@ -453,6 +453,107 @@ class TestDailyWorkflow(unittest.TestCase):
             self.assertIn("Paper Recommendations", content)
             self.assertIn("Paper B", content)
 
+    def test_build_daily_note_with_wiki_links(self):
+        from scholar_agent.engine.academic.daily_workflow import build_daily_note
+
+        with tempfile.TemporaryDirectory() as tmp:
+            papers = [
+                {"title": "MoE Routing", "authors": ["Alice"], "arxiv_id": "2401.00001", "domain_keywords": ["MoE"]},
+                {"title": "Transformer Scaling", "authors": ["Bob"], "arxiv_id": "2401.00002", "domain_keywords": ["LLM"]},
+            ]
+            stems = {"MoE Routing": "MoE_Routing", "Transformer Scaling": "Transformer_Scaling"}
+            path = build_daily_note("2025-06-01", papers, tmp, language="zh", paper_note_stems=stems)
+            content = Path(path).read_text(encoding="utf-8")
+            self.assertIn("[[MoE_Routing]]", content)
+            self.assertIn("[[Transformer_Scaling]]", content)
+            self.assertIn("论文笔记", content)
+
+    def test_build_daily_note_without_stems_backward_compat(self):
+        from scholar_agent.engine.academic.daily_workflow import build_daily_note
+
+        with tempfile.TemporaryDirectory() as tmp:
+            papers = [
+                {"title": "Paper X", "authors": ["Eve"], "arxiv_id": "2401.00099", "domain_keywords": ["ML"]},
+            ]
+            path = build_daily_note("2025-06-01", papers, tmp, language="zh")
+            content = Path(path).read_text(encoding="utf-8")
+            self.assertNotIn("[[", content)
+            self.assertIn("Paper X", content)
+
+    def test_build_daily_note_with_wiki_links_en(self):
+        from scholar_agent.engine.academic.daily_workflow import build_daily_note
+
+        with tempfile.TemporaryDirectory() as tmp:
+            papers = [
+                {"title": "MoE Routing", "authors": ["Alice"], "arxiv_id": "2401.00001", "domain_keywords": ["MoE"]},
+            ]
+            stems = {"MoE Routing": "MoE_Routing"}
+            path = build_daily_note("2025-06-01", papers, tmp, language="en", paper_note_stems=stems)
+            content = Path(path).read_text(encoding="utf-8")
+            self.assertIn("[[MoE_Routing]]", content)
+            self.assertIn("Paper note:", content)
+
+    def test_generate_paper_notes_for_daily_creates_notes(self):
+        from scholar_agent.engine.academic.daily_workflow import generate_paper_notes_for_daily
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paper_notes_dir = Path(tmp) / "paper-notes"
+            paper_notes_dir.mkdir()
+            papers = [
+                {"title": "Test Paper One", "arxiv_id": "2401.00101", "abstract": "A test paper."},
+                {"title": "Test Paper Two", "arxiv_id": "2401.00102", "abstract": "Another test paper."},
+            ]
+            stems = generate_paper_notes_for_daily(papers, str(paper_notes_dir), language="zh")
+            self.assertIn("Test Paper One", stems)
+            self.assertIn("Test Paper Two", stems)
+            # Verify notes were created in paper-notes/
+            all_notes = list(paper_notes_dir.rglob("*.md"))
+            self.assertEqual(len(all_notes), 2)
+
+    def test_generate_paper_notes_for_daily_skips_existing(self):
+        from scholar_agent.engine.academic.daily_workflow import (
+            generate_paper_notes_for_daily,
+            get_analyzed_paper_ids,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paper_notes_dir = Path(tmp) / "paper-notes"
+            paper_notes_dir.mkdir()
+            # Create an existing note
+            existing = paper_notes_dir / "existing.md"
+            existing.write_text('---\npaper_id: "2401.00101"\ntitle: "Test Paper One"\n---\n', encoding="utf-8")
+
+            papers = [
+                {"title": "Test Paper One", "arxiv_id": "2401.00101", "abstract": "Already exists."},
+                {"title": "Test Paper Two", "arxiv_id": "2401.00102", "abstract": "New paper."},
+            ]
+            stems = generate_paper_notes_for_daily(papers, str(paper_notes_dir), language="zh")
+            # Both should have stems
+            self.assertIn("Test Paper One", stems)
+            self.assertIn("Test Paper Two", stems)
+            # Only one new note created (Test Paper Two)
+            all_notes = list(paper_notes_dir.rglob("*.md"))
+            self.assertEqual(len(all_notes), 2)  # 1 existing + 1 new
+
+    def test_render_paper_block_with_stem(self):
+        from scholar_agent.engine.academic.daily_workflow import _render_paper_block
+
+        lines: list[str] = []
+        paper = {"title": "MoE Paper", "authors": ["Alice"], "arxiv_id": "2401.00101"}
+        _render_paper_block(lines, paper, "zh", is_top=False, paper_note_stem="MoE_Paper")
+        joined = "\n".join(lines)
+        self.assertIn("[[MoE_Paper]]", joined)
+        self.assertIn("论文笔记", joined)
+
+    def test_render_paper_block_without_stem(self):
+        from scholar_agent.engine.academic.daily_workflow import _render_paper_block
+
+        lines: list[str] = []
+        paper = {"title": "MoE Paper", "authors": ["Alice"], "arxiv_id": "2401.00101"}
+        _render_paper_block(lines, paper, "zh", is_top=False)
+        joined = "\n".join(lines)
+        self.assertNotIn("[[", joined)
+
 
 class TestParseArxivId(unittest.TestCase):
     def test_raw_id(self) -> None:
