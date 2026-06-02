@@ -1549,6 +1549,65 @@ if SCHOLAR_ACADEMIC:
     logger.info("Academic tools enabled (SCHOLAR_ACADEMIC=%s)", SCHOLAR_ACADEMIC)
 
 
+@tool
+def import_paperpulse_note(paper_id: str, api_token: str | None = None) -> str:
+    """Import a distilled paper note from PaperPulse SaaS directly into the local Scholar Agent knowledge base.
+
+    Args:
+        paper_id: The UUID of the paper to import.
+        api_token: Optional API token. If not provided, reads 'paperpulse_token' from config.json.
+    """
+    config = load_config()
+    token = api_token or config.get("paperpulse_token", "")
+    base_url = config.get("paperpulse_url", "https://pulse.mindpulse.ai").rstrip("/")
+
+    url = f"{base_url}/api/v1/papers/{paper_id}/export-scholar-agent"
+
+    import re
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as response:
+            content_disposition = response.info().get("Content-Disposition", "")
+            filename = f"distilled-{paper_id}.md"
+            if content_disposition:
+                match = re.search(r'filename="?([^";]+)"?', content_disposition)
+                if match:
+                    filename = match.group(1)
+
+            markdown_content = response.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return "Error: Unauthorized. Please configure your 'paperpulse_token' in config.json or provide it as a parameter."
+        if e.code == 404:
+            return f"Error: Paper note {paper_id} not found on PaperPulse SaaS."
+        return f"Error: Failed to fetch paper note from PaperPulse (HTTP {e.code}): {e.reason}"
+    except Exception as e:
+        return f"Error: Request failed: {e}"
+
+    knowledge_dir = Path(get_knowledge_dir())
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = knowledge_dir / filename
+
+    dest_path.write_text(markdown_content, encoding="utf-8")
+
+    # Reindex local knowledge base
+    try:
+        from scholar_agent.engine.close_knowledge_loop import reindex
+        reindex(Path(config["index_path"]))
+    except Exception:
+        pass
+
+    return f"Successfully imported paper note as a local knowledge card at: {dest_path.name}"
+
+
 def main() -> int:
     """Entry point for the MCP server."""
     if mcp is None:

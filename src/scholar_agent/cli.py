@@ -329,6 +329,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output format for the pipx installation result.",
     )
 
+    import_parser = subparsers.add_parser(
+        "import-paper",
+        help="Import a distilled paper note from PaperPulse SaaS into local knowledge.",
+    )
+    import_parser.add_argument(
+        "paper_id",
+        help="The UUID of the paper to import.",
+    )
+    import_parser.add_argument(
+        "--token",
+        help="PaperPulse API token (overrides paperpulse_token in config.json).",
+    )
+    import_parser.add_argument(
+        "--url",
+        help="PaperPulse base URL (overrides paperpulse_url in config.json).",
+    )
+
     return parser
 
 
@@ -836,6 +853,65 @@ def _run_serve_mcp() -> int:
     return mcp_adapter.main()
 
 
+def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
+    import re
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+
+    from scholar_agent.engine.scholar_config import get_knowledge_dir, load_config
+
+    config = load_config()
+    effective_token = token or config.get("paperpulse_token", "")
+    base_url = url or config.get("paperpulse_url", "https://pulse.mindpulse.ai").rstrip("/")
+
+    target_url = f"{base_url}/api/v1/papers/{paper_id}/export-scholar-agent"
+
+    headers = {}
+    if effective_token:
+        headers["Authorization"] = f"Bearer {effective_token}"
+
+    req = urllib.request.Request(target_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as response:
+            content_disposition = response.info().get("Content-Disposition", "")
+            filename = f"distilled-{paper_id}.md"
+            if content_disposition:
+                match = re.search(r'filename="?([^";]+)"?', content_disposition)
+                if match:
+                    filename = match.group(1)
+
+            markdown_content = response.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            sys.stderr.write("Error: Unauthorized. Please configure your 'paperpulse_token' in config.json or provide it via --token.\n")
+        elif e.code == 404:
+            sys.stderr.write(f"Error: Paper note {paper_id} not found on PaperPulse SaaS.\n")
+        else:
+            sys.stderr.write(f"Error: Failed to fetch paper note (HTTP {e.code}): {e.reason}\n")
+        return 1
+    except Exception as e:
+        sys.stderr.write(f"Error: Request failed: {e}\n")
+        return 1
+
+    knowledge_dir = Path(get_knowledge_dir())
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = knowledge_dir / filename
+
+    dest_path.write_text(markdown_content, encoding="utf-8")
+    sys.stdout.write(f"Successfully imported paper note as a local knowledge card at: {dest_path}\n")
+
+    # Reindex
+    try:
+        from scholar_agent.engine.local_index import write_index
+        write_index(knowledge_dir, Path(config["index_path"]))
+        sys.stdout.write("Local knowledge base index successfully updated.\n")
+    except Exception as exc:
+        sys.stderr.write(f"Warning: reindexing skipped ({exc})\n")
+
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -901,6 +977,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 force=args.force,
                 output_format=args.format,
             )
+
+    if command == "import-paper":
+        return _run_import_paper(
+            paper_id=args.paper_id,
+            token=args.token,
+            url=args.url,
+        )
 
     parser.error(f"unknown command: {command}")
     return 2
