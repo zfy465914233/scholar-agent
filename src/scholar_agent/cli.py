@@ -854,61 +854,23 @@ def _run_serve_mcp() -> int:
 
 
 def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
-    import re
-    import urllib.error
-    import urllib.request
     from pathlib import Path
 
+    from scholar_agent.engine.import_service import import_from_url
     from scholar_agent.engine.scholar_config import get_knowledge_dir, load_config
 
     config = load_config()
     effective_token = token or config.get("paperpulse_token", "")
     base_url = url or config.get("paperpulse_url", "https://pulse.mindpulse.ai").rstrip("/")
-
-    target_url = f"{base_url}/api/v1/papers/{paper_id}/export-scholar-agent"
-
-    headers = {}
-    if effective_token:
-        headers["Authorization"] = f"Bearer {effective_token}"
-
-    req = urllib.request.Request(target_url, headers=headers)
-    try:
-        with urllib.request.urlopen(req) as response:
-            content_disposition = response.info().get("Content-Disposition", "")
-            filename = f"distilled-{paper_id}.md"
-            if content_disposition:
-                match = re.search(r'filename="?([^";]+)"?', content_disposition)
-                if match:
-                    filename = match.group(1)
-
-            markdown_content = response.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            sys.stderr.write("Error: Unauthorized. Please configure your 'paperpulse_token' in config.json or provide it via --token.\n")
-        elif e.code == 404:
-            sys.stderr.write(f"Error: Paper note {paper_id} not found on PaperPulse SaaS.\n")
-        else:
-            sys.stderr.write(f"Error: Failed to fetch paper note (HTTP {e.code}): {e.reason}\n")
-        return 1
-    except Exception as e:
-        sys.stderr.write(f"Error: Request failed: {e}\n")
-        return 1
-
     knowledge_dir = Path(get_knowledge_dir())
-    knowledge_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = knowledge_dir / filename
+    index_path = Path(config["index_path"])
 
-    dest_path.write_text(markdown_content, encoding="utf-8")
-    sys.stdout.write(f"Successfully imported paper note as a local knowledge card at: {dest_path}\n")
+    msg, filename = import_from_url(paper_id, effective_token, base_url, knowledge_dir, index_path)
+    if filename is None:
+        sys.stderr.write(f"{msg}\n")
+        return 1
 
-    # Reindex
-    try:
-        from scholar_agent.engine.local_index import write_index
-        write_index(knowledge_dir, Path(config["index_path"]))
-        sys.stdout.write("Local knowledge base index successfully updated.\n")
-    except Exception as exc:
-        sys.stderr.write(f"Warning: reindexing skipped ({exc})\n")
-
+    sys.stdout.write(f"{msg}\n")
     return 0
 
 

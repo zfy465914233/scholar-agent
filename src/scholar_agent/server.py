@@ -1557,185 +1557,16 @@ def import_paperpulse_note(paper_id: str, api_token: str | None = None) -> str:
         paper_id: The UUID of the paper to import.
         api_token: Optional API token. If not provided, reads 'paperpulse_token' from config.json.
     """
+    from scholar_agent.engine.import_service import import_from_url
+
     config = load_config()
     token = api_token or config.get("paperpulse_token", "")
     base_url = config.get("paperpulse_url", "https://pulse.mindpulse.ai").rstrip("/")
-
-    url = f"{base_url}/api/v1/papers/{paper_id}/export-scholar-agent"
-
-    import re
-    import urllib.error
-    import urllib.request
-    from pathlib import Path
-
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    req = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(req) as response:
-            content_disposition = response.info().get("Content-Disposition", "")
-            filename = f"distilled-{paper_id}.md"
-            if content_disposition:
-                match = re.search(r'filename="?([^";]+)"?', content_disposition)
-                if match:
-                    filename = match.group(1)
-
-            markdown_content = response.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            return "Error: Unauthorized. Please configure your 'paperpulse_token' in config.json or provide it as a parameter."
-        if e.code == 404:
-            return f"Error: Paper note {paper_id} not found on PaperPulse SaaS."
-        return f"Error: Failed to fetch paper note from PaperPulse (HTTP {e.code}): {e.reason}"
-    except Exception as e:
-        return f"Error: Request failed: {e}"
-
     knowledge_dir = Path(get_knowledge_dir())
-    knowledge_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = knowledge_dir / filename
+    index_path = Path(config["index_path"])
 
-    dest_path.write_text(markdown_content, encoding="utf-8")
-
-    # Reindex local knowledge base
-    try:
-        from scholar_agent.engine.close_knowledge_loop import reindex
-        reindex(Path(config["index_path"]))
-    except Exception:
-        pass
-
-    return f"Successfully imported paper note as a local knowledge card at: {dest_path.name}"
-
-
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-
-def _is_allowed_origin(origin: str | None) -> bool:
-    if not origin:
-        return False
-    allowed = (
-        "https://pulse.mindpulse.ai",
-        "https://mindpulse.top",
-        "http://localhost:",
-        "http://127.0.0.1:",
-    )
-    return any(origin.startswith(prefix) for prefix in allowed)
-
-class ScholarAgentLocalServer(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        # Prevent printing to stdout to avoid corrupting MCP JSON-RPC protocol
-        logger.info(format % args)
-
-    def do_OPTIONS(self):
-        origin = self.headers.get("Origin")
-        if _is_allowed_origin(origin):
-            self.send_response(200)
-            self.send_header("Access-Control-Allow-Origin", origin)
-            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
-            self.send_header("Access-Control-Max-Age", "86400")
-            self.end_headers()
-        else:
-            self.send_response(403)
-            self.end_headers()
-
-    def do_GET(self):
-        origin = self.headers.get("Origin")
-        if not _is_allowed_origin(origin) and origin is not None:
-            self.send_response(403)
-            self.end_headers()
-            return
-
-        if self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            if origin:
-                self.send_header("Access-Control-Allow-Origin", origin)
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "version": "1.0.0"}).encode('utf-8'))
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def do_POST(self):
-        origin = self.headers.get("Origin")
-        if not _is_allowed_origin(origin) and origin is not None:
-            self.send_response(403)
-            self.end_headers()
-            return
-
-        if self.path == "/import-markdown":
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length) if content_length > 0 else b""
-            try:
-                data = json.loads(body.decode('utf-8'))
-            except json.JSONDecodeError as e:
-                self.send_error_response(400, f"Invalid JSON body: {e!s}", origin)
-                return
-
-            try:
-                filename = data.get("filename")
-                markdown_content = data.get("markdown")
-
-                if not filename or not markdown_content:
-                    self.send_error_response(400, "Missing filename or markdown content", origin)
-                    return
-
-                # Sanitize filename to prevent directory traversal
-                safe_filename = Path(filename).name
-                if not safe_filename.endswith(".md"):
-                    safe_filename += ".md"
-
-                config = load_config()
-                knowledge_dir = Path(get_knowledge_dir())
-                knowledge_dir.mkdir(parents=True, exist_ok=True)
-                dest_path = knowledge_dir / safe_filename
-
-                dest_path.write_text(markdown_content, encoding="utf-8")
-
-                # Reindex local knowledge base
-                try:
-                    from scholar_agent.engine.close_knowledge_loop import reindex
-                    reindex(Path(config["index_path"]))
-                except Exception as e:
-                    logger.warning(f"Reindexing failed: {e}")
-
-                self.send_success_response(origin, {
-                    "status": "success",
-                    "filename": safe_filename,
-                    "path": str(dest_path)
-                })
-            except Exception as e:
-                self.send_error_response(500, f"Internal Error: {e!s}", origin)
-        else:
-            self.send_error_response(404, "Not Found", origin)
-
-    def send_success_response(self, origin, data):
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        if origin:
-            self.send_header("Access-Control-Allow-Origin", origin)
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode('utf-8'))
-
-    def send_error_response(self, code, message, origin=None):
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        if origin:
-            self.send_header("Access-Control-Allow-Origin", origin)
-        self.end_headers()
-        self.wfile.write(json.dumps({"error": message}).encode('utf-8'))
-
-def start_local_server():
-    port = 8374
-    try:
-        server = HTTPServer(('127.0.0.1', port), ScholarAgentLocalServer)
-        logger.info(f"Scholar Agent Local Sync Server listening on http://127.0.0.1:{port}")
-        server.serve_forever()
-    except Exception as e:
-        logger.error(f"Failed to start Scholar Agent Local Sync Server: {e}")
+    msg, _ = import_from_url(paper_id, token, base_url, knowledge_dir, index_path)
+    return msg
 
 
 def main() -> int:
@@ -1743,10 +1574,6 @@ def main() -> int:
     if mcp is None:
         print("Error: fastmcp not installed. Run: pip install fastmcp", file=sys.stderr)
         return 1
-
-    # Start the background local sync server
-    t = threading.Thread(target=start_local_server, daemon=True)
-    t.start()
 
     mcp.run()
     return 0
