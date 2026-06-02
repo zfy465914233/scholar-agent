@@ -49,7 +49,7 @@ scholar-agent/
 python -m pytest tests/ -v
 ```
 
-All tests run offline — no API keys or external services needed. 276 tests covering BM25 retrieval, academic scoring, MCP tools, and input validation.
+All tests run offline — no API keys or external services needed. 1117 tests covering BM25 retrieval, academic scoring, MCP tools, and input validation.
 
 ## Code Quality
 

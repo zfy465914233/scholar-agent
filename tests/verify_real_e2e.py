@@ -46,16 +46,10 @@ def safe_json(obj):
 
 print_sep("LOADING CONFIG")
 
-# Use default config since no YAML exists
 from scholar_agent.engine.academic.arxiv_search import _load_config
 
-config_path = str(_ROOT / "src" / "scholar_agent" / "config_data" / "config.yaml")
-if os.path.exists(config_path):
-    config = _load_config(config_path)
-    print(f"Loaded config from: {config_path}")
-else:
-    config = _load_config("/nonexistent.yaml")  # triggers default fallback
-    print("No YAML config found, using default fallback config")
+config = _load_config("/nonexistent.yaml")  # triggers default fallback
+print("Using default fallback config")
 
 print(f"Research domains: {list(config.get('research_domains', {}).keys())}")
 print(f"Excluded keywords: {config.get('excluded_keywords', [])}")

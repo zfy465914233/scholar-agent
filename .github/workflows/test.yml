@@ -54,7 +54,7 @@ jobs:
           pip install pytest pytest-cov
 
       - name: Run tests
-        run: python -m pytest tests/ -v --cov=scholar_agent --cov-report=xml
+        run: python -m pytest tests/ -v --cov=scholar_agent --cov-report=xml --cov-fail-under=60
 
       - name: Upload coverage
         if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'

@@ -68,21 +68,7 @@ _DBLP_API = "https://dblp.org/search/publ/api"
 
 
 def _load_s2_key() -> str:
-    """Load S2 API key from env or config file."""
-    global _S2_KEY
-    if _S2_KEY:
-        return _S2_KEY
-    try:
-        import yaml
-
-        from scholar_agent.engine.common import get_package_data_path
-
-        cfg_path = get_package_data_path("config_data", "config.yaml")
-        if cfg_path.exists():
-            cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
-            _S2_KEY = cfg.get("s2_api_key", "")
-    except Exception:
-        pass
+    """Load S2 API key from environment variable."""
     return _S2_KEY
 
 

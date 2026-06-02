@@ -28,6 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structured research output with JSON schema validation
 - Quality gates for knowledge card creation
 - Cross-platform support (macOS, Linux, Windows)
-- 276 tests with full offline coverage
+- 1121 tests with full offline coverage
 
 [0.1.0]: https://github.com/zfy465914233/scholar-agent/releases/tag/v0.1.0

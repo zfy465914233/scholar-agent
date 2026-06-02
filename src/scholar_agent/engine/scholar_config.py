@@ -38,10 +38,11 @@ def _resolve_scholar_root() -> Path:
 
 SCHOLAR_ROOT = _resolve_scholar_root()
 
-# Defaults: always resolve relative to cwd, not scholar-agent directory
+# Defaults: resolve relative to ~/scholar/ (same as config/paths.py)
+_SCHOLAR_HOME_DEFAULT = Path.home() / "scholar"
 _DEFAULTS = {
-    "knowledge_dir": str(Path.cwd() / "knowledge"),
-    "index_path": str(Path.cwd() / "indexes" / "local" / "index.json"),
+    "knowledge_dir": str(_SCHOLAR_HOME_DEFAULT / "knowledge"),
+    "index_path": str(_SCHOLAR_HOME_DEFAULT / "indexes" / "local" / "index.json"),
     "scholar_dir": str(SCHOLAR_ROOT),
 }
 

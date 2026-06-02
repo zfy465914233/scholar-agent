@@ -122,6 +122,12 @@ For paper research, Scholar Agent provides:
 pip install py-scholar-agent
 ```
 
+Or with pipx (isolated environment):
+
+```bash
+pipx install py-scholar-agent
+```
+
 Or from source:
 
 ```bash
@@ -267,7 +273,7 @@ For best paper analysis quality:
 ```bash
 make dev       # Install with dev dependencies + pre-commit hooks
 make lint      # Run ruff + mypy
-make test      # Run test suite (1117 tests, ~20s, fully offline)
+make test      # Run test suite (1121 tests, ~20s, fully offline)
 make coverage  # Run tests with coverage report
 make build     # Build distribution package
 make docker    # Build Docker image
@@ -285,6 +291,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 - **Academic pipeline** — Search → Score → Analyze → Extract → Recommend, fully automated
 - **MCP integration** — Works with Claude Code, VS Code Copilot, and OpenCode out of the box
 - **Offline-first** — Local BM25 index, graceful degradation when external APIs are unavailable
+
+## Comparison
+
+Wondering how Scholar Agent compares to mem0, MemGPT, or Zep? See [docs/comparison.md](docs/comparison.md) for a detailed breakdown.
 
 ## License
 

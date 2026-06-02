@@ -110,6 +110,12 @@ sequenceDiagram
 pip install py-scholar-agent
 ```
 
+或使用 pipx（隔离环境）：
+
+```bash
+pipx install py-scholar-agent
+```
+
 或从源码安装：
 
 ```bash
@@ -255,7 +261,7 @@ scholar/
 ```bash
 make dev       # 安装开发依赖 + pre-commit hooks
 make lint      # 运行 ruff + mypy
-make test      # 运行测试（1117 个测试，约 20 秒，完全离线）
+make test      # 运行测试（1121 个测试，约 20 秒，完全离线）
 make coverage  # 运行测试并生成覆盖率报告
 make build     # 构建分发包
 make docker    # 构建 Docker 镜像
