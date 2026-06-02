@@ -63,7 +63,7 @@ def import_from_url(
     # Reindex
     try:
         from scholar_agent.engine.close_knowledge_loop import reindex
-        reindex(index_path)
+        reindex(knowledge_dir, index_path)
     except Exception:
         pass
 
@@ -99,7 +99,7 @@ def import_markdown(
     # Reindex
     try:
         from scholar_agent.engine.close_knowledge_loop import reindex
-        reindex(index_path)
+        reindex(knowledge_dir, index_path)
     except Exception:
         pass
 

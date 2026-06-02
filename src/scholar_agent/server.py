@@ -1650,32 +1650,18 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 knowledge_dir = Path(get_knowledge_dir())
                 index_path = Path(config["index_path"])
 
-                # Save file immediately (fast)
-                from pathlib import Path as _Path
+                from scholar_agent.engine.import_service import import_markdown
 
-                from scholar_agent.engine.close_knowledge_loop import reindex as _do_reindex
+                msg, safe_filename = import_markdown(filename, markdown_content, knowledge_dir, index_path)
+                if safe_filename is None:
+                    self.send_error_response(500, msg, origin)
+                    return
 
-                # Sanitize & save (same logic as import_markdown but split out the slow part)
-                safe_filename = _Path(filename).name
-                if not safe_filename.endswith(".md"):
-                    safe_filename += ".md"
-                knowledge_dir.mkdir(parents=True, exist_ok=True)
-                (knowledge_dir / safe_filename).write_text(markdown_content, encoding="utf-8")
-
-                # Return success immediately, reindex in background
                 self.send_success_response(origin, {
                     "status": "success",
                     "filename": safe_filename,
-                    "message": f"Successfully saved: {safe_filename}"
+                    "message": msg,
                 })
-
-                # Kick off reindex asynchronously so we don't block the response
-                _idx_root = knowledge_dir
-                _idx_path = index_path
-                threading.Thread(
-                    target=lambda: _do_reindex(_idx_root, _idx_path),
-                    daemon=True,
-                ).start()
             except Exception as e:
                 self.send_error_response(500, f"Internal Error: {e!s}", origin)
         else:

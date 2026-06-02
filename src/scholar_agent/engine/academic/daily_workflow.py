@@ -333,7 +333,7 @@ def generate_paper_notes_for_daily(
 
         # Skip if already analyzed
         arxiv_id = p.get("arxiv_id") or p.get("paper_id") or ""
-        normalized = re.sub(r"^arXiv:\\s*", "", str(arxiv_id)).strip()
+        normalized = re.sub(r"^arXiv:\s*", "", str(arxiv_id)).strip()
         if normalized and normalized in existing_ids:
             logger.debug("Skipping note generation for existing paper %s", arxiv_id)
             continue
@@ -519,7 +519,6 @@ def _render_paper_block(
     impact = p.get("_impact_score")
     innovation = p.get("_innovation_final_score")
     llm_comment = p.get("_llm_comment", "")
-    p.get("track", "")
 
     lines.append(f"### {title}")
     lines.append("")
