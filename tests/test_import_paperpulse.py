@@ -137,6 +137,39 @@ class TestImportPaperPulse(unittest.TestCase):
                 urllib.request.urlopen(req)
             self.assertEqual(cm.exception.code, 403)
 
+            # 4. Invalid JSON
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/import-markdown",
+                data=b"{invalid-json}",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://pulse.mindpulse.ai"
+                },
+                method="POST"
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req)
+            self.assertEqual(cm.exception.code, 400)
+            err_data = json.loads(cm.exception.read().decode('utf-8'))
+            self.assertIn("Invalid JSON body", err_data["error"])
+
+            # 5. Missing fields
+            post_missing = {"filename": "missing.md"}
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/import-markdown",
+                data=json.dumps(post_missing).encode('utf-8'),
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://pulse.mindpulse.ai"
+                },
+                method="POST"
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req)
+            self.assertEqual(cm.exception.code, 400)
+            err_data = json.loads(cm.exception.read().decode('utf-8'))
+            self.assertIn("Missing filename or markdown content", err_data["error"])
+
         finally:
             server.shutdown()
             server.server_close()

@@ -1671,11 +1671,16 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length) if content_length > 0 else b""
             try:
                 data = json.loads(body.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                self.send_error_response(400, f"Invalid JSON body: {e!s}", origin)
+                return
+
+            try:
                 filename = data.get("filename")
                 markdown_content = data.get("markdown")
 
                 if not filename or not markdown_content:
-                    self.send_error_response(400, "Missing filename or markdown content")
+                    self.send_error_response(400, "Missing filename or markdown content", origin)
                     return
 
                 # Sanitize filename to prevent directory traversal
