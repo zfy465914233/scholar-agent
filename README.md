@@ -42,6 +42,34 @@ The result is a personal **LLM-Wiki**: structured, traceable, continuously growi
 
 ## What It Does
 
+### Architecture & Data Flow
+
+When you ask a question, the agent routes the query through a local-first retrieval loop before falling back to external sources:
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant Host as Claude Code / VS Code
+    participant MCP as Scholar Agent (MCP Server)
+    participant Local as Local Index (BM25)
+    participant Web as arXiv / Semantic Scholar
+
+    User->>Host: Prompt: "Explain MoE"
+    Host->>MCP: query_knowledge("MoE")
+    MCP->>Local: BM25 Query
+    alt Local Hit (BM25 Score >= Threshold)
+        Local-->>MCP: Match (e.g. mixture-of-experts.md)
+        MCP-->>Host: Local Note Context
+    else Local Miss
+        MCP->>Web: API Fallback (arxiv + web search)
+        Web-->>MCP: Raw Papers & Metadata
+        MCP->>MCP: Synthesize & Distill
+        MCP->>Local: Save Card (Staging -> Validate -> Promote)
+        MCP-->>Host: Synthesized Answer + Citations
+    end
+    Host->>User: Natural Language Response
+```
+
 ### Knowledge Persistence
 
 Each conversation can produce a knowledge card — a structured record with:
@@ -61,6 +89,7 @@ Cards aren't isolated files. Scholar Agent:
 - Auto-generates **`[[wiki-links]]`** between related cards
 - Tracks **provenance** — every claim links back to its source evidence
 - Outputs **Obsidian-compatible** Markdown (YAML frontmatter + wiki-links)
+- **Obsidian Graph Ready** — Open your data directory (e.g. `~/scholar/`) directly as an Obsidian Vault to navigate your visual knowledge graph.
 
 ### Evidence-Based Answers
 
