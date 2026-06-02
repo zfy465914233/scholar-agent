@@ -827,6 +827,12 @@ def _run_init(
 
 
 def _run_serve_mcp() -> int:
+    from scholar_agent import __version__
+
+    sys.stderr.write(
+        f"\nScholar Agent v{__version__} — MCP Server\n\n"
+    )
+    sys.stderr.flush()
     return mcp_adapter.main()
 
 

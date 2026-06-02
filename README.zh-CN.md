@@ -3,10 +3,35 @@
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![MCP Ready](https://img.shields.io/badge/MCP-Ready-brightgreen.svg)
-![Tests](https://img.shields.io/badge/tests-1117%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-1124%20passing-brightgreen.svg)
 ![PyPI](https://img.shields.io/pypi/v/py-scholar-agent?color=blue)
 
+<p align="left">
+  <a href="https://pulse.mindpulse.ai">
+    <img src="https://img.shields.io/badge/MindPulse-Academic%20Suite-blueviolet?style=for-the-badge&logo=ai" alt="MindPulse Academic Suite" />
+  </a>
+</p>
+
 [English](README.md)
+
+---
+
+## MindPulse 学术套件 (MindPulse Academic Suite)
+
+Scholar Agent 是 **MindPulse 学术套件** 的一部分，形成了本地开源工具与云端全托管服务之间的强大协同：
+
+* 🌌 **Scholar Agent** (开源 & 本地): 一个本地优先的知识飞轮，通过 MCP (Model Context Protocol) 与您的 IDE 深度集成。它将研究成果保存为本地 Markdown 知识卡片，逐步构建您的专属个人 LLM-Wiki。
+* ⚡ **[PaperPulse](https://pulse.mindpulse.ai)** (云端 SaaS): 一个全托管的每日学术简报 SaaS，监控 arXiv/Semantic Scholar，基于您的个性化科研偏好对论文进行自动打分，并将提炼出的文献精读直接推送到您的微信或邮箱。
+
+| 功能特性 | Scholar Agent (本地) | PaperPulse (云端 SaaS) |
+| :--- | :--- | :--- |
+| **部署与模式** | 本地 MCP 服务 (开源) | 全托管 SaaS 服务 (闭源) |
+| **核心工作流** | 按需检索、研究与知识库沉淀 | 每日自动爬取、偏好评分与邮件/微信推送 |
+| **数据存储** | 本地 Markdown 文件 / 向量数据库 | 云端 Postgres / 托管索引 |
+| **IDE 集成** | 深度集成于 Claude Code, VS Code, Cursor | 网页端仪表盘与微信机器人 |
+| **资费情况** | 免费且开源 | 免费体验 / 增值订阅 |
+
+💡 **协同联动**：您可以轻松地将 PaperPulse 每日推送的文献精读导出为 Scholar Agent 格式的 Markdown 笔记，并直接载入您的本地知识库中。
 
 ---
 

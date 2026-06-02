@@ -6,8 +6,14 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />
   <img src="https://img.shields.io/badge/MCP-Ready-brightgreen.svg" alt="MCP Ready" />
-  <img src="https://img.shields.io/badge/tests-1117%20passing-brightgreen.svg" alt="Tests" />
+  <img src="https://img.shields.io/badge/tests-1124%20passing-brightgreen.svg" alt="Tests" />
   <img src="https://img.shields.io/pypi/v/py-scholar-agent?color=blue" alt="PyPI" />
+</p>
+
+<p align="center">
+  <a href="https://pulse.mindpulse.ai">
+    <img src="https://img.shields.io/badge/MindPulse-Academic%20Suite-blueviolet?style=for-the-badge&logo=ai" alt="MindPulse Academic Suite" />
+  </a>
 </p>
 
 <p align="center">
@@ -17,6 +23,25 @@
 <p align="center">
   <strong>AI that gets smarter in YOUR domain — every question compounds.</strong>
 </p>
+
+---
+
+## MindPulse Academic Suite
+
+Scholar Agent is part of the **MindPulse Academic Suite**, forming a powerful synergy between local open-source tools and fully-managed cloud services:
+
+* 🌌 **Scholar Agent** (Open Source & Local): A local-first knowledge flywheel that integrates with your IDE via MCP (Model Context Protocol). It saves research answers as local Markdown knowledge cards, building your custom personal LLM-Wiki.
+* ⚡ **[PaperPulse](https://pulse.mindpulse.ai)** (Cloud SaaS): A fully-managed daily academic digest SaaS that monitors arXiv/Semantic Scholar, scores papers based on your personalized research preferences, and delivers distilled summaries straight to your WeChat or Email.
+
+| Feature | Scholar Agent (Local) | PaperPulse (Cloud SaaS) |
+| :--- | :--- | :--- |
+| **Hosting & Mode** | Local MCP Server (Open Source) | Fully-Managed SaaS (Closed Source) |
+| **Core Workflow** | On-demand research query & knowledge synthesis | Automated daily crawling, scoring & email/WeChat push |
+| **Storage** | Local Markdown Files / Vector DB | Cloud Postgres / Managed Index |
+| **IDE Integration** | Deeply integrated with Claude Code, VS Code, Cursor | Web-based Dashboard & Chatbot |
+| **Pricing** | Free & Open Source | Free Tier / Premium Subscriptions |
+
+💡 **Synergy**: You can easily export PaperPulse daily digests as Scholar Agent Markdown notes and load them into your local workspace.
 
 ---
 
