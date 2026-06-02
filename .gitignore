@@ -53,3 +53,6 @@ tests/sa_*.md
 htmlcov/
 .coverage
 coverage.xml
+
+# Agent metadata
+.claude/

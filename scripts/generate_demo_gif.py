@@ -1,31 +1,31 @@
-"""Generate a demo GIF showing Scholar Agent knowledge flywheel in action."""
+"""Generate a realistic demo GIF showing Scholar Agent as an MCP server with Claude Code."""
 
 from PIL import Image, ImageDraw, ImageFont
 import os
 
 # --- Config ---
 WIDTH = 720
-HEIGHT = 420
-BG_COLOR = (15, 23, 42)       # slate-900
-BORDER_COLOR = (51, 65, 85)    # slate-600
-TITLEBAR_COLOR = (30, 41, 59)  # slate-800
-TEXT_COLOR = (148, 163, 184)   # slate-400
-USER_COLOR = (96, 165, 250)    # blue-400
-AI_COLOR = (52, 211, 153)      # emerald-400
-HIGHLIGHT = (251, 191, 36)     # amber-400
-ACCENT = (59, 130, 246)        # blue-500
-SUCCESS = (34, 197, 94)        # green-500
-DIM = (71, 85, 105)            # slate-500
+HEIGHT = 480
+MAX_LINES = 21
+
+BG_COLOR = (15, 23, 42)        # slate-900
+BORDER_COLOR = (51, 65, 85)     # slate-600
+TITLEBAR_COLOR = (30, 41, 59)   # slate-800
+TEXT_COLOR = (226, 232, 240)    # slate-200
+DIM_COLOR = (100, 116, 139)     # slate-500
+PROMPT_COLOR = (96, 165, 250)   # blue-400
+USER_COLOR = (241, 245, 249)     # slate-50
+HIGHLIGHT = (251, 191, 36)      # amber-400
+SUCCESS = (52, 211, 153)        # emerald-400
+ACCENT_COLOR = (129, 140, 248)  # indigo-400
 
 FONT_SIZE = 13
 LINE_HEIGHT = 20
 MARGIN_LEFT = 16
 MARGIN_TOP = 36
-PADDING = 10
 
 font_path = "/System/Library/Fonts/Menlo.ttc"
 font = ImageFont.truetype(font_path, FONT_SIZE)
-font_bold = ImageFont.truetype(font_path, FONT_SIZE)
 
 
 def draw_terminal_base(draw):
@@ -38,192 +38,219 @@ def draw_terminal_base(draw):
     for i, color in enumerate([(239, 68, 68), (234, 179, 8), (34, 197, 94)]):
         draw.ellipse([14 + i * 20, 9, 14 + i * 20 + 12, 9 + 12], fill=color)
     # Title
-    draw.text((WIDTH // 2 - 60, 6), "Scholar Agent", fill=TEXT_COLOR, font=font)
+    draw.text((WIDTH // 2 - 80, 6), "Claude Code — Terminal", fill=DIM_COLOR, font=font)
 
 
-def draw_cursor(draw, x, y, frame_in_step):
-    """Draw blinking cursor."""
-    if frame_in_step % 6 < 4:
-        draw.rectangle([x, y + 2, x + 8, y + 14], fill=USER_COLOR)
+class Terminal:
+    def __init__(self):
+        self.lines = []
+        self.frames = []
 
+    def add_line(self, line_data, color=TEXT_COLOR):
+        self.lines.append((line_data, color))
 
-def render_frame(lines, cursor_pos=None, cursor_line=None, step_frame=0):
-    """Render a single frame with the given lines."""
-    img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
-    draw = ImageDraw.Draw(img)
-    draw_terminal_base(draw)
-
-    y = MARGIN_TOP
-    for i, (text, color) in enumerate(lines):
-        if text == "":
-            y += LINE_HEIGHT // 2
-            continue
-        if isinstance(text, list):
-            # Mixed color line
-            x = MARGIN_LEFT
-            for segment, seg_color in text:
-                draw.text((x, y), segment, fill=seg_color, font=font)
-                bbox = font.getbbox(segment)
-                x += bbox[2] - bbox[0]
+    def update_last_line(self, line_data, color=TEXT_COLOR):
+        if self.lines:
+            self.lines[-1] = (line_data, color)
         else:
-            draw.text((MARGIN_LEFT, y), text, fill=color, font=font)
-        y += LINE_HEIGHT
+            self.lines.append((line_data, color))
 
-    if cursor_pos is not None and cursor_line is not None:
-        y_cursor = MARGIN_TOP + cursor_line * LINE_HEIGHT
-        x_cursor = MARGIN_LEFT + font.getbbox(lines[cursor_line][0] if isinstance(lines[cursor_line][0], str) else "")[2]
-        draw_cursor(draw, x_cursor, y_cursor, step_frame)
+    def render(self, show_cursor=False, cursor_frame=0):
+        img = Image.new("RGB", (WIDTH, HEIGHT), BG_COLOR)
+        draw = ImageDraw.Draw(img)
+        draw_terminal_base(draw)
 
-    return img
+        # Slice visible lines
+        visible_lines = self.lines[-MAX_LINES:] if len(self.lines) > MAX_LINES else self.lines
+
+        y = MARGIN_TOP
+        for text, color in visible_lines:
+            if text == "":
+                y += LINE_HEIGHT // 2
+                continue
+            if isinstance(text, list):
+                # Mixed color line
+                x = MARGIN_LEFT
+                for segment, seg_color in text:
+                    draw.text((x, y), segment, fill=seg_color, font=font)
+                    bbox = font.getbbox(segment)
+                    x += bbox[2] - bbox[0]
+            else:
+                draw.text((MARGIN_LEFT, y), text, fill=color, font=font)
+            y += LINE_HEIGHT
+
+        # Draw cursor on the last visible line if typing
+        if show_cursor:
+            if cursor_frame % 6 < 4:
+                last_line = visible_lines[-1][0]
+                x_cursor = MARGIN_LEFT
+                if isinstance(last_line, list):
+                    for segment, _ in last_line:
+                        bbox = font.getbbox(segment)
+                        x_cursor += bbox[2] - bbox[0]
+                else:
+                    bbox = font.getbbox(last_line)
+                    x_cursor += bbox[2] - bbox[0]
+                
+                y_cursor = MARGIN_TOP + (len(visible_lines) - 1) * LINE_HEIGHT
+                draw.rectangle([x_cursor, y_cursor + 2, x_cursor + 8, y_cursor + 14], fill=USER_COLOR)
+
+        self.frames.append(img)
 
 
-def typewriter_text(base_lines, target_line_idx, target_text, target_color, frames_per_char=2):
-    """Generate frames for typewriter effect on a line."""
-    frames = []
-    for char_count in range(0, len(target_text) + 1):
-        partial = target_text[:char_count]
-        lines = [l for l in base_lines]
-        lines[target_line_idx] = (partial, target_color)
-        frames.append(render_frame(lines, step_frame=char_count))
-    return frames
+def type_text(terminal, prompt_prefix, text, color=TEXT_COLOR, pause_end=5):
+    full_line = list(prompt_prefix) if isinstance(prompt_prefix, list) else [(prompt_prefix, TEXT_COLOR)]
+    full_line.append(("", color))
+    terminal.add_line(full_line)
+    
+    for i in range(len(text) + 1):
+        typed = text[:i]
+        full_line[-1] = (typed, color)
+        terminal.update_last_line(full_line)
+        terminal.render(show_cursor=True, cursor_frame=i)
+        
+    for p in range(pause_end):
+        terminal.render(show_cursor=True, cursor_frame=len(text) + p)
 
 
-def pause_frames(lines, count=15):
-    """Generate pause frames."""
-    return [render_frame(lines, step_frame=i) for i in range(count)]
+def show_spinner(terminal, prefix, duration_frames=12, success_prefix="✓ ", success_text=None, success_color=SUCCESS):
+    spinner_frames = ["/", "-", "\\", "|"]
+    prefix_list = list(prefix) if isinstance(prefix, list) else [(prefix, TEXT_COLOR)]
+    
+    for f in range(duration_frames):
+        char = spinner_frames[f % len(spinner_frames)]
+        current_line = [(char + " ", HIGHLIGHT)] + prefix_list
+        terminal.update_last_line(current_line)
+        terminal.render(show_cursor=False)
+        
+    if success_text is not None:
+        final_line = [(success_prefix, success_color)] + (list(success_text) if isinstance(success_text, list) else [(success_text, TEXT_COLOR)])
+        terminal.update_last_line(final_line)
+        terminal.render(show_cursor=False)
 
 
-# --- Build the demo script ---
 def generate_demo():
-    all_frames = []
+    terminal = Terminal()
 
-    # ====== Scene 1: First question ======
-    # Show user typing a question
-    s1_lines = [
-        ("", TEXT_COLOR),
-    ]
-    frames = typewriter_text(s1_lines, 0, "> What is mixture of experts in LLMs?", USER_COLOR, frames_per_char=1)
-    all_frames.extend(frames)
+    # ====== Startup ======
+    terminal.add_line([("scholar-agent $ ", DIM_COLOR)])
+    type_text(terminal, [("scholar-agent $ ", DIM_COLOR)], "claude", USER_COLOR, pause_end=4)
+    
+    terminal.add_line("Claude Code v0.1.18", TEXT_COLOR)
+    terminal.add_line("Connected to MCP server: scholar-agent", DIM_COLOR)
+    terminal.add_line("")
+    
+    # ====== Query 1 ======
+    prompt = [("scholar-agent > ", PROMPT_COLOR)]
+    type_text(terminal, prompt, "What is Mixture of Experts (MoE) routing?", USER_COLOR, pause_end=8)
 
-    s1_lines = [
-        ([("> ", USER_COLOR), ("What is mixture of experts in LLMs?", TEXT_COLOR)], TEXT_COLOR),
-        ("", TEXT_COLOR),
-    ]
-    all_frames.extend(pause_frames(s1_lines, 10))
+    terminal.add_line("I will query the local knowledge base to check for existing cards.", TEXT_COLOR)
+    terminal.render(show_cursor=False)
 
-    # AI researching
-    research_text = "  Searching web + arXiv + Semantic Scholar..."
-    for i in range(len(research_text) + 1):
-        lines = [
-            ([("> ", USER_COLOR), ("What is mixture of experts in LLMs?", TEXT_COLOR)], TEXT_COLOR),
-            ("", TEXT_COLOR),
-            (research_text[:i], DIM),
-        ]
-        all_frames.append(render_frame(lines, step_frame=i))
+    # Tool call 1: query_knowledge
+    terminal.add_line("") # Placeholder line for spinner
+    show_spinner(
+        terminal, 
+        [("Calling scholar-agent:query_knowledge", ACCENT_COLOR), ("(query=\"mixture of experts routing\")", DIM_COLOR)],
+        duration_frames=12,
+        success_prefix="✓ ",
+        success_text=[("query_knowledge", ACCENT_COLOR), (" returned: ", DIM_COLOR), ("{ \"results\": [], \"status\": \"no_direct_hit\" }", SUCCESS)],
+        success_color=SUCCESS
+    )
 
-    # Show research result
-    s1_result = [
-        ([("> ", USER_COLOR), ("What is mixture of experts in LLMs?", TEXT_COLOR)], TEXT_COLOR),
-        ("", TEXT_COLOR),
-        ("  Searching web + arXiv + Semantic Scholar...", DIM),
-        ("", TEXT_COLOR),
-        ([("  Saved knowledge card: ", SUCCESS), ("mixture-of-experts.md", HIGHLIGHT)], TEXT_COLOR),
-        ([("  Sources: ", DIM), ("3 papers + 2 web articles", TEXT_COLOR)], TEXT_COLOR),
-        ([("  Confidence: ", DIM), ("high", SUCCESS)], TEXT_COLOR),
-    ]
-    all_frames.extend(pause_frames(s1_result, 30))
+    # Claude reasoning
+    terminal.add_line("No existing knowledge cards found. Let's search academic papers.", TEXT_COLOR)
+    terminal.render(show_cursor=False)
 
-    # ====== Scene 2: Second question (local hit) ======
-    s2_base = [
-        ([("> ", USER_COLOR), ("What is mixture of experts in LLMs?", TEXT_COLOR)], TEXT_COLOR),
-        ("", TEXT_COLOR),
-        ("  Searching web + arXiv + Semantic Scholar...", DIM),
-        ("", TEXT_COLOR),
-        ([("  Saved knowledge card: ", SUCCESS), ("mixture-of-experts.md", HIGHLIGHT)], TEXT_COLOR),
-        ([("  Sources: ", DIM), ("3 papers + 2 web articles", TEXT_COLOR)], TEXT_COLOR),
-        ([("  Confidence: ", DIM), ("high", SUCCESS)], TEXT_COLOR),
-        ("", TEXT_COLOR),
-        ("─" * 60, BORDER_COLOR),
-        ("", TEXT_COLOR),
-    ]
+    # Tool call 2: search_papers
+    terminal.add_line("")
+    show_spinner(
+        terminal,
+        [("Calling scholar-agent:search_papers", ACCENT_COLOR), ("(query=\"mixture of experts routing\", top_n=3)", DIM_COLOR)],
+        duration_frames=16,
+        success_prefix="✓ ",
+        success_text=[("search_papers", ACCENT_COLOR), (" returned 3 papers (Switch Transformers, ST-MoE, Soft MoE)", SUCCESS)],
+        success_color=SUCCESS
+    )
 
-    # User types similar question
-    q2 = "> How does MoE routing work?"
-    s2_with_q = s2_base + [(q2[:i], USER_COLOR) for i in range(len(q2) + 1)]
-    for i in range(len(q2) + 1):
-        lines = s2_base + [("", TEXT_COLOR), (q2[:i], USER_COLOR)]
-        all_frames.append(render_frame(lines, step_frame=i))
+    # Claude reasoning
+    terminal.add_line("I will download the Switch Transformers paper and save a knowledge card.", TEXT_COLOR)
+    terminal.render(show_cursor=False)
 
-    # Brief pause
-    lines = s2_base + [("", TEXT_COLOR), ([("> ", USER_COLOR), ("How does MoE routing work?", TEXT_COLOR)], TEXT_COLOR)]
-    all_frames.extend(pause_frames(lines, 8))
+    # Tool call 3: download_paper
+    terminal.add_line("")
+    show_spinner(
+        terminal,
+        [("Calling scholar-agent:download_paper", ACCENT_COLOR), ("(paper_id=\"2101.03961\")", DIM_COLOR)],
+        duration_frames=10,
+        success_prefix="✓ ",
+        success_text=[("download_paper", ACCENT_COLOR), (" returned: ", DIM_COLOR), ("{ \"status\": \"ok\", \"path\": \"paper-notes/2101.03961.pdf\" }", SUCCESS)],
+        success_color=SUCCESS
+    )
 
-    # Local hit!
-    hit_text = "  Local knowledge hit! (BM25 score: 0.94)"
-    for i in range(len(hit_text) + 1):
-        lines_full = s2_base + [
-            ("", TEXT_COLOR),
-            ([("> ", USER_COLOR), ("How does MoE routing work?", TEXT_COLOR)], TEXT_COLOR),
-            ("", TEXT_COLOR),
-            (hit_text[:i], SUCCESS),
-        ]
-        all_frames.append(render_frame(lines_full, step_frame=i))
+    # Tool call 4: save_research
+    terminal.add_line("")
+    show_spinner(
+        terminal,
+        [("Calling scholar-agent:save_research", ACCENT_COLOR), ("(query=\"Switch Transformers MoE\")", DIM_COLOR)],
+        duration_frames=15,
+        success_prefix="✓ ",
+        success_text=[("save_research", ACCENT_COLOR), (" returned: ", DIM_COLOR), ("{ \"status\": \"ok\", \"card_path\": \"knowledge/deep-learning/moe-routing.md\" }", SUCCESS)],
+        success_color=SUCCESS
+    )
 
-    # Show the result from local
-    s2_final = s2_base + [
-        ("", TEXT_COLOR),
-        ([("> ", USER_COLOR), ("How does MoE routing work?", TEXT_COLOR)], TEXT_COLOR),
-        ("", TEXT_COLOR),
-        ([("  Local knowledge hit! ", SUCCESS), ("(BM25 score: 0.94)", DIM)], TEXT_COLOR),
-        ([("  Retrieved from: ", DIM), ("mixture-of-experts.md", HIGHLIGHT)], TEXT_COLOR),
-        ([("  Response time: ", DIM), ("<0.1s", SUCCESS), (" (vs ~5s web research)", DIM)], TEXT_COLOR),
-        ("", TEXT_COLOR),
-        ([("  Knowledge base: ", DIM), ("33 cards", ACCENT), (" | Growing every query", DIM)], TEXT_COLOR),
-    ]
-    all_frames.extend(pause_frames(s2_final, 40))
+    # Claude final summary
+    terminal.add_line([("Saved knowledge card: ", SUCCESS), ("knowledge/deep-learning/moe-routing.md", HIGHLIGHT)], TEXT_COLOR)
+    terminal.add_line("MoE routing works by sending inputs to top-k experts using a routing network.", TEXT_COLOR)
+    terminal.add_line("ST-MoE stabilizes this via Router z-loss and capacity factor constraints.", TEXT_COLOR)
+    terminal.render(show_cursor=False)
 
-    # ====== Scene 3: Academic pipeline ======
-    s3_base = [
-        ("", TEXT_COLOR),
-        ("─" * 60, BORDER_COLOR),
-        ("", TEXT_COLOR),
-    ]
+    # Pause at the end of Scene 1
+    for _ in range(25):
+        terminal.render(show_cursor=False)
 
-    q3 = "> search_papers(\"mixture of experts\", top_n=5)"
-    for i in range(len(q3) + 1):
-        lines = s2_final + s3_base + [("", TEXT_COLOR), (q3[:i], USER_COLOR)]
-        all_frames.append(render_frame(lines, step_frame=i))
+    # Separator
+    terminal.add_line("─" * 68, DIM_COLOR)
+    terminal.add_line("")
 
-    lines = s2_final + s3_base + [("", TEXT_COLOR), ([("> ", USER_COLOR), ("search_papers(\"mixture of experts\", top_n=5)", TEXT_COLOR)], TEXT_COLOR)]
-    all_frames.extend(pause_frames(lines, 8))
+    # ====== Query 2 ======
+    type_text(terminal, prompt, "How does ST-MoE improve routing stability?", USER_COLOR, pause_end=8)
 
-    # Results
-    s3_result = s2_final + s3_base + [
-        ("", TEXT_COLOR),
-        ([("> ", USER_COLOR), ("search_papers(\"mixture of experts\", top_n=5)", TEXT_COLOR)], TEXT_COLOR),
-        ("", TEXT_COLOR),
-        ([("  #1 ", HIGHLIGHT), ("Switch Transformers (Fedus et al., 2024)", TEXT_COLOR)], TEXT_COLOR),
-        ([("      Score: ", DIM), ("0.92", SUCCESS), (" | ", DIM), ("NeurIPS", ACCENT), (" | ", DIM), ("2.1k citations", TEXT_COLOR)], TEXT_COLOR),
-        ([("  #2 ", HIGHLIGHT), ("Expert Choice Routing (Zhou et al., 2022)", TEXT_COLOR)], TEXT_COLOR),
-        ([("      Score: ", DIM), ("0.87", SUCCESS), (" | ", DIM), ("ICLR", ACCENT), (" | ", DIM), ("890 citations", TEXT_COLOR)], TEXT_COLOR),
-        ([("  #3 ", HIGHLIGHT), ("Soft MoE (Puigcerver et al., 2024)", TEXT_COLOR)], TEXT_COLOR),
-        ([("      Score: ", DIM), ("0.83", SUCCESS), (" | ", DIM), ("ICLR", ACCENT), (" | ", DIM), ("340 citations", TEXT_COLOR)], TEXT_COLOR),
-        ("", TEXT_COLOR),
-        ([("  → ", SUCCESS), ("Run ", TEXT_COLOR), ("analyze_paper()", HIGHLIGHT), (" for deep analysis", TEXT_COLOR)], TEXT_COLOR),
-    ]
-    all_frames.extend(pause_frames(s3_result, 50))
+    terminal.add_line("I will query the local knowledge base to retrieve the card we saved.", TEXT_COLOR)
+    terminal.render(show_cursor=False)
 
-    # Save
+    # Tool call 5: query_knowledge (hit!)
+    terminal.add_line("")
+    show_spinner(
+        terminal,
+        [("Calling scholar-agent:query_knowledge", ACCENT_COLOR), ("(query=\"ST-MoE routing stability\")", DIM_COLOR)],
+        duration_frames=12,
+        success_prefix="✓ ",
+        success_text=[("query_knowledge", ACCENT_COLOR), (" returned 1 card (moe-routing.md)", SUCCESS)],
+        success_color=SUCCESS
+    )
+
+    # Claude instant answer
+    terminal.add_line("According to local card `moe-routing.md`, ST-MoE improves stability via:", TEXT_COLOR)
+    terminal.add_line([("  1. Router z-loss: ", HIGHLIGHT), ("Penalizes large logits to stabilize training.", TEXT_COLOR)], TEXT_COLOR)
+    terminal.add_line([("  2. Capacity Factor: ", HIGHLIGHT), ("Sets limits to prevent expert load bottlenecks.", TEXT_COLOR)], TEXT_COLOR)
+    terminal.add_line("This local lookup took <0.05s (avoiding external network latency).", DIM_COLOR)
+
+    # Final pause
+    for _ in range(50):
+        terminal.render(show_cursor=False)
+
+    # ====== Save GIF ======
     os.makedirs("assets", exist_ok=True)
-    all_frames[0].save(
+    terminal.frames[0].save(
         "assets/demo.gif",
         save_all=True,
-        append_images=all_frames[1:],
-        duration=60,
+        append_images=terminal.frames[1:],
+        duration=65,
         loop=0,
         optimize=True,
     )
-    print(f"Generated {len(all_frames)} frames → assets/demo.gif")
+    print(f"Generated {len(terminal.frames)} frames -> assets/demo.gif")
     print(f"File size: {os.path.getsize('assets/demo.gif') / 1024:.0f} KB")
 
 

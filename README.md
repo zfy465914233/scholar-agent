@@ -6,8 +6,8 @@
   <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" />
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />
   <img src="https://img.shields.io/badge/MCP-Ready-brightgreen.svg" alt="MCP Ready" />
-  <img src="https://img.shields.io/badge/tests-276%20passing-brightgreen.svg" alt="Tests" />
-  <img src="https://img.shields.io/pypi/v/scholar-agent?color=blue" alt="PyPI" />
+  <img src="https://img.shields.io/badge/tests-1117%20passing-brightgreen.svg" alt="Tests" />
+  <img src="https://img.shields.io/pypi/v/py-scholar-agent?color=blue" alt="PyPI" />
 </p>
 
 <p align="center">
@@ -15,9 +15,18 @@
 </p>
 
 <p align="center">
-  <strong>AI that gets smarter in YOUR domain — every question compounds.</strong><br/>
-  Online research + local knowledge accumulation + MCP integration for Claude Code & VS Code Copilot.
+  <strong>AI that gets smarter in YOUR domain — every question compounds.</strong>
 </p>
+
+---
+
+## Why
+
+Every AI conversation generates knowledge — research findings, technical explanations, citations. But LLMs are stateless: each new session starts from zero. The research your AI completed yesterday is not available today.
+
+Scholar Agent makes AI knowledge persistent. It saves research and answers as local knowledge cards — structured, citable, and interconnected. Before answering, the AI checks existing local knowledge first, building on what it has already learned rather than starting from scratch each time.
+
+The result is a personal **LLM-Wiki**: structured, traceable, continuously growing — making your AI increasingly accurate in the domains you care about.
 
 ---
 
@@ -27,27 +36,52 @@
   <img src="assets/demo.gif" alt="Scholar Agent Demo" width="720" />
 </p>
 
-<p align="center"><sub>Ask → Research → Accumulate → Next question hits local cache instantly</sub></p>
-
-<p align="center">
-  <img src="assets/flywheel.svg" alt="Knowledge Flywheel" width="720" />
-</p>
-
-Each round compounds. Knowledge cards have full lifecycle management: **draft → reviewed → trusted → stale → deprecated**.
+<p align="center"><sub>Ask → Research → Save as knowledge card → Knowledge compounds over time</sub></p>
 
 ---
 
-## Why Scholar Agent?
+## What It Does
 
-| | ChatGPT / Claude | Obsidian + Plugins | Zotero | **Scholar Agent** |
-|---|---|---|---|---|
-| Domain knowledge accumulates | No — every chat starts fresh | Manual curation | Bibliography only | **Automatic — every query compounds** |
-| Structured research with citations | Sometimes | Manual | Partial | **Yes — structured synthesis + confidence scores** |
-| Academic paper pipeline | Limited | Via plugins | Yes | **Search → Score → Analyze → Extract → Recommend** |
-| Works offline | No | Yes | Partial | **Yes — local BM25 index, falls back gracefully** |
-| Human-readable knowledge base | Chat history | Markdown files | PDF library | **Obsidian-compatible Markdown + wiki-links** |
-| Integrates with your IDE | No | No | Partial | **MCP server for Claude Code, VS Code Copilot, OpenCode** |
-| Knowledge quality gates | None | None | None | **Lifecycle management + quality scoring + validation** |
+### Knowledge Persistence
+
+Each conversation can produce a knowledge card — a structured record with:
+
+- The question asked
+- Evidence-backed answer with citations
+- Confidence scores and uncertainty flags
+- Source references you can trace back
+
+These cards accumulate into a searchable local knowledge base. Next time a similar question comes up, the AI draws from what's already been researched.
+
+### Knowledge Network
+
+Cards aren't isolated files. Scholar Agent:
+
+- Maintains a **quality lifecycle** for each card: `draft → reviewed → trusted → stale → deprecated`
+- Auto-generates **`[[wiki-links]]`** between related cards
+- Tracks **provenance** — every claim links back to its source evidence
+- Outputs **Obsidian-compatible** Markdown (YAML frontmatter + wiki-links)
+
+### Evidence-Based Answers
+
+When researching a question, Scholar Agent:
+
+1. **Searches** local knowledge (BM25 keyword index)
+2. **Falls back** to web and academic APIs when local knowledge is insufficient
+3. **Synthesizes** answers where every claim cites its source
+4. **Flags** claims that lack supporting evidence
+5. **Returns** structured results with confidence levels and suggested next steps
+
+### Academic Research Pipeline
+
+For paper research, Scholar Agent provides:
+
+- **Paper Search** — arXiv, DBLP, Semantic Scholar with 10+ top-conference filters
+- **Smart Scoring** — 4-dimensional ranking: relevance, recency, popularity, quality
+- **Deep Analysis** — 20+ section structured notes with AI-assisted completion
+- **Figure Extraction** — From arXiv source archives and PDFs
+- **Daily Recommendations** — Dual-track: 2 top-conference papers + 2 arXiv innovation papers
+- **Paper → Knowledge Card** — Feed analyses back into the knowledge base
 
 ---
 
@@ -73,7 +107,7 @@ pip install -e .
 scholar-agent init
 ```
 
-One command creates data directories, writes config, and registers MCP with Claude Code. You're done.
+One command creates data directories, writes config, and registers MCP with Claude Code. Done.
 
 ### Modes
 
@@ -85,30 +119,20 @@ One command creates data directories, writes config, and registers MCP with Clau
 
 ---
 
-## What It Does
+## MCP Integration
 
-### Knowledge Flywheel
+Scholar Agent runs as an MCP server, integrating directly into your tools:
 
-Ask a question → Scholar Agent researches (web + academic APIs) → synthesizes a structured answer with citations → saves as a knowledge card → indexes it with BM25. Next time a similar question comes up, it hits the local index first — **fast, accurate, and free**.
+- **Claude Code** — `scholar-agent install claude --write`
+- **VS Code Copilot** — `scholar-agent install vscode --write`
+- **OpenCode** — `scholar-agent install opencode --write`
 
-### Academic Research Pipeline
+**Core tools** (always available): `query_knowledge` · `save_research` · `list_knowledge` · `capture_answer` · `ingest_source` · `build_graph`
 
-- **Paper Search** — arXiv, DBLP, Semantic Scholar. Filter by 10+ top conferences
-- **Smart Scoring** — 4-dimensional engine (relevance, recency, popularity, quality)
-- **Deep Analysis** — 20+ section Obsidian-style notes with AI-assisted completion
-- **Figure Extraction** — From arXiv source archives and PDFs
-- **Daily Recommendations** — Automated search, scoring, deduplication
-- **Paper → Knowledge Card** — Feed analyses back into the flywheel
-- **Keyword Auto-Linking** — `[[wiki-links]]` across all notes
-
-### MCP Tools
-
-**Core** (always available): `query_knowledge` · `save_research` · `list_knowledge` · `capture_answer` · `ingest_source` · `build_graph`
-
-**Academic** (set `SCHOLAR_ACADEMIC=1`): `search_papers` · `search_conf_papers` · `download_paper` · `analyze_paper` · `extract_paper_images` · `paper_to_card` · `daily_recommend` · `link_paper_keywords`
+**Academic tools** (set `SCHOLAR_ACADEMIC=1`): `search_papers` · `search_conf_papers` · `download_paper` · `analyze_paper` · `extract_paper_images` · `paper_to_card` · `daily_recommend` · `link_paper_keywords`
 
 <details>
-<summary>🔌 Claude Desktop MCP Configuration</summary>
+<summary>Claude Desktop MCP Configuration</summary>
 
 Add this to your `claude_desktop_config.json`:
 ```json
@@ -125,6 +149,12 @@ Add this to your `claude_desktop_config.json`:
 }
 ```
 </details>
+
+---
+
+## Local Retrieval
+
+Knowledge is indexed with **BM25** for fast keyword search — no external dependencies required. An optional **embedding** layer can be enabled for semantic similarity with `scholar-agent index --build-embedding-index`.
 
 ---
 
@@ -155,22 +185,49 @@ Add this to your `claude_desktop_config.json`:
 
 ### Config File
 
-See [`.scholar.example.json`](.scholar.example.json) for a full example with comments. Key sections:
+See [`.scholar.example.json`](.scholar.example.json) for a full example. Key sections:
 
 - `knowledge_dir` — Knowledge cards directory
 - `index_path` — BM25 search index
 - `academic.research_interests` — Your domains, keywords, arXiv categories
 - `academic.scoring` — Paper scoring weights
 
+### Data Directory
+
+```
+scholar/
+├── config/         # Configuration files
+├── knowledge/      # Knowledge cards
+├── paper-notes/    # Paper analysis notes
+├── daily-notes/    # Daily paper recommendations
+├── indexes/        # BM25 search index
+├── cache/          # Cached data
+└── outputs/        # Generated outputs
+```
+
 ---
 
 ## Recommended Workflow
+
+### Daily research flow
+
+```
+Ask a question (via MCP)
+  → Scholar Agent searches local knowledge first
+  → Falls back to web/academic APIs when needed
+  → Synthesizes answer with citations
+  → Saves as a knowledge card
+  → Next similar question draws from local knowledge
+```
+
+### Paper analysis flow
 
 For best paper analysis quality:
 
 1. **Download**: `download_paper("2510.24701", title="Paper Title", domain="LLM")`
 2. **Extract images**: `extract_paper_images("2510.24701")`
 3. **Deep analysis**: `analyze_paper(paper_json)`
+4. **Feed into knowledge base**: `paper_to_card(paper_json)`
 
 > Downloading the PDF first enables full-text extraction, producing notes with specific data, formulas, and experimental results.
 
@@ -181,7 +238,7 @@ For best paper analysis quality:
 ```bash
 make dev       # Install with dev dependencies + pre-commit hooks
 make lint      # Run ruff + mypy
-make test      # Run test suite (276 tests, ~7s, fully offline)
+make test      # Run test suite (1117 tests, ~20s, fully offline)
 make coverage  # Run tests with coverage report
 make build     # Build distribution package
 make docker    # Build Docker image
@@ -189,13 +246,16 @@ make docker    # Build Docker image
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
-## Features at a Glance
+## Highlights
 
-- **Multi-perspective research** — 5 perspectives (academic, technical, applied, contrarian, historical)
-- **Obsidian compatible** — Markdown + YAML frontmatter + `[[wiki-links]]`
-- **Knowledge governance** — Validate frontmatter, detect orphans, find duplicates, manage lifecycle
-- **Provider fault tolerance** — Each source fails independently; graceful offline fallback
-- **Cross-platform** — macOS, Linux, Windows
+- **Knowledge persistence** — Every conversation can produce a reusable knowledge card; the local knowledge base grows over time
+- **Evidence-based** — Every claim cites its source, with confidence scores and uncertainty flags
+- **Quality lifecycle** — Cards are validated, scored, promoted, and deprecated. Full provenance tracking
+- **Knowledge network** — Wiki-links connect related cards into a navigable knowledge graph
+- **Obsidian compatible** — Markdown + YAML frontmatter + `[[wiki-links]]`. Your data, no lock-in
+- **Academic pipeline** — Search → Score → Analyze → Extract → Recommend, fully automated
+- **MCP integration** — Works with Claude Code, VS Code Copilot, and OpenCode out of the box
+- **Offline-first** — Local BM25 index, graceful degradation when external APIs are unavailable
 
 ## License
 
