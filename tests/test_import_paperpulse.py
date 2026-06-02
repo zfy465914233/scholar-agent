@@ -67,6 +67,81 @@ class TestImportPaperPulse(unittest.TestCase):
         self.assertTrue(card_file.exists())
         self.assertIn("CLI Mocked Paper", card_file.read_text(encoding="utf-8"))
 
+    def test_allowed_origin_matching(self) -> None:
+        from scholar_agent.server import _is_allowed_origin
+        self.assertTrue(_is_allowed_origin("https://pulse.mindpulse.ai"))
+        self.assertTrue(_is_allowed_origin("https://mindpulse.top"))
+        self.assertTrue(_is_allowed_origin("http://localhost:3000"))
+        self.assertTrue(_is_allowed_origin("http://127.0.0.1:8080"))
+        self.assertFalse(_is_allowed_origin("https://malicious.com"))
+        self.assertFalse(_is_allowed_origin(None))
+
+    def test_local_http_sync_server(self) -> None:
+        import json
+        import threading
+        import urllib.error
+        import urllib.request
+        from http.server import HTTPServer
+
+        from scholar_agent.server import ScholarAgentLocalServer
+
+        # Start server on free port
+        server = HTTPServer(('127.0.0.1', 0), ScholarAgentLocalServer)
+        port = server.server_port
+
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+
+        try:
+            # 1. Health check
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/health",
+                headers={"Origin": "https://pulse.mindpulse.ai"}
+            )
+            with urllib.request.urlopen(req) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                self.assertEqual(data["status"], "ok")
+
+            # 2. Import markdown
+            post_data = {
+                "filename": "test-via-http.md",
+                "markdown": "# Success Title\nContent here"
+            }
+            body = json.dumps(post_data).encode('utf-8')
+
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/import-markdown",
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://pulse.mindpulse.ai"
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+                self.assertEqual(data["status"], "success")
+                self.assertEqual(data["filename"], "test-via-http.md")
+
+            # Verify file was written
+            written_file = self.test_dir / "test-via-http.md"
+            self.assertTrue(written_file.exists())
+            self.assertIn("Success Title", written_file.read_text(encoding="utf-8"))
+
+            # 3. Disallowed origin health check
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/health",
+                headers={"Origin": "https://malicious.com"}
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req)
+            self.assertEqual(cm.exception.code, 403)
+
+        finally:
+            server.shutdown()
+            server.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()
+
