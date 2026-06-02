@@ -42,7 +42,10 @@ Scholar Agent is part of the **MindPulse Academic Suite**, forming a powerful sy
 | **IDE Integration** | Deeply integrated with Claude Code, VS Code, Cursor | Web-based Dashboard & Chatbot |
 | **Pricing** | Free & Open Source | Free Tier / Premium Subscriptions |
 
-💡 **Synergy**: You can easily export PaperPulse daily digests as Scholar Agent Markdown notes and load them into your local workspace.
+💡 **Synergy (One-Click Local Sync)**:
+* **One-Click Sync**: When your Scholar Agent MCP server is running locally, simply click the **"Import to Local Scholar Agent"** button on the PaperPulse web interface. The note will be instantly synced and written to your local `knowledge/` directory via a secure local loopback interface, bypass browser sandbox constraints and rebuild your search index automatically!
+* **Manual Export**: You can also click **"Export Markdown"** to download the standard Markdown note and place it into your knowledge base directory manually.
+
 
 ---
 

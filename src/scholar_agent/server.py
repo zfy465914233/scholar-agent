@@ -1569,11 +1569,136 @@ def import_paperpulse_note(paper_id: str, api_token: str | None = None) -> str:
     return msg
 
 
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+def _is_allowed_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    allowed = (
+        "https://pulse.mindpulse.ai",
+        "https://mindpulse.top",
+        "http://localhost:",
+        "http://127.0.0.1:",
+    )
+    return any(origin.startswith(prefix) for prefix in allowed)
+
+class ScholarAgentLocalServer(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        # Prevent printing to stdout to avoid corrupting MCP JSON-RPC protocol
+        logger.info(format % args)
+
+    def do_OPTIONS(self):
+        origin = self.headers.get("Origin")
+        if _is_allowed_origin(origin):
+            self.send_response(200)
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Max-Age", "86400")
+            self.end_headers()
+        else:
+            self.send_response(403)
+            self.end_headers()
+
+    def do_GET(self):
+        origin = self.headers.get("Origin")
+        if not _is_allowed_origin(origin) and origin is not None:
+            self.send_response(403)
+            self.end_headers()
+            return
+
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok", "version": "1.0.0"}).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        origin = self.headers.get("Origin")
+        if not _is_allowed_origin(origin) and origin is not None:
+            self.send_response(403)
+            self.end_headers()
+            return
+
+        if self.path == "/import-markdown":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length) if content_length > 0 else b""
+            try:
+                data = json.loads(body.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                self.send_error_response(400, f"Invalid JSON body: {e!s}", origin)
+                return
+
+            filename = data.get("filename")
+            markdown_content = data.get("markdown")
+
+            if not filename or not markdown_content:
+                self.send_error_response(400, "Missing filename or markdown content", origin)
+                return
+
+            try:
+                from scholar_agent.engine.import_service import import_markdown
+                config = load_config()
+                knowledge_dir = Path(get_knowledge_dir())
+                index_path = Path(config["index_path"])
+
+                msg, safe_filename = import_markdown(filename, markdown_content, knowledge_dir, index_path)
+
+                if safe_filename is None:
+                    self.send_error_response(500, msg, origin)
+                else:
+                    self.send_success_response(origin, {
+                        "status": "success",
+                        "filename": safe_filename,
+                        "message": msg
+                    })
+            except Exception as e:
+                self.send_error_response(500, f"Internal Error: {e!s}", origin)
+        else:
+            self.send_error_response(404, "Not Found", origin)
+
+    def send_success_response(self, origin, data):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode('utf-8'))
+
+    def send_error_response(self, code, message, origin=None):
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": message}).encode('utf-8'))
+
+def start_local_server():
+    port = 8374
+    try:
+        server = HTTPServer(('127.0.0.1', port), ScholarAgentLocalServer)
+        logger.info(f"Scholar Agent Local Sync Server listening on http://127.0.0.1:{port}")
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"Failed to start Scholar Agent Local Sync Server: {e}")
+
+
 def main() -> int:
     """Entry point for the MCP server."""
     if mcp is None:
         print("Error: fastmcp not installed. Run: pip install fastmcp", file=sys.stderr)
         return 1
+
+    # Start the background local sync server
+    t = threading.Thread(target=start_local_server, daemon=True)
+    t.start()
 
     mcp.run()
     return 0
@@ -1581,4 +1706,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
