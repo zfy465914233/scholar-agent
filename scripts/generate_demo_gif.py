@@ -1,12 +1,12 @@
-"""Generate a realistic demo GIF showing Scholar Agent as an MCP server with Claude Code."""
+"""Generate a highly realistic demo GIF representing a real Claude Code session with Scholar Agent."""
 
 from PIL import Image, ImageDraw, ImageFont
 import os
 
 # --- Config ---
 WIDTH = 720
-HEIGHT = 480
-MAX_LINES = 21
+HEIGHT = 520
+MAX_LINES = 23
 
 BG_COLOR = (15, 23, 42)        # slate-900
 BORDER_COLOR = (51, 65, 85)     # slate-600
@@ -19,8 +19,8 @@ HIGHLIGHT = (251, 191, 36)      # amber-400
 SUCCESS = (52, 211, 153)        # emerald-400
 ACCENT_COLOR = (129, 140, 248)  # indigo-400
 
-FONT_SIZE = 13
-LINE_HEIGHT = 20
+FONT_SIZE = 12
+LINE_HEIGHT = 19
 MARGIN_LEFT = 16
 MARGIN_TOP = 36
 
@@ -34,11 +34,11 @@ def draw_terminal_base(draw):
     draw.rounded_rectangle([0, 0, WIDTH - 1, HEIGHT - 1], radius=10, outline=BORDER_COLOR, width=1)
     # Title bar
     draw.rectangle([1, 1, WIDTH - 2, 28], fill=TITLEBAR_COLOR)
-    # Traffic lights
+    # Window buttons
     for i, color in enumerate([(239, 68, 68), (234, 179, 8), (34, 197, 94)]):
         draw.ellipse([14 + i * 20, 9, 14 + i * 20 + 12, 9 + 12], fill=color)
     # Title
-    draw.text((WIDTH // 2 - 80, 6), "Claude Code — Terminal", fill=DIM_COLOR, font=font)
+    draw.text((WIDTH // 2 - 95, 6), "Claude Code — scholar-agent", fill=DIM_COLOR, font=font)
 
 
 class Terminal:
@@ -137,72 +137,89 @@ def generate_demo():
     type_text(terminal, [("scholar-agent $ ", DIM_COLOR)], "claude", USER_COLOR, pause_end=4)
     
     terminal.add_line("Claude Code v0.1.18", TEXT_COLOR)
-    terminal.add_line("Connected to MCP server: scholar-agent", DIM_COLOR)
+    terminal.add_line("Connected to MCP server: scholar-agent (SKILL: scholar-agent)", DIM_COLOR)
     terminal.add_line("")
     
     # ====== Query 1 ======
     prompt = [("scholar-agent > ", PROMPT_COLOR)]
-    type_text(terminal, prompt, "What is Mixture of Experts (MoE) routing?", USER_COLOR, pause_end=8)
+    type_text(terminal, prompt, "我想学习MoE。用scholar-agent帮我找一些文章到本地并做笔记", USER_COLOR, pause_end=8)
 
-    terminal.add_line("I will query the local knowledge base to check for existing cards.", TEXT_COLOR)
+    terminal.add_line("I will execute the research workflow following the scholar-agent SKILL contract:", TEXT_COLOR)
+    terminal.add_line("1. Inventory  2. Metadata Gate  3. Canary (Staging)  4. Validation  5. Promotion", DIM_COLOR)
     terminal.render(show_cursor=False)
 
-    # Tool call 1: query_knowledge
-    terminal.add_line("") # Placeholder line for spinner
+    # Tool call 1: search_papers
+    terminal.add_line("")
     show_spinner(
         terminal, 
-        [("Calling scholar-agent:query_knowledge", ACCENT_COLOR), ("(query=\"mixture of experts routing\")", DIM_COLOR)],
+        [("Call: scholar-agent:search_papers", ACCENT_COLOR), ("(query=\"mixture of experts\", top_n=3)", DIM_COLOR)],
         duration_frames=12,
         success_prefix="✓ ",
-        success_text=[("query_knowledge", ACCENT_COLOR), (" returned: ", DIM_COLOR), ("{ \"results\": [], \"status\": \"no_direct_hit\" }", SUCCESS)],
+        success_text=[("search_papers", ACCENT_COLOR), (" returned 3 candidate papers on MoE", SUCCESS)],
         success_color=SUCCESS
     )
 
-    # Claude reasoning
-    terminal.add_line("No existing knowledge cards found. Let's search academic papers.", TEXT_COLOR)
+    # Display paper list (Inventory)
+    terminal.add_line([("  → #1: ", HIGHLIGHT), ("Post Reasoning: Improving performance at no cost (2605.06165)", TEXT_COLOR)], TEXT_COLOR)
+    terminal.add_line([("  → #2: ", HIGHLIGHT), ("Switch Transformers: Scaling to Trillion Parameters (2101.03961)", TEXT_COLOR)], TEXT_COLOR)
     terminal.render(show_cursor=False)
 
-    # Tool call 2: search_papers
+    # Tool call 2: download_paper
+    terminal.add_line("Selected paper #1 (Post Reasoning) as canary target. Downloading PDF...", TEXT_COLOR)
     terminal.add_line("")
     show_spinner(
         terminal,
-        [("Calling scholar-agent:search_papers", ACCENT_COLOR), ("(query=\"mixture of experts routing\", top_n=3)", DIM_COLOR)],
-        duration_frames=16,
-        success_prefix="✓ ",
-        success_text=[("search_papers", ACCENT_COLOR), (" returned 3 papers (Switch Transformers, ST-MoE, Soft MoE)", SUCCESS)],
-        success_color=SUCCESS
-    )
-
-    # Claude reasoning
-    terminal.add_line("I will download the Switch Transformers paper and save a knowledge card.", TEXT_COLOR)
-    terminal.render(show_cursor=False)
-
-    # Tool call 3: download_paper
-    terminal.add_line("")
-    show_spinner(
-        terminal,
-        [("Calling scholar-agent:download_paper", ACCENT_COLOR), ("(paper_id=\"2101.03961\")", DIM_COLOR)],
+        [("Call: scholar-agent:download_paper", ACCENT_COLOR), ("(paper_id=\"2605.06165\")", DIM_COLOR)],
         duration_frames=10,
         success_prefix="✓ ",
-        success_text=[("download_paper", ACCENT_COLOR), (" returned: ", DIM_COLOR), ("{ \"status\": \"ok\", \"path\": \"paper-notes/2101.03961.pdf\" }", SUCCESS)],
+        success_text=[("download_paper", ACCENT_COLOR), (" returned: { \"status\": \"ok\", \"path\": \"paper-notes/2605.pdf\" }", SUCCESS)],
         success_color=SUCCESS
     )
 
-    # Tool call 4: save_research
+    # Tool call 3: extract_paper_images
     terminal.add_line("")
     show_spinner(
         terminal,
-        [("Calling scholar-agent:save_research", ACCENT_COLOR), ("(query=\"Switch Transformers MoE\")", DIM_COLOR)],
-        duration_frames=15,
+        [("Call: scholar-agent:extract_paper_images", ACCENT_COLOR), ("(paper_id=\"2605.06165\")", DIM_COLOR)],
+        duration_frames=10,
         success_prefix="✓ ",
-        success_text=[("save_research", ACCENT_COLOR), (" returned: ", DIM_COLOR), ("{ \"status\": \"ok\", \"card_path\": \"knowledge/deep-learning/moe-routing.md\" }", SUCCESS)],
+        success_text=[("extract_paper_images", ACCENT_COLOR), (" extracted 13 figures into images/", SUCCESS)],
         success_color=SUCCESS
     )
 
-    # Claude final summary
-    terminal.add_line([("Saved knowledge card: ", SUCCESS), ("knowledge/deep-learning/moe-routing.md", HIGHLIGHT)], TEXT_COLOR)
-    terminal.add_line("MoE routing works by sending inputs to top-k experts using a routing network.", TEXT_COLOR)
-    terminal.add_line("ST-MoE stabilizes this via Router z-loss and capacity factor constraints.", TEXT_COLOR)
+    # Tool call 4: analyze_paper (Canary Staging)
+    terminal.add_line("Generating structured note in staging directory...", TEXT_COLOR)
+    terminal.add_line("")
+    show_spinner(
+        terminal,
+        [("Call: scholar-agent:analyze_paper", ACCENT_COLOR), ("(paper_id=\"2605.06165\")", DIM_COLOR)],
+        duration_frames=18,
+        success_prefix="✓ ",
+        success_text=[("analyze_paper", ACCENT_COLOR), (" note written to paper-notes/.staging/Post_Reasoning/note.md", SUCCESS)],
+        success_color=SUCCESS
+    )
+
+    # Run validation CLI (validate_note)
+    terminal.add_line([("scholar-agent $ ", DIM_COLOR)])
+    type_text(terminal, [("scholar-agent $ ", DIM_COLOR)], "python scripts/validate_note.py --note paper-notes/.staging/Post_Reasoning/note.md", USER_COLOR, pause_end=6)
+    
+    # Validation stdout
+    terminal.add_line("{", DIM_COLOR)
+    terminal.add_line("  \"ok\": true,", SUCCESS)
+    terminal.add_line("  \"note\": \"/Users/zhoufangyi/scholar/paper-notes/.staging/Post_Reasoning/note.md\",", DIM_COLOR)
+    terminal.add_line("  \"errors\": [], \"warnings\": [\"dataset_fallback_used\"]", DIM_COLOR)
+    terminal.add_line("}", DIM_COLOR)
+    terminal.render(show_cursor=False)
+
+    # Run promotion CLI (normalize_note_location)
+    terminal.add_line([("scholar-agent $ ", DIM_COLOR)])
+    type_text(terminal, [("scholar-agent $ ", DIM_COLOR)], "python scripts/normalize_note_location.py --source paper-notes/.staging/Post_Reasoning/note.md --promote", USER_COLOR, pause_end=6)
+    
+    # Promotion stdout
+    terminal.add_line("{", DIM_COLOR)
+    terminal.add_line("  \"ok\": true,", SUCCESS)
+    terminal.add_line("  \"target\": \"/Users/zhoufangyi/scholar/paper-notes/large-language-models/Post_Reasoning/...md\"", SUCCESS)
+    terminal.add_line("}", DIM_COLOR)
     terminal.render(show_cursor=False)
 
     # Pause at the end of Scene 1
@@ -213,31 +230,33 @@ def generate_demo():
     terminal.add_line("─" * 68, DIM_COLOR)
     terminal.add_line("")
 
-    # ====== Query 2 ======
-    type_text(terminal, prompt, "How does ST-MoE improve routing stability?", USER_COLOR, pause_end=8)
+    # ====== Scene 2 ======
+    # User asks next question
+    type_text(terminal, prompt, "如何理解这篇 Post-Reasoning 论文的核心结论？", USER_COLOR, pause_end=8)
 
-    terminal.add_line("I will query the local knowledge base to retrieve the card we saved.", TEXT_COLOR)
+    terminal.add_line("Checking local knowledge index first to retrieve the card we just saved...", TEXT_COLOR)
     terminal.render(show_cursor=False)
 
-    # Tool call 5: query_knowledge (hit!)
+    # Tool call 5: query_knowledge
     terminal.add_line("")
     show_spinner(
         terminal,
-        [("Calling scholar-agent:query_knowledge", ACCENT_COLOR), ("(query=\"ST-MoE routing stability\")", DIM_COLOR)],
+        [("Call: scholar-agent:query_knowledge", ACCENT_COLOR), ("(query=\"Post Reasoning 核心结论\")", DIM_COLOR)],
         duration_frames=12,
         success_prefix="✓ ",
-        success_text=[("query_knowledge", ACCENT_COLOR), (" returned 1 card (moe-routing.md)", SUCCESS)],
+        success_text=[("query_knowledge", ACCENT_COLOR), (" returned local hit in large-language-models/Post_Reasoning/...", SUCCESS)],
         success_color=SUCCESS
     )
 
-    # Claude instant answer
-    terminal.add_line("According to local card `moe-routing.md`, ST-MoE improves stability via:", TEXT_COLOR)
-    terminal.add_line([("  1. Router z-loss: ", HIGHLIGHT), ("Penalizes large logits to stabilize training.", TEXT_COLOR)], TEXT_COLOR)
-    terminal.add_line([("  2. Capacity Factor: ", HIGHLIGHT), ("Sets limits to prevent expert load bottlenecks.", TEXT_COLOR)], TEXT_COLOR)
-    terminal.add_line("This local lookup took <0.05s (avoiding external network latency).", DIM_COLOR)
+    # Claude's response using the local note details
+    terminal.add_line("根据本地文献库的记录，Post-Reasoning 的核心结论如下：", TEXT_COLOR)
+    terminal.add_line([("  1. 后置推理有效性：", HIGHLIGHT), ("让模型先输出答案再生成论证，同样可以显著提升模型准确率。", TEXT_COLOR)], TEXT_COLOR)
+    terminal.add_line([("  2. 零推理开销：", HIGHLIGHT), ("最终答案的生成无需等待中间 Reasoning Trace，可在首包中截断返回，省去 10x token 成本。", TEXT_COLOR)], TEXT_COLOR)
+    terminal.add_line([("  3. 强跨域泛化：", HIGHLIGHT), ("通过掩码损失微调（PR SFT），纯数学数据训练的模型也能提升科学、逻辑推理性能。", TEXT_COLOR)], TEXT_COLOR)
+    terminal.add_line("此回答完全基于本地索引检索（耗时 <0.05s），未调用外部模型或搜索引擎。", DIM_COLOR)
 
     # Final pause
-    for _ in range(50):
+    for _ in range(60):
         terminal.render(show_cursor=False)
 
     # ====== Save GIF ======
