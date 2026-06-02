@@ -1573,6 +1573,23 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
+def _parse_frontmatter_domain_title(markdown: str) -> tuple[str, str]:
+    """Extract domain and title from YAML frontmatter in a markdown string."""
+    import re as _re
+
+    domain = ""
+    title = ""
+    match = _re.match(r"^---\s*\n(.*?)\n---", markdown, _re.DOTALL)
+    if match:
+        fm = match.group(1)
+        for line in fm.split("\n"):
+            if line.startswith("domain:"):
+                domain = line.split(":", 1)[1].strip().strip('"').strip("'")
+            elif line.startswith("title:"):
+                title = line.split(":", 1)[1].strip().strip('"').strip("'")
+    return domain, title
+
+
 def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
@@ -1647,21 +1664,39 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
 
             try:
                 config = load_config()
-                knowledge_dir = Path(get_knowledge_dir())
                 index_path = Path(config["index_path"])
 
-                from scholar_agent.engine.import_service import import_markdown
+                # Parse frontmatter to extract domain and title
+                domain, title = _parse_frontmatter_domain_title(markdown_content)
 
-                msg, safe_filename = import_markdown(filename, markdown_content, knowledge_dir, index_path)
-                if safe_filename is None:
-                    self.send_error_response(500, msg, origin)
-                    return
+                from scholar_agent.engine.common import sanitize_title
 
+                paper_notes_dir = Path(get_knowledge_dir()).parent / "paper-notes"
+                safe_title = sanitize_title(title) if title else Path(filename).stem
+
+                if domain:
+                    dest_dir = paper_notes_dir / domain / safe_title
+                else:
+                    dest_dir = paper_notes_dir / safe_title
+
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest_path = dest_dir / f"{safe_title}.md"
+                dest_path.write_text(markdown_content, encoding="utf-8")
+
+                # Return success immediately
                 self.send_success_response(origin, {
                     "status": "success",
-                    "filename": safe_filename,
-                    "message": msg,
+                    "filename": str(dest_path.relative_to(paper_notes_dir.parent)),
+                    "message": f"Successfully saved to paper-notes",
                 })
+
+                # Async reindex
+                _idx_root = Path(get_knowledge_dir())
+                _idx_path = index_path
+                threading.Thread(
+                    target=lambda: _reindex(_idx_root, _idx_path),
+                    daemon=True,
+                ).start()
             except Exception as e:
                 self.send_error_response(500, f"Internal Error: {e!s}", origin)
         else:
