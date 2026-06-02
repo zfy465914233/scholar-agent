@@ -17,8 +17,9 @@
 </p>
 
 <p align="center">
-  <a href="README.zh-CN.md">中文</a>
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
 </p>
+
 
 <p align="center">
   <strong>AI that gets smarter in YOUR domain — every question compounds.</strong>

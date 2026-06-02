@@ -1,18 +1,28 @@
-# Scholar Agent
+<p align="center">
+  <img src="assets/banner.svg" alt="Scholar Agent" width="720" />
+</p>
 
-![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![MCP Ready](https://img.shields.io/badge/MCP-Ready-brightgreen.svg)
-![Tests](https://img.shields.io/badge/tests-1124%20passing-brightgreen.svg)
-![PyPI](https://img.shields.io/pypi/v/py-scholar-agent?color=blue)
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />
+  <img src="https://img.shields.io/badge/MCP-Ready-brightgreen.svg" alt="MCP Ready" />
+  <img src="https://img.shields.io/badge/tests-1124%20passing-brightgreen.svg" alt="Tests" />
+  <img src="https://img.shields.io/pypi/v/py-scholar-agent?color=blue" alt="PyPI" />
+</p>
 
-<p align="left">
+<p align="center">
   <a href="https://pulse.mindpulse.ai">
     <img src="https://img.shields.io/badge/MindPulse-Academic%20Suite-blueviolet?style=for-the-badge&logo=ai" alt="MindPulse Academic Suite" />
   </a>
 </p>
 
-[English](README.md)
+<p align="center">
+  <a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <strong>在您的专业领域不断进化的 AI —— 每一个问题都在积累。</strong>
+</p>
 
 ---
 
