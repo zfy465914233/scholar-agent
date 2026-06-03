@@ -1,15 +1,15 @@
 """Shared configuration reader for Scholar Agent.
 
 Config discovery order:
-  1. User-level config: ~/scholar/config/config.json (global install mode)
+  1. User-level config: ~/.scholar/config/config.json (global install mode)
   2. Workspace walk-up: .scholar.json in cwd or parent dirs (project-local mode)
   3. SCHOLAR_ROOT fallback: scholar-agent/.scholar.json (embedded mode)
 
 Config file format (.scholar.json or config.json):
 {
-  "knowledge_dir": "./knowledge",       // path to knowledge cards
-  "index_path": "./indexes/local/index.json",  // path to BM25 index
-  "scholar_dir": "./scholar"                  // only needed when embedded as subdirectory
+  "knowledge_dir": "~/scholar/knowledge",
+  "index_path": "~/.scholar/indexes/local/index.json",
+  "scholar_dir": "./scholar"
 }
 """
 
@@ -38,10 +38,11 @@ def _resolve_scholar_root() -> Path:
 
 SCHOLAR_ROOT = _resolve_scholar_root()
 
-# Defaults: resolve relative to ~/scholar/ (same as config/paths.py)
-_SCHOLAR_HOME_DEFAULT = Path.home() / "scholar"
+# Defaults: config/indexes go to ~/.scholar/, data stays in ~/scholar/
+_SCHOLAR_HOME_DEFAULT = Path.home() / ".scholar"
+_SCHOLAR_DATA_DEFAULT = Path.home() / "scholar"
 _DEFAULTS = {
-    "knowledge_dir": str(_SCHOLAR_HOME_DEFAULT / "knowledge"),
+    "knowledge_dir": str(_SCHOLAR_DATA_DEFAULT / "knowledge"),
     "index_path": str(_SCHOLAR_HOME_DEFAULT / "indexes" / "local" / "index.json"),
     "scholar_dir": str(SCHOLAR_ROOT),
 }
@@ -50,9 +51,9 @@ _config_cache: dict | None = None
 
 
 def _get_user_config_path() -> Path:
-    """Return the user-level config path (~/scholar/config/config.json by default)."""
+    """Return the user-level config path (~/.scholar/config/config.json by default)."""
     override = os.environ.get("SCHOLAR_HOME", "").strip()
-    user_home = Path(override).expanduser().resolve() if override else Path.home() / "scholar"
+    user_home = Path(override).expanduser().resolve() if override else Path.home() / ".scholar"
     return user_home / "config" / "config.json"
 
 

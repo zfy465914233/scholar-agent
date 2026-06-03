@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 APP_NAME = "scholar-agent"
-_SCHOLAR_HOME_DIR = "scholar"
+_SCHOLAR_HOME_DIR = ".scholar"
 
 
 def get_scholar_root() -> Path:
@@ -54,17 +54,18 @@ def get_user_profile_path(profile: str, env: Mapping[str, str] | None = None) ->
 def build_default_config(*, env: Mapping[str, str] | None = None, scholar_root: Path | None = None) -> dict:
     resolved_root = (scholar_root or get_scholar_root()).resolve()
     user_home = get_user_home(env)
+    data_home = Path.home() / "scholar"
     profile = (env or os.environ).get("SCHOLAR_PROFILE", "default").strip() or "default"
     return {
-        "knowledge_dir": str((user_home / "knowledge").resolve()),
+        "knowledge_dir": str((data_home / "knowledge").resolve()),
         "index_path": str((user_home / "indexes" / "local" / "index.json").resolve()),
         "scholar_dir": str(resolved_root),
         "profile": profile,
         "paperpulse_url": "https://mindpulse.top",
         "paperpulse_token": "",
         "academic": {
-            "paper_notes_dir": str((user_home / "paper-notes").resolve()),
-            "daily_notes_dir": str((user_home / "daily-notes").resolve()),
+            "paper_notes_dir": str((data_home / "paper-notes").resolve()),
+            "daily_notes_dir": str((data_home / "daily-notes").resolve()),
             "search": {
                 "sources": ["arxiv", "dblp", "semantic_scholar"],
                 "default_conferences": [
