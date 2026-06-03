@@ -98,6 +98,21 @@ def _mark_index_stale(index_path: Path) -> None:
     marker.write_text("stale\n", encoding="utf-8")
 
 
+def _async_reindex(index_path: Path) -> None:
+    """Mark index stale and trigger a non-blocking rebuild in a background thread."""
+    _mark_index_stale(index_path)
+
+    def _run():
+        try:
+            logger.info("Triggering background search index rebuild...")
+            _ensure_index_ready()
+            logger.info("Background search index rebuild completed.")
+        except Exception:
+            logger.exception("Error in background reindex thread")
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _clear_index_stale(index_path: Path) -> None:
     marker = _stale_marker_path(index_path)
     with contextlib.suppress(FileNotFoundError):
@@ -1563,9 +1578,12 @@ def import_paperpulse_note(paper_id: str, api_token: str | None = None) -> str:
     token = api_token or config.get("paperpulse_token", "")
     base_url = config.get("paperpulse_url", "https://mindpulse.top").rstrip("/")
     knowledge_dir = Path(get_knowledge_dir())
-    index_path = Path(config["index_path"])
+    index_path = Path(config.get("index_path", ""))
 
     msg, _ = import_from_url(paper_id, token, base_url, knowledge_dir, index_path)
+
+    _async_reindex(index_path)
+
     return msg
 
 
@@ -1573,32 +1591,24 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
-def _parse_frontmatter_domain_title(markdown: str) -> tuple[str, str]:
-    """Extract domain and title from YAML frontmatter in a markdown string."""
-    import re as _re
-
-    domain = ""
-    title = ""
-    match = _re.match(r"^---\s*\n(.*?)\n---", markdown, _re.DOTALL)
-    if match:
-        fm = match.group(1)
-        for line in fm.split("\n"):
-            if line.startswith("domain:"):
-                domain = line.split(":", 1)[1].strip().strip('"').strip("'")
-            elif line.startswith("title:"):
-                title = line.split(":", 1)[1].strip().strip('"').strip("'")
-    return domain, title
-
-
 def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
-    allowed = (
-        "https://mindpulse.top",
-        "http://localhost:",
-        "http://127.0.0.1:",
-    )
-    return any(origin.startswith(prefix) for prefix in allowed)
+    from urllib.parse import urlparse
+    try:
+        parsed = urlparse(origin)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        if parsed.scheme == "https" and hostname == "mindpulse.top":
+            return True
+        if parsed.scheme == "http" and hostname in ("localhost", "127.0.0.1"):
+            return True
+    except Exception:
+        pass
+    return False
 
 class ScholarAgentLocalServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -1647,7 +1657,12 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
             return
 
         if self.path == "/import-markdown":
+            # Cap body size at 10 MB to prevent OOM
+            _MAX_BODY = 10 * 1024 * 1024
             content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > _MAX_BODY:
+                self.send_error_response(413, "Payload too large (max 10 MB)", origin)
+                return
             body = self.rfile.read(content_length) if content_length > 0 else b""
             try:
                 data = json.loads(body.decode('utf-8'))
@@ -1664,41 +1679,26 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
 
             try:
                 config = load_config()
-                index_path = Path(config["index_path"])
+                index_path = Path(config.get("index_path", ""))
+                knowledge_dir = Path(get_knowledge_dir())
 
-                # Parse frontmatter to extract domain and title
-                domain, title = _parse_frontmatter_domain_title(markdown_content)
+                from scholar_agent.engine.import_service import import_markdown
+                msg, saved_filename = import_markdown(filename, markdown_content, knowledge_dir, index_path)
 
-                from scholar_agent.engine.common import sanitize_title
+                if saved_filename is None:
+                    self.send_error_response(400, msg, origin)
+                    return
 
-                paper_notes_dir = Path(get_knowledge_dir()).parent / "paper-notes"
-                safe_title = sanitize_title(title) if title else Path(filename).stem
+                _async_reindex(index_path)
 
-                if domain:
-                    dest_dir = paper_notes_dir / domain / safe_title
-                else:
-                    dest_dir = paper_notes_dir / safe_title
-
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                dest_path = dest_dir / f"{safe_title}.md"
-                dest_path.write_text(markdown_content, encoding="utf-8")
-
-                # Return success immediately
                 self.send_success_response(origin, {
                     "status": "success",
-                    "filename": str(dest_path.relative_to(paper_notes_dir.parent)),
-                    "message": f"Successfully saved to paper-notes",
+                    "filename": saved_filename,
+                    "message": msg,
                 })
-
-                # Async reindex
-                _idx_root = Path(get_knowledge_dir())
-                _idx_path = index_path
-                threading.Thread(
-                    target=lambda: _reindex(_idx_root, _idx_path),
-                    daemon=True,
-                ).start()
-            except Exception as e:
-                self.send_error_response(500, f"Internal Error: {e!s}", origin)
+            except Exception:
+                logger.warning("HTTP /import-markdown failed", exc_info=True)
+                self.send_error_response(500, "Internal server error", origin)
         else:
             self.send_error_response(404, "Not Found", origin)
 
@@ -1718,14 +1718,17 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"error": message}).encode('utf-8'))
 
-def start_local_server():
+def start_local_server() -> int:
+    """Start the HTTP sync server. Returns 0 on success, 1 on failure."""
     port = 8374
     try:
         server = HTTPServer(('127.0.0.1', port), ScholarAgentLocalServer)
-        logger.info(f"Scholar Agent Local Sync Server listening on http://127.0.0.1:{port}")
+        logger.info("Scholar Agent Local Sync Server listening on http://127.0.0.1:%d", port)
         server.serve_forever()
-    except Exception as e:
-        logger.error(f"Failed to start Scholar Agent Local Sync Server: {e}")
+    except Exception:
+        logger.error("Failed to start Scholar Agent Local Sync Server", exc_info=True)
+        return 1
+    return 0
 
 
 def main() -> int:

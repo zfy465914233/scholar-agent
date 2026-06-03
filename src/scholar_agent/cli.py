@@ -862,8 +862,7 @@ def _run_serve_http() -> int:
         f"\nScholar Agent v{__version__} — HTTP Sync Server\n\n"
     )
     sys.stderr.flush()
-    start_local_server()
-    return 0
+    return start_local_server()
 
 
 def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
@@ -882,6 +881,13 @@ def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
     if filename is None:
         sys.stderr.write(f"{msg}\n")
         return 1
+
+    # Reindex synchronously for short-lived CLI command
+    try:
+        from scholar_agent.engine.close_knowledge_loop import reindex
+        reindex(knowledge_dir, index_path)
+    except Exception:
+        sys.stderr.write("Warning: Reindexing failed\n")
 
     sys.stdout.write(f"{msg}\n")
     return 0

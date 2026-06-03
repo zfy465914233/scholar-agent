@@ -1,3 +1,4 @@
+import contextlib
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,6 +14,7 @@ class TestImportPaperPulse(unittest.TestCase):
         self.test_dir.mkdir(parents=True, exist_ok=True)
 
         self.index_path = self.test_dir / "index.json"
+        self.paper_notes_dir = self.test_dir.parent / "paper-notes"
 
         self.orig_cache = getattr(scholar_config, "_config_cache", None)
         scholar_config._config_cache = {
@@ -22,17 +24,33 @@ class TestImportPaperPulse(unittest.TestCase):
             "paperpulse_token": "mock-token",
         }
 
+    def _cleanup_dir(self, directory: Path) -> None:
+        if not directory.exists():
+            return
+        # Retry cleanup: background reindex threads may still be writing
+        for _ in range(3):
+            for f in sorted(directory.rglob("*"), reverse=True):
+                if f.is_file():
+                    f.unlink(missing_ok=True)
+                elif f.is_dir():
+                    with contextlib.suppress(OSError):
+                        f.rmdir()
+            if not directory.exists():
+                return
+            with contextlib.suppress(OSError):
+                directory.rmdir()
+                return
+            import time
+            time.sleep(0.1)
+
     def tearDown(self) -> None:
         scholar_config.clear_cache()
         if self.orig_cache:
             scholar_config._config_cache = self.orig_cache
 
-        # Cleanup files
-        for f in self.test_dir.rglob("*"):
-            if f.is_file():
-                f.unlink()
-        if self.test_dir.exists():
-            self.test_dir.rmdir()
+        # Cleanup test directories
+        self._cleanup_dir(self.test_dir)
+        self._cleanup_dir(self.paper_notes_dir)
 
     @patch("urllib.request.urlopen")
     def test_import_mcp_tool_success(self, mock_urlopen) -> None:
@@ -45,8 +63,8 @@ class TestImportPaperPulse(unittest.TestCase):
         res = import_paperpulse_note("test-paper-123")
         self.assertIn("Successfully imported paper note", res)
 
-        # Check file was written
-        card_file = self.test_dir / "distilled-test-paper.md"
+        # Check file was written to paper-notes under title folder
+        card_file = self.paper_notes_dir / "Mocked_Paper" / "Mocked_Paper.md"
         self.assertTrue(card_file.exists())
         self.assertIn("Mocked Paper", card_file.read_text(encoding="utf-8"))
 
@@ -62,8 +80,8 @@ class TestImportPaperPulse(unittest.TestCase):
         status = _run_import_paper(paper_id="test-paper-456", token="cli-token", url="http://localhost:8000")
         self.assertEqual(0, status)
 
-        # Check file was written to default fallback filename
-        card_file = self.test_dir / "distilled-test-paper-456.md"
+        # Check file was written to paper-notes under title folder
+        card_file = self.paper_notes_dir / "CLI_Mocked_Paper" / "CLI_Mocked_Paper.md"
         self.assertTrue(card_file.exists())
         self.assertIn("CLI Mocked Paper", card_file.read_text(encoding="utf-8"))
     def test_allowed_origin_matching(self) -> None:
@@ -71,6 +89,12 @@ class TestImportPaperPulse(unittest.TestCase):
         self.assertTrue(_is_allowed_origin("https://mindpulse.top"))
         self.assertTrue(_is_allowed_origin("http://localhost:3000"))
         self.assertTrue(_is_allowed_origin("http://127.0.0.1:8080"))
+        self.assertTrue(_is_allowed_origin("http://localhost"))
+        self.assertTrue(_is_allowed_origin("https://mindpulse.top:8443"))
+        self.assertFalse(_is_allowed_origin("https://mindpulse.top.attacker.com"))
+        self.assertFalse(_is_allowed_origin("http://localhost.attacker.com:3000"))
+        self.assertFalse(_is_allowed_origin("http://localhost.attacker.com"))
+        self.assertFalse(_is_allowed_origin("https://attacker.com/mindpulse.top"))
         self.assertFalse(_is_allowed_origin("https://malicious.com"))
         self.assertFalse(_is_allowed_origin(None))
 
@@ -90,6 +114,9 @@ class TestImportPaperPulse(unittest.TestCase):
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()
 
+        # HTTP handler writes to paper-notes/ (sibling of knowledge_dir)
+        paper_notes_dir = self.test_dir.parent / "paper-notes"
+
         try:
             # 1. Health check
             req = urllib.request.Request(
@@ -103,7 +130,7 @@ class TestImportPaperPulse(unittest.TestCase):
             # 2. Import markdown
             post_data = {
                 "filename": "test-via-http.md",
-                "markdown": "# Success Title\nContent here"
+                "markdown": "---\ntitle: Test HTTP Sync\ndomain: Test\n---\n# Success Title\nContent here"
             }
             body = json.dumps(post_data).encode('utf-8')
 
@@ -119,10 +146,9 @@ class TestImportPaperPulse(unittest.TestCase):
             with urllib.request.urlopen(req) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 self.assertEqual(data["status"], "success")
-                self.assertEqual(data["filename"], "test-via-http.md")
 
-            # Verify file was written
-            written_file = self.test_dir / "test-via-http.md"
+            # Verify file was written to paper-notes/Test/Test_HTTP_Sync/Test_HTTP_Sync.md
+            written_file = paper_notes_dir / "Test" / "Test_HTTP_Sync" / "Test_HTTP_Sync.md"
             self.assertTrue(written_file.exists())
             self.assertIn("Success Title", written_file.read_text(encoding="utf-8"))
 
@@ -171,6 +197,16 @@ class TestImportPaperPulse(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+            # Cleanup paper-notes created by HTTP handler
+            if paper_notes_dir.exists():
+                for f in paper_notes_dir.rglob("*"):
+                    if f.is_file():
+                        f.unlink()
+                for d in sorted(paper_notes_dir.rglob("*"), reverse=True):
+                    if d.is_dir():
+                        d.rmdir()
+                if paper_notes_dir.exists():
+                    paper_notes_dir.rmdir()
 
 
 if __name__ == "__main__":

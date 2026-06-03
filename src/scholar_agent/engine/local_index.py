@@ -106,7 +106,17 @@ def is_card(path: Path) -> bool:
 
 
 def iter_cards(knowledge_root: Path) -> list[Path]:
-    return sorted(path for path in knowledge_root.rglob("*.md") if is_card(path))
+    paths = []
+    if knowledge_root.exists():
+        paths.extend(knowledge_root.rglob("*.md"))
+
+    sibling_dirs = ("paper-notes", "daily-notes")
+    for sibling in sibling_dirs:
+        sibling_path = knowledge_root.parent / sibling
+        if sibling_path.exists() and sibling_path.resolve() != knowledge_root.resolve():
+            paths.extend(sibling_path.rglob("*.md"))
+
+    return sorted(path for path in paths if is_card(path))
 
 
 def _manifest_path(index_output: Path) -> Path:
@@ -278,39 +288,69 @@ def write_index(
     build_embedding_index: bool = False,
     embedding_output: Path | None = None,
 ) -> dict[str, object]:
-    """Build and persist the local index.
+    """Build and persist the local index with multi-process lock protection."""
+    import os
+    import time
+    import contextlib
 
-    Returns the in-memory payload after writing both index and manifest.
-    This gives callers a fast in-process path instead of shelling out to a
-    separate Python process.
-    """
-    if full_rebuild or not index_output.exists():
-        payload = build_index(knowledge_root)
-        manifest = _build_manifest(payload, knowledge_root)
-        index_output.parent.mkdir(parents=True, exist_ok=True)
-        index_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        _save_manifest(manifest, index_output)
-    else:
-        payload = build_index_incremental(knowledge_root, index_output)
-        index_output.parent.mkdir(parents=True, exist_ok=True)
-        index_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    lock_path = index_output.with_suffix(index_output.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if build_embedding_index:
+    acquired = False
+    deadline = time.time() + 10.0  # Wait up to 10 seconds for concurrent rebuilds
+    while time.time() < deadline:
         try:
-            from scholar_agent.engine.embedding_retrieve import build_embedding_index as build_emb
+            fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+            acquired = True
+            break
+        except FileExistsError:
+            # Stale lock detection: override locks older than 60s
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+                if age > 60:
+                    with contextlib.suppress(FileNotFoundError, OSError):
+                        lock_path.unlink()
+                    continue
+            except (OSError, FileNotFoundError):
+                pass
+            time.sleep(0.05)
 
-            docs = payload.get("documents", [])
-            emb_index = build_emb(cast("list[dict[Any, Any]]", docs)) if isinstance(docs, list) else build_emb([])
-            valid = sum(1 for e in emb_index["embeddings"] if e)
-            total = len(emb_index["doc_ids"])
-            output_path = embedding_output or index_output.parent / "embeddings.json"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(json.dumps(emb_index, ensure_ascii=False) + "\n", encoding="utf-8")
-            logger.info("Embedding index: %d/%d docs embedded → %s", valid, total, output_path)
-        except Exception as exc:
-            logger.warning("embedding index build failed (%s), skipping", exc)
+    if not acquired:
+        logger.warning("Could not acquire indexing lock %s within timeout, proceeding without lock", lock_path)
 
-    return payload
+    try:
+        if full_rebuild or not index_output.exists():
+            payload = build_index(knowledge_root)
+            manifest = _build_manifest(payload, knowledge_root)
+            index_output.parent.mkdir(parents=True, exist_ok=True)
+            index_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            _save_manifest(manifest, index_output)
+        else:
+            payload = build_index_incremental(knowledge_root, index_output)
+            index_output.parent.mkdir(parents=True, exist_ok=True)
+            index_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+        if build_embedding_index:
+            try:
+                from scholar_agent.engine.embedding_retrieve import build_embedding_index as build_emb
+
+                docs = payload.get("documents", [])
+                emb_index = build_emb(cast("list[dict[Any, Any]]", docs)) if isinstance(docs, list) else build_emb([])
+                valid = sum(1 for e in emb_index["embeddings"] if e)
+                total = len(emb_index["doc_ids"])
+                output_path = embedding_output or index_output.parent / "embeddings.json"
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(json.dumps(emb_index, ensure_ascii=False) + "\n", encoding="utf-8")
+                logger.info("Embedding index: %d/%d docs embedded → %s", valid, total, output_path)
+            except Exception as exc:
+                logger.warning("embedding index build failed (%s), skipping", exc)
+
+        return payload
+    finally:
+        if acquired:
+            with contextlib.suppress(FileNotFoundError, OSError):
+                lock_path.unlink()
 
 
 def main() -> int:

@@ -30,7 +30,7 @@ class GetScholarRootTest(unittest.TestCase):
 class GetUserHomeTest(unittest.TestCase):
     def test_default_is_home_scholar(self) -> None:
         result = get_user_home(env={})
-        expected = (Path.home() / "scholar").resolve()
+        expected = (Path.home() / ".scholar").resolve()
         self.assertEqual(result, expected)
 
     def test_override_via_env(self) -> None:
@@ -49,12 +49,12 @@ class GetUserHomeTest(unittest.TestCase):
 
     def test_empty_string_env_uses_default(self) -> None:
         result = get_user_home(env={"SCHOLAR_HOME": ""})
-        expected = (Path.home() / "scholar").resolve()
+        expected = (Path.home() / ".scholar").resolve()
         self.assertEqual(result, expected)
 
     def test_whitespace_only_env_uses_default(self) -> None:
         result = get_user_home(env={"SCHOLAR_HOME": "   "})
-        expected = (Path.home() / "scholar").resolve()
+        expected = (Path.home() / ".scholar").resolve()
         self.assertEqual(result, expected)
 
     def test_returns_resolved_path(self) -> None:
@@ -65,7 +65,7 @@ class GetUserHomeTest(unittest.TestCase):
 class GetUserConfigPathTest(unittest.TestCase):
     def test_default_location(self) -> None:
         result = get_user_config_path(env={})
-        expected = (Path.home() / "scholar" / "config" / "config.json").resolve()
+        expected = (Path.home() / ".scholar" / "config" / "config.json").resolve()
         self.assertEqual(result, expected)
 
     def test_respects_scholar_home(self) -> None:
@@ -82,7 +82,7 @@ class GetUserConfigPathTest(unittest.TestCase):
 class GetUserProfilePathTest(unittest.TestCase):
     def test_default_profile_path(self) -> None:
         result = get_user_profile_path("research", env={})
-        expected = (Path.home() / "scholar" / "config" / "profiles" / "research.json").resolve()
+        expected = (Path.home() / ".scholar" / "config" / "profiles" / "research.json").resolve()
         self.assertEqual(result, expected)
 
     def test_respects_scholar_home(self) -> None:
