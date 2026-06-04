@@ -55,10 +55,7 @@ def build_default_config(*, env: Mapping[str, str] | None = None, scholar_root: 
     resolved_root = (scholar_root or get_scholar_root()).resolve()
     user_home = get_user_home(env)
     env_map = os.environ if env is None else env
-    if env_map.get("SCHOLAR_HOME", "").strip():
-        data_home = user_home
-    else:
-        data_home = Path.home() / "scholar"
+    data_home = user_home if env_map.get("SCHOLAR_HOME", "").strip() else Path.home() / "scholar"
     profile = (env or os.environ).get("SCHOLAR_PROFILE", "default").strip() or "default"
     return {
         "knowledge_dir": str((data_home / "knowledge").resolve()),

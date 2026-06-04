@@ -138,7 +138,7 @@ def _extra_scan_dirs(knowledge_root: Path) -> list[Path]:
 
 
 def iter_cards(knowledge_root: Path, extra_dirs: list[Path] | None = None) -> list[Path]:
-    paths = []
+    paths: list[Path] = []
     if knowledge_root.exists():
         paths.extend(knowledge_root.rglob("*.md"))
 
@@ -321,9 +321,9 @@ def write_index(
     embedding_output: Path | None = None,
 ) -> dict[str, object]:
     """Build and persist the local index with multi-process lock protection."""
+    import contextlib
     import os
     import time
-    import contextlib
 
     # Pre-resolve scan dirs outside the lock to minimize lock hold time
     extra_dirs = _extra_scan_dirs(knowledge_root)

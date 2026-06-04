@@ -1619,7 +1619,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if _is_allowed_origin(origin):
             self.send_response(200)
-            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Origin", origin or "")
             self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.send_header("Access-Control-Max-Age", "86400")
