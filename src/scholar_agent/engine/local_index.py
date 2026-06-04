@@ -112,6 +112,7 @@ def _extra_scan_dirs(knowledge_root: Path) -> list[Path]:
     Falls back to sibling dirs of knowledge_root if config is unavailable.
     """
     dirs: list[Path] = []
+    seen: set[str] = {str(knowledge_root.resolve())}
     try:
         from scholar_agent.engine.scholar_config import load_config
 
@@ -120,26 +121,29 @@ def _extra_scan_dirs(knowledge_root: Path) -> list[Path]:
         for key in ("paper_notes_dir", "daily_notes_dir"):
             val = academic.get(key)
             if val:
-                p = Path(val)
-                if p.resolve() != knowledge_root.resolve():
+                p = Path(val).resolve()
+                if str(p) not in seen:
                     dirs.append(p)
+                    seen.add(str(p))
     except Exception:
         pass
     if not dirs:
         # Fallback: scan sibling dirs
         for sibling in ("paper-notes", "daily-notes"):
-            p = knowledge_root.parent / sibling
-            if p.resolve() != knowledge_root.resolve():
+            p = (knowledge_root.parent / sibling).resolve()
+            if str(p) not in seen:
                 dirs.append(p)
+                seen.add(str(p))
     return dirs
 
 
-def iter_cards(knowledge_root: Path) -> list[Path]:
+def iter_cards(knowledge_root: Path, extra_dirs: list[Path] | None = None) -> list[Path]:
     paths = []
     if knowledge_root.exists():
         paths.extend(knowledge_root.rglob("*.md"))
 
-    for extra_dir in _extra_scan_dirs(knowledge_root):
+    dirs = extra_dirs if extra_dirs is not None else _extra_scan_dirs(knowledge_root)
+    for extra_dir in dirs:
         if extra_dir.exists():
             paths.extend(extra_dir.rglob("*.md"))
 
@@ -199,9 +203,9 @@ def _attach_backlinks(documents: list[dict]) -> None:
 _INDEX_SCHEMA_VERSION = 2
 
 
-def build_index(knowledge_root: Path) -> dict[str, object]:
+def build_index(knowledge_root: Path, extra_dirs: list[Path] | None = None) -> dict[str, object]:
     """Build a full index from scratch."""
-    documents = [parse_card(path, knowledge_root=knowledge_root) for path in iter_cards(knowledge_root)]
+    documents = [parse_card(path, knowledge_root=knowledge_root) for path in iter_cards(knowledge_root, extra_dirs)]
     _attach_backlinks(documents)
     return {
         "schema_version": _INDEX_SCHEMA_VERSION,
@@ -213,6 +217,7 @@ def build_index(knowledge_root: Path) -> dict[str, object]:
 def build_index_incremental(
     knowledge_root: Path,
     index_output: Path,
+    extra_dirs: list[Path] | None = None,
 ) -> dict[str, object]:
     """Build index incrementally, only re-parsing changed cards.
 
@@ -240,7 +245,7 @@ def build_index_incremental(
         _save_manifest(manifest, index_output)
         return payload
 
-    card_paths = iter_cards(knowledge_root)
+    card_paths = iter_cards(knowledge_root, extra_dirs)
 
     # Build current manifest using absolute paths as canonical keys
     current_manifest: dict[str, float] = {}
@@ -320,6 +325,9 @@ def write_index(
     import time
     import contextlib
 
+    # Pre-resolve scan dirs outside the lock to minimize lock hold time
+    extra_dirs = _extra_scan_dirs(knowledge_root)
+
     lock_path = index_output.with_suffix(index_output.suffix + ".lock")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -344,17 +352,18 @@ def write_index(
             time.sleep(0.05)
 
     if not acquired:
-        logger.warning("Could not acquire indexing lock %s within timeout, proceeding without lock", lock_path)
+        logger.warning("Could not acquire indexing lock %s within timeout, aborting write_index", lock_path)
+        raise RuntimeError(f"Could not acquire indexing lock {lock_path} within timeout")
 
     try:
         if full_rebuild or not index_output.exists():
-            payload = build_index(knowledge_root)
+            payload = build_index(knowledge_root, extra_dirs)
             manifest = _build_manifest(payload, knowledge_root)
             index_output.parent.mkdir(parents=True, exist_ok=True)
             index_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             _save_manifest(manifest, index_output)
         else:
-            payload = build_index_incremental(knowledge_root, index_output)
+            payload = build_index_incremental(knowledge_root, index_output, extra_dirs)
             index_output.parent.mkdir(parents=True, exist_ok=True)
             index_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 

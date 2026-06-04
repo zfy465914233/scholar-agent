@@ -201,16 +201,7 @@ class TestImportPaperPulse(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
-            # Cleanup paper-notes created by HTTP handler
-            if paper_notes_dir.exists():
-                for f in paper_notes_dir.rglob("*"):
-                    if f.is_file():
-                        f.unlink()
-                for d in sorted(paper_notes_dir.rglob("*"), reverse=True):
-                    if d.is_dir():
-                        d.rmdir()
-                if paper_notes_dir.exists():
-                    paper_notes_dir.rmdir()
+            self._cleanup_dir(paper_notes_dir)
 
 
 if __name__ == "__main__":

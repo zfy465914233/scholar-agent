@@ -40,10 +40,11 @@ def _parse_frontmatter_domain_title(markdown: str) -> tuple[str, str]:
     if match:
         fm = match.group(1)
         for line in fm.split("\n"):
-            if line.startswith("domain:"):
-                domain = line.split(":", 1)[1].strip().strip('"').strip("'")
-            elif line.startswith("title:"):
-                title = line.split(":", 1)[1].strip().strip('"').strip("'")
+            stripped = line.strip()
+            if stripped.startswith("domain:"):
+                domain = stripped.split(":", 1)[1].strip().strip('"').strip("'")
+            elif stripped.startswith("title:"):
+                title = stripped.split(":", 1)[1].strip().strip('"').strip("'")
     return domain, title
 
 
@@ -77,7 +78,7 @@ def _save_to_paper_notes(filename: str, markdown_content: str) -> tuple[Path, st
     dest_dir = paper_notes_dir / domain / safe_title if domain else paper_notes_dir / safe_title
     resolved_dest = dest_dir.resolve()
 
-    if not str(resolved_dest).startswith(str(paper_notes_dir.resolve())):
+    if not resolved_dest.is_relative_to(paper_notes_dir.resolve()):
         raise ValueError("Invalid domain or title in frontmatter causing path traversal")
 
     dest_dir.mkdir(parents=True, exist_ok=True)
