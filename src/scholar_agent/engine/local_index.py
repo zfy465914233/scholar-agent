@@ -105,16 +105,43 @@ def is_card(path: Path) -> bool:
     return path.read_text(encoding="utf-8").startswith("---\n")
 
 
+def _extra_scan_dirs(knowledge_root: Path) -> list[Path]:
+    """Resolve additional directories to scan from config.
+
+    Reads academic.paper_notes_dir and academic.daily_notes_dir from config.
+    Falls back to sibling dirs of knowledge_root if config is unavailable.
+    """
+    dirs: list[Path] = []
+    try:
+        from scholar_agent.engine.scholar_config import load_config
+
+        config = load_config()
+        academic = config.get("academic", {})
+        for key in ("paper_notes_dir", "daily_notes_dir"):
+            val = academic.get(key)
+            if val:
+                p = Path(val)
+                if p.resolve() != knowledge_root.resolve():
+                    dirs.append(p)
+    except Exception:
+        pass
+    if not dirs:
+        # Fallback: scan sibling dirs
+        for sibling in ("paper-notes", "daily-notes"):
+            p = knowledge_root.parent / sibling
+            if p.resolve() != knowledge_root.resolve():
+                dirs.append(p)
+    return dirs
+
+
 def iter_cards(knowledge_root: Path) -> list[Path]:
     paths = []
     if knowledge_root.exists():
         paths.extend(knowledge_root.rglob("*.md"))
 
-    sibling_dirs = ("paper-notes", "daily-notes")
-    for sibling in sibling_dirs:
-        sibling_path = knowledge_root.parent / sibling
-        if sibling_path.exists() and sibling_path.resolve() != knowledge_root.resolve():
-            paths.extend(sibling_path.rglob("*.md"))
+    for extra_dir in _extra_scan_dirs(knowledge_root):
+        if extra_dir.exists():
+            paths.extend(extra_dir.rglob("*.md"))
 
     return sorted(path for path in paths if is_card(path))
 

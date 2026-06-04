@@ -47,49 +47,36 @@ def _parse_frontmatter_domain_title(markdown: str) -> tuple[str, str]:
     return domain, title
 
 
-def _resolve_paper_notes_dir(knowledge_dir: Path) -> Path:
-    """Resolve paper-notes directory from config, falling back to knowledge_dir sibling."""
-    try:
-        from scholar_agent.engine.scholar_config import load_config
+def _resolve_paper_notes_dir() -> Path:
+    """Resolve paper-notes directory from config."""
+    from scholar_agent.engine.scholar_config import get_knowledge_dir, load_config
 
-        config = load_config()
-        configured = config.get("academic", {}).get("paper_notes_dir")
-        if configured:
-            return Path(configured)
-    except Exception:
-        pass
+    config = load_config()
+    configured = config.get("academic", {}).get("paper_notes_dir")
+    if configured:
+        return Path(configured)
     # Fallback: sibling of knowledge_dir
-    return knowledge_dir.parent / "paper-notes"
+    return Path(get_knowledge_dir()).parent / "paper-notes"
 
 
-def save_markdown_to_papernotes(
-    filename: str,
-    markdown_content: str,
-    knowledge_dir: Path,
-) -> tuple[Path, str]:
-    """Core logic to save a markdown note to the paper-notes/ directory under a domain/title layout.
+def _save_to_paper_notes(filename: str, markdown_content: str) -> tuple[Path, str]:
+    """Save a markdown note to paper-notes/{domain}/{title}/{title}.md.
 
-    Returns a tuple of (resolved_dest_path, safe_filename).
+    Returns (dest_path, safe_filename).
     Raises ValueError on path safety check failures.
     """
     from scholar_agent.engine.common import sanitize_title
 
-    # 1. Parse frontmatter to extract domain and title
     domain, title = _parse_frontmatter_domain_title(markdown_content)
+    paper_notes_dir = _resolve_paper_notes_dir()
 
-    # 2. Resolve paper-notes/ directory from config
-    paper_notes_dir = _resolve_paper_notes_dir(knowledge_dir)
-
-    # 3. Derive safe title and domain paths
     safe_title = sanitize_title(title) if title else Path(filename).stem
     if domain:
         domain = sanitize_title(domain)
 
-    # 4. Construct destination paths
     dest_dir = paper_notes_dir / domain / safe_title if domain else paper_notes_dir / safe_title
     resolved_dest = dest_dir.resolve()
 
-    # 5. Prevent path traversal attacks
     if not str(resolved_dest).startswith(str(paper_notes_dir.resolve())):
         raise ValueError("Invalid domain or title in frontmatter causing path traversal")
 
@@ -104,8 +91,6 @@ def import_from_url(
     paper_id: str,
     token: str | None,
     base_url: str,
-    knowledge_dir: Path,
-    index_path: Path,
 ) -> tuple[str, str | None]:
     """Fetch a distilled paper note from a remote source and save to paper-notes/."""
     if not _SAFE_ID_RE.match(paper_id):
@@ -135,7 +120,7 @@ def import_from_url(
         return f"Error: Request failed: {e}", None
 
     try:
-        _, saved_filename = save_markdown_to_papernotes(filename, markdown_content, knowledge_dir)
+        _, saved_filename = _save_to_paper_notes(filename, markdown_content)
     except ValueError as e:
         return f"Error: {e}", None
 
@@ -145,12 +130,10 @@ def import_from_url(
 def import_markdown(
     filename: str,
     markdown_content: str,
-    knowledge_dir: Path,
-    index_path: Path,
 ) -> tuple[str, str | None]:
-    """Save raw markdown content to paper-notes/ directory under correct domain/title subfolders."""
+    """Save raw markdown content to paper-notes/ directory under domain/title subfolders."""
     try:
-        _, saved_filename = save_markdown_to_papernotes(filename, markdown_content, knowledge_dir)
+        _, saved_filename = _save_to_paper_notes(filename, markdown_content)
     except ValueError as e:
         return f"Error: {e}", None
 

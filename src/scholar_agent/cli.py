@@ -874,10 +874,8 @@ def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
     config = load_config()
     effective_token = token or config.get("paperpulse_token", "")
     base_url = url or config.get("paperpulse_url", "https://mindpulse.top").rstrip("/")
-    knowledge_dir = Path(get_knowledge_dir())
-    index_path = Path(config["index_path"])
 
-    msg, filename = import_from_url(paper_id, effective_token, base_url, knowledge_dir, index_path)
+    msg, filename = import_from_url(paper_id, effective_token, base_url)
     if filename is None:
         sys.stderr.write(f"{msg}\n")
         return 1
@@ -885,6 +883,8 @@ def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
     # Reindex synchronously for short-lived CLI command
     try:
         from scholar_agent.engine.close_knowledge_loop import reindex
+        knowledge_dir = Path(get_knowledge_dir())
+        index_path = Path(config["index_path"])
         reindex(knowledge_dir, index_path)
     except Exception:
         sys.stderr.write("Warning: Reindexing failed\n")

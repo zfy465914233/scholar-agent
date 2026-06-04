@@ -14,14 +14,18 @@ class TestImportPaperPulse(unittest.TestCase):
         self.test_dir.mkdir(parents=True, exist_ok=True)
 
         self.index_path = self.test_dir / "index.json"
-        self.paper_notes_dir = self.test_dir.parent / "paper-notes"
 
         self.orig_cache = getattr(scholar_config, "_config_cache", None)
+        self.paper_notes_dir = self.test_dir.parent / "paper-notes"
         scholar_config._config_cache = {
             "knowledge_dir": str(self.test_dir),
             "index_path": str(self.index_path),
             "paperpulse_url": "https://mindpulse.top",
             "paperpulse_token": "mock-token",
+            "academic": {
+                "paper_notes_dir": str(self.paper_notes_dir),
+                "daily_notes_dir": str(self.test_dir.parent / "daily-notes"),
+            },
         }
 
     def _cleanup_dir(self, directory: Path) -> None:

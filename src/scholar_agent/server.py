@@ -1577,12 +1577,12 @@ def import_paperpulse_note(paper_id: str, api_token: str | None = None) -> str:
     config = load_config()
     token = api_token or config.get("paperpulse_token", "")
     base_url = config.get("paperpulse_url", "https://mindpulse.top").rstrip("/")
-    knowledge_dir = Path(get_knowledge_dir())
-    index_path = Path(config.get("index_path", ""))
 
-    msg, _ = import_from_url(paper_id, token, base_url, knowledge_dir, index_path)
+    msg, saved = import_from_url(paper_id, token, base_url)
 
-    _async_reindex(index_path)
+    if saved is not None:
+        index_path = Path(config.get("index_path", ""))
+        _async_reindex(index_path)
 
     return msg
 
@@ -1678,17 +1678,15 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 return
 
             try:
-                config = load_config()
-                index_path = Path(config.get("index_path", ""))
-                knowledge_dir = Path(get_knowledge_dir())
-
                 from scholar_agent.engine.import_service import import_markdown
-                msg, saved_filename = import_markdown(filename, markdown_content, knowledge_dir, index_path)
+                msg, saved_filename = import_markdown(filename, markdown_content)
 
                 if saved_filename is None:
                     self.send_error_response(400, msg, origin)
                     return
 
+                config = load_config()
+                index_path = Path(config.get("index_path", ""))
                 _async_reindex(index_path)
 
                 self.send_success_response(origin, {
