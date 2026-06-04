@@ -29,7 +29,7 @@ import json
 import logging
 import os
 import sys
-import time
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,10 +41,19 @@ from scholar_agent.engine.close_knowledge_loop import (
     quality_score_answer_data,
     validate_answer_schema,
 )
-from scholar_agent.engine.close_knowledge_loop import reindex as _reindex
 from scholar_agent.engine.common import sanitize_title
+from scholar_agent.engine.index_lifecycle import async_reindex as _async_reindex
+from scholar_agent.engine.index_lifecycle import ensure_ready as _ensure_index_ready
+from scholar_agent.engine.index_lifecycle import mark_stale as _mark_index_stale
 from scholar_agent.engine.local_retrieve import retrieve
-from scholar_agent.engine.scholar_config import get_index_path, get_knowledge_dir, get_research_interests, load_config
+from scholar_agent.engine.scholar_config import (
+    get_daily_notes_dir,
+    get_index_path,
+    get_knowledge_dir,
+    get_paper_notes_dir,
+    get_research_interests,
+    load_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,115 +91,6 @@ def _validate_path_within(path: str | Path, boundary: Path) -> Path | None:
     except ValueError:
         return None
     return resolved
-
-
-def _stale_marker_path(index_path: Path) -> Path:
-    return index_path.with_suffix(index_path.suffix + ".stale")
-
-
-def _refresh_lock_path(index_path: Path) -> Path:
-    return index_path.with_suffix(index_path.suffix + ".lock")
-
-
-def _mark_index_stale(index_path: Path) -> None:
-    marker = _stale_marker_path(index_path)
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text("stale\n", encoding="utf-8")
-
-
-def _async_reindex(index_path: Path) -> None:
-    """Mark index stale and trigger a non-blocking rebuild in a background thread."""
-    _mark_index_stale(index_path)
-
-    def _run():
-        try:
-            logger.info("Triggering background search index rebuild...")
-            _ensure_index_ready()
-            logger.info("Background search index rebuild completed.")
-        except Exception:
-            logger.exception("Error in background reindex thread")
-
-    threading.Thread(target=_run, daemon=True).start()
-
-
-def _clear_index_stale(index_path: Path) -> None:
-    marker = _stale_marker_path(index_path)
-    with contextlib.suppress(FileNotFoundError):
-        marker.unlink()
-
-
-def _acquire_refresh_lock(lock_path: Path) -> bool:
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        # Stale lock detection: if older than 60s, force-remove and retry
-        try:
-            age = time.time() - lock_path.stat().st_mtime
-            if age > 60:
-                lock_path.unlink()
-                fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.close(fd)
-                return True
-        except (OSError, FileNotFoundError):
-            pass
-        return False
-    else:
-        os.close(fd)
-        return True
-
-
-def _release_refresh_lock(lock_path: Path) -> None:
-    with contextlib.suppress(FileNotFoundError):
-        lock_path.unlink()
-
-
-def _ensure_index_ready() -> tuple[Path, bool, str | None]:
-    index_path = get_index_path()
-    marker = _stale_marker_path(index_path)
-
-    # Check if index is stale or missing
-    needs_refresh = marker.exists() or not index_path.exists()
-
-    # Also check if index is older than any knowledge card (detects external edits)
-    if not needs_refresh and index_path.exists():
-        try:
-            index_mtime = index_path.stat().st_mtime
-            knowledge_dir = get_knowledge_dir()
-            if knowledge_dir.exists():
-                for card_path in knowledge_dir.rglob("*.md"):
-                    if card_path.stat().st_mtime > index_mtime:
-                        needs_refresh = True
-                        break
-        except OSError:
-            pass
-
-    if not needs_refresh:
-        return index_path, False, None
-
-    lock_path = _refresh_lock_path(index_path)
-    if not _acquire_refresh_lock(lock_path):
-        deadline = time.time() + 2.0
-        while time.time() < deadline:
-            if not lock_path.exists():
-                if not marker.exists() or index_path.exists():
-                    return index_path, True, None
-                break
-            time.sleep(0.05)
-        return index_path, True, "Index refresh is already in progress; retry the request in a moment."
-
-    try:
-        reindex_ok = _reindex(get_knowledge_dir(), index_path)
-        if reindex_ok:
-            _clear_index_stale(index_path)
-            return index_path, True, None
-
-        logger.warning("lazy reindex failed for %s", index_path)
-        if not index_path.exists():
-            return index_path, True, "Knowledge index not found and automatic refresh failed."
-        return index_path, True, "Automatic refresh failed; serving the last available index."
-    finally:
-        _release_refresh_lock(lock_path)
 
 
 @tool
@@ -334,9 +234,10 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
         answer_data["language"] = language
         sanitized_domain = domain.strip() if domain and domain.strip() else ""
         if sanitized_domain:
-            for char in ("..", "/", "\\"):
-                if char in sanitized_domain:
-                    return json.dumps({"error": "domain must not contain path separators or parent references"})
+            knowledge_dir = get_knowledge_dir()
+            target = (knowledge_dir / sanitized_domain).resolve()
+            if not target.is_relative_to(knowledge_dir.resolve()):
+                return json.dumps({"error": "domain must not contain path separators or parent references"})
         domain_kw = {"domain_override": sanitized_domain} if sanitized_domain else {}
         card_path = build_knowledge_card(
             query,
@@ -374,12 +275,10 @@ def list_knowledge(topic: str | None = None) -> str:
     Args:
         topic: Optional topic filter (e.g. 'qpe', 'markov_chain'). Returns all if omitted.
     """
-    if topic is not None:
-        for char in ("..", "/", "\\"):
-            if char in topic:
-                return json.dumps(
-                    {"error": "topic must not contain path separators or traversal sequences", "cards": [], "total": 0}
-                )
+    if topic is not None and any(c in topic for c in ("/", "\\", "\0")):
+        return json.dumps(
+            {"error": "topic must not contain path separators or traversal sequences", "cards": [], "total": 0}
+        )
     index_path, refreshed, refresh_error = _ensure_index_ready()
     if not index_path.exists():
         return json.dumps(
@@ -644,7 +543,7 @@ _sanitize_title = sanitize_title
 
 def _find_local_pdf(arxiv_id: str, title: str = "") -> str | None:
     """Search paper-notes/ for an existing local PDF by title or arXiv ID."""
-    paper_notes_dir = get_knowledge_dir().parent / "paper-notes"
+    paper_notes_dir = get_paper_notes_dir()
     if not paper_notes_dir.exists():
         return None
     # Search by sanitized title first
@@ -916,7 +815,7 @@ if SCHOLAR_ACADEMIC:
 
         # Resolve output directory
         if not output_dir or not output_dir.strip():
-            output_dir = str(get_knowledge_dir().parent / "paper-notes")
+            output_dir = str(get_paper_notes_dir())
         out_path = _validate_path_within(output_dir, get_knowledge_dir().parent)
         if out_path is None:
             return json.dumps({"error": "output_dir must be within the scholar knowledge directory tree"})
@@ -1092,12 +991,12 @@ if SCHOLAR_ACADEMIC:
                     {"error": "output_dir must be within the scholar knowledge directory tree", "pdf_path": None}
                 )
         elif domain and domain.strip():
-            for char in ("..", "/", "\\"):
-                if char in domain:
-                    return json.dumps({"error": "domain must not contain path separators", "pdf_path": None})
-            paper_dir = get_knowledge_dir().parent / "paper-notes" / domain.strip() / folder_name
+            pn_dir = get_paper_notes_dir()
+            paper_dir = pn_dir / domain.strip() / folder_name
+            if not paper_dir.resolve().is_relative_to(pn_dir.resolve()):
+                return json.dumps({"error": "domain must not contain path separators", "pdf_path": None})
         else:
-            paper_dir = get_knowledge_dir().parent / "paper-notes" / folder_name
+            paper_dir = get_paper_notes_dir() / folder_name
 
         pdf_path = paper_dir / pdf_filename
 
@@ -1174,7 +1073,7 @@ if SCHOLAR_ACADEMIC:
 
         if not output_dir or not output_dir.strip():
             folder_name = _sanitize_title(title) if title and title.strip() else paper_id
-            output_dir = str(get_knowledge_dir().parent / "paper-notes" / folder_name / "images")
+            output_dir = str(get_paper_notes_dir() / folder_name / "images")
         else:
             validated = _validate_path_within(output_dir, get_knowledge_dir().parent)
             if validated is None:
@@ -1366,7 +1265,7 @@ if SCHOLAR_ACADEMIC:
         full_config = load_config()
         daily_config = full_config.get("academic", {}).get("daily_recommend", {})
 
-        paper_notes_dir = str(get_knowledge_dir().parent / "paper-notes")
+        paper_notes_dir = str(get_paper_notes_dir())
 
         try:
             result = generate_daily_recommendations(
@@ -1396,7 +1295,7 @@ if SCHOLAR_ACADEMIC:
             logger.warning("Per-paper note generation partially failed", exc_info=True)
 
         # Build daily note with wiki-links to per-paper notes
-        output_dir = str(get_knowledge_dir().parent / "daily-notes")
+        output_dir = str(get_daily_notes_dir())
         try:
             note_path = build_daily_note(
                 date_str,
@@ -1415,7 +1314,7 @@ if SCHOLAR_ACADEMIC:
         try:
             from scholar_agent.engine.academic.note_linker import apply_wiki_links, build_keyword_index
 
-            pn_path = get_knowledge_dir().parent / "paper-notes"
+            pn_path = get_paper_notes_dir()
             if pn_path.exists():
                 keyword_index = build_keyword_index(str(pn_path))
                 if keyword_index:
@@ -1496,7 +1395,7 @@ if SCHOLAR_ACADEMIC:
         from scholar_agent.engine.academic.note_linker import apply_wiki_links, build_keyword_index
 
         if not notes_dir or not notes_dir.strip():
-            notes_dir = str(get_knowledge_dir().parent / "paper-notes")
+            notes_dir = str(get_paper_notes_dir())
 
         notes_path = _validate_path_within(notes_dir, get_knowledge_dir().parent)
         if notes_path is None:
@@ -1542,7 +1441,7 @@ if SCHOLAR_ACADEMIC:
                     total_links += links
 
             # Also linkify daily-notes/ if it exists
-            daily_notes_path = get_knowledge_dir().parent / "daily-notes"
+            daily_notes_path = get_daily_notes_dir()
             if daily_notes_path.exists():
                 for md_file in daily_notes_path.rglob("*.md"):
                     modified, links = apply_wiki_links(str(md_file), keyword_index)
@@ -1587,7 +1486,6 @@ def import_paperpulse_note(paper_id: str, api_token: str | None = None) -> str:
     return msg
 
 
-import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 

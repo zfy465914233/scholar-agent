@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from scholar_agent.config.loader import resolve_config
@@ -10,22 +11,38 @@ from scholar_agent.config.paths import build_default_config, get_user_config_pat
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-    from pathlib import Path
 
 
-def _user_home_directories(user_home: Path) -> list[Path]:
-    return [
+def _user_home_directories(user_home: Path, env: Mapping[str, str] | None = None) -> list[Path]:
+    """Build the list of directories that ``init`` should create.
+
+    Infrastructure dirs (config, indexes, cache, logs) go under *user_home*
+    (``~/.scholar/`` by default).  Data dirs (knowledge, paper-notes,
+    daily-notes) are resolved from :func:`build_default_config` so they end up
+    in the correct ``data_home`` (``~/scholar/`` by default) rather than
+    alongside infrastructure files.
+    """
+    defaults = build_default_config(env=env)
+
+    # Infrastructure (under user_home)
+    infra = [
         user_home,
         user_home / "config",
         user_home / "config" / "profiles",
-        user_home / "knowledge",
-        user_home / "paper-notes",
-        user_home / "daily-notes",
         user_home / "indexes" / "local",
         user_home / "cache",
         user_home / "logs",
         user_home / "outputs",
     ]
+
+    # Data (resolved from config defaults — ~/scholar/ by default)
+    data = [
+        Path(defaults["knowledge_dir"]),
+        Path(defaults["academic"]["paper_notes_dir"]),
+        Path(defaults["academic"]["daily_notes_dir"]),
+    ]
+
+    return infra + data
 
 
 def initialize_user_home(
@@ -34,7 +51,7 @@ def initialize_user_home(
     user_home = get_user_home(env)
     user_config_path = get_user_config_path(env)
 
-    directories = _user_home_directories(user_home)
+    directories = _user_home_directories(user_home, env=env)
 
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)

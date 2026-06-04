@@ -1,118 +1,54 @@
 """Shared configuration reader for Scholar Agent.
 
-Config discovery order:
-  1. User-level config: ~/.scholar/config/config.json (global install mode)
-  2. Workspace walk-up: .scholar.json in cwd or parent dirs (project-local mode)
-  3. SCHOLAR_ROOT fallback: scholar-agent/.scholar.json (embedded mode)
-
-Config file format (.scholar.json or config.json):
-{
-  "knowledge_dir": "~/scholar/knowledge",
-  "index_path": "~/.scholar/indexes/local/index.json",
-  "scholar_dir": "./scholar"
-}
+Thin facade over ``config.loader.resolve_config()`` that provides a
+process-wide cache.  All runtime code should use this module for
+configuration access; the ``config/`` package handles actual discovery
+and merging.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from scholar_agent.config.loader import ConfigResolution
 
 logger = logging.getLogger(__name__)
 
-
-# Scholar Agent's own directory — walk up to find repo root for embedded-mode support
-def _resolve_scholar_root() -> Path:
-    candidate = Path(__file__).resolve().parent
-    for _ in range(10):
-        if (candidate / "pyproject.toml").exists():
-            return candidate
-        parent = candidate.parent
-        if parent == candidate:
-            break
-        candidate = parent
-    return Path(__file__).resolve().parents[3]
-
-
-SCHOLAR_ROOT = _resolve_scholar_root()
-
-# Defaults: config/indexes go to ~/.scholar/, data stays in ~/scholar/
-_SCHOLAR_HOME_DEFAULT = Path.home() / ".scholar"
-_SCHOLAR_DATA_DEFAULT = Path.home() / "scholar"
-_DEFAULTS = {
-    "knowledge_dir": str(_SCHOLAR_DATA_DEFAULT / "knowledge"),
-    "index_path": str(_SCHOLAR_HOME_DEFAULT / "indexes" / "local" / "index.json"),
-    "scholar_dir": str(SCHOLAR_ROOT),
-}
-
+# ── Process-wide cache ──────────────────────────────────────────────
+# ``_config_cache`` is set directly by tests; ``_resolution_cache``
+# stores the full ``ConfigResolution`` for diagnostic access.
 _config_cache: dict | None = None
+_resolution_cache: ConfigResolution | None = None
 
 
-def _get_user_config_path() -> Path:
-    """Return the user-level config path (~/.scholar/config/config.json by default)."""
-    override = os.environ.get("SCHOLAR_HOME", "").strip()
-    user_home = Path(override).expanduser().resolve() if override else Path.home() / ".scholar"
-    return user_home / "config" / "config.json"
+def _get_resolution() -> ConfigResolution:
+    """Return the cached ``ConfigResolution``, resolving it on first call."""
+    global _resolution_cache
+    if _resolution_cache is None:
+        from scholar_agent.config.loader import resolve_config
 
-
-def _find_config_file() -> Path | None:
-    """Find config — user-level first, then workspace walk-up, then SCHOLAR_ROOT fallback."""
-    # 1. User-level config (global install mode)
-    user_config = _get_user_config_path()
-    if user_config.exists():
-        return user_config
-
-    # 2. Walk up from cwd looking for .scholar.json
-    current = Path.cwd()
-    for _ in range(10):
-        candidate = current / ".scholar.json"
-        if candidate.exists():
-            return candidate
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-
-    # 3. SCHOLAR_ROOT fallback (embedded mode)
-    scholar_config_file = SCHOLAR_ROOT / ".scholar.json"
-    if scholar_config_file.exists():
-        return scholar_config_file
-    return None
+        _resolution_cache = resolve_config()
+    return _resolution_cache
 
 
 def load_config() -> dict:
-    """Load and return the merged configuration."""
+    """Load and return the merged configuration.
+
+    Uses ``config.loader.resolve_config()`` as the single source of truth.
+    The result is cached for the process lifetime; call :func:`clear_cache`
+    to force a re-read (e.g. after writing a new config file).
+    """
     global _config_cache
     if _config_cache is not None:
         return _config_cache
+    _config_cache = _get_resolution().config
+    return _config_cache
 
-    config = dict(_DEFAULTS)
 
-    config_file = _find_config_file()
-    if config_file is not None:
-        try:
-            overrides = json.loads(config_file.read_text(encoding="utf-8"))
-            config_base = config_file.parent
-            # Resolve relative paths against the config file's directory
-            for key in ("knowledge_dir", "index_path", "scholar_dir"):
-                if key in overrides:
-                    val = overrides[key]
-                    if val is not None:
-                        p = Path(val)
-                        if not p.is_absolute():
-                            p = config_base / p
-                        config[key] = str(p.resolve())
-            # Preserve all other config keys (e.g. academic settings)
-            for key, val in overrides.items():
-                if key not in ("knowledge_dir", "index_path", "scholar_dir"):
-                    config[key] = val
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning("Failed to parse %s: %s — using defaults", config_file, exc)
-
-    _config_cache = config
-    return config
+# ── Path getters ────────────────────────────────────────────────────
 
 
 def get_knowledge_dir() -> Path:
@@ -127,28 +63,53 @@ def get_scholar_dir() -> Path:
     return Path(load_config()["scholar_dir"])
 
 
+def get_paper_notes_dir() -> Path:
+    """Return the configured paper-notes directory.
+
+    Reads ``academic.paper_notes_dir`` from config.  Falls back to a
+    ``paper-notes`` sibling of ``knowledge_dir`` when the key is absent.
+    """
+    config = load_config()
+    configured = config.get("academic", {}).get("paper_notes_dir")
+    if configured:
+        return Path(configured)
+    return Path(config["knowledge_dir"]).parent / "paper-notes"
+
+
+def get_daily_notes_dir() -> Path:
+    """Return the configured daily-notes directory.
+
+    Reads ``academic.daily_notes_dir`` from config.  Falls back to a
+    ``daily-notes`` sibling of ``knowledge_dir`` when the key is absent.
+    """
+    config = load_config()
+    configured = config.get("academic", {}).get("daily_notes_dir")
+    if configured:
+        return Path(configured)
+    return Path(config["knowledge_dir"]).parent / "daily-notes"
+
+
+# ── Cache management ────────────────────────────────────────────────
+
+
 def clear_cache() -> None:
     """Clear cached config (useful after setup_mcp.py writes new config)."""
-    global _config_cache
+    global _config_cache, _resolution_cache
     _config_cache = None
+    _resolution_cache = None
+
+
+# ── Diagnostics ─────────────────────────────────────────────────────
 
 
 def get_config_file_path() -> Path | None:
     """Return the resolved config file path (without loading)."""
-    return _find_config_file()
+    return _get_resolution().config_file
 
 
 def detect_runtime_mode() -> str:
     """Detect the current runtime mode based on config file location."""
-    config_file = _find_config_file()
-    if config_file is None:
-        return "default"
-    user_config = _get_user_config_path()
-    if config_file.resolve() == user_config.resolve():
-        return "user-config"
-    if config_file.parent == SCHOLAR_ROOT:
-        return "repo-embedded"
-    return "workspace"
+    return _get_resolution().mode
 
 
 def get_research_interests() -> dict:
