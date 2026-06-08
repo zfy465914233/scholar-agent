@@ -38,6 +38,12 @@ STOPWORDS = {
     "who",
 }
 
+CJK_STOPWORDS = {
+    "的", "了", "在", "是", "我", "有", "和", "人", "这", "中", "大", "来", "上", "国",
+    "个", "到", "说", "们", "为", "子", "与", "或", "如", "等", "之", "及", "于", "着",
+    "也", "就", "不", "他", "她", "它", "得", "那", "一", "以"
+}
+
 
 def tokenize(text: str) -> list[str]:
     lowered = text.lower()
@@ -45,11 +51,16 @@ def tokenize(text: str) -> list[str]:
 
     for chunk in CJK_RE.findall(lowered):
         if len(chunk) == 1:
-            tokens.append(chunk)
+            if chunk not in CJK_STOPWORDS:
+                tokens.append(chunk)
             continue
 
         # Use overlapping bigrams as a lightweight Chinese tokenizer.
-        tokens.extend(chunk[i : i + 2] for i in range(len(chunk) - 1))
+        # Filter out bigrams where BOTH characters are in CJK_STOPWORDS.
+        for i in range(len(chunk) - 1):
+            bi = chunk[i : i + 2]
+            if not (bi[0] in CJK_STOPWORDS and bi[1] in CJK_STOPWORDS):
+                tokens.append(bi)
 
     return tokens
 

@@ -85,6 +85,30 @@ print(len(results))
         self.assertEqual(0, result.returncode, msg=result.stderr)
         self.assertEqual("0", result.stdout.strip())
 
+    def test_cjk_stopword_filtering(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                """
+from scholar_agent.engine.bm25 import tokenize
+tokens = tokenize("这是人工智能的研究")
+print(list(tokens))
+""",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=ENGINE,
+        )
+        self.assertEqual(0, result.returncode, msg=result.stderr)
+        tokens = eval(result.stdout.strip())
+        self.assertIn("人工", tokens)
+        self.assertIn("智能", tokens)
+        self.assertIn("研究", tokens)
+        self.assertNotIn("这是", tokens)
+        self.assertNotIn("的人", tokens)
+
 
 class BM25CLIIntegrationTest(unittest.TestCase):
     """Integration tests for BM25 retrieval via CLI."""
