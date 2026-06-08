@@ -131,7 +131,7 @@ class TestImportPaperPulse(unittest.TestCase):
                 data = json.loads(resp.read().decode('utf-8'))
                 self.assertEqual(data["status"], "ok")
 
-            # 2. Import markdown
+            # 2. Import markdown (with correct token in header)
             post_data = {
                 "filename": "test-via-http.md",
                 "markdown": "---\ntitle: Test HTTP Sync\ndomain: Test\n---\n# Success Title\nContent here"
@@ -143,13 +143,43 @@ class TestImportPaperPulse(unittest.TestCase):
                 data=body,
                 headers={
                     "Content-Type": "application/json",
-                    "Origin": "https://mindpulse.top"
+                    "Origin": "https://mindpulse.top",
+                    "Authorization": "Bearer mock-token"
                 },
                 method="POST"
             )
             with urllib.request.urlopen(req) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
                 self.assertEqual(data["status"], "success")
+
+            # 2b. Import markdown with missing token (expect 401)
+            req_no_token = urllib.request.Request(
+                f"http://127.0.0.1:{port}/import-markdown",
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://mindpulse.top"
+                },
+                method="POST"
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req_no_token)
+            self.assertEqual(cm.exception.code, 401)
+
+            # 2c. Import markdown with bad token (expect 401)
+            req_bad_token = urllib.request.Request(
+                f"http://127.0.0.1:{port}/import-markdown",
+                data=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://mindpulse.top",
+                    "Authorization": "Bearer wrong-token"
+                },
+                method="POST"
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req_bad_token)
+            self.assertEqual(cm.exception.code, 401)
 
             # Verify file was written to paper-notes/Test/Test_HTTP_Sync/Test_HTTP_Sync.md
             written_file = paper_notes_dir / "Test" / "Test_HTTP_Sync" / "Test_HTTP_Sync.md"
@@ -171,7 +201,8 @@ class TestImportPaperPulse(unittest.TestCase):
                 data=b"{invalid-json}",
                 headers={
                     "Content-Type": "application/json",
-                    "Origin": "https://mindpulse.top"
+                    "Origin": "https://mindpulse.top",
+                    "Authorization": "Bearer mock-token"
                 },
                 method="POST"
             )
@@ -181,6 +212,23 @@ class TestImportPaperPulse(unittest.TestCase):
             err_data = json.loads(cm.exception.read().decode('utf-8'))
             self.assertIn("Invalid JSON body", err_data["error"])
 
+            # 4b. Invalid JSON type (list instead of dict)
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/import-markdown",
+                data=b"[1, 2, 3]",
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": "https://mindpulse.top",
+                    "Authorization": "Bearer mock-token"
+                },
+                method="POST"
+            )
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(req)
+            self.assertEqual(cm.exception.code, 400)
+            err_data = json.loads(cm.exception.read().decode('utf-8'))
+            self.assertIn("expected a dictionary object", err_data["error"])
+
             # 5. Missing fields
             post_missing = {"filename": "missing.md"}
             req = urllib.request.Request(
@@ -188,7 +236,8 @@ class TestImportPaperPulse(unittest.TestCase):
                 data=json.dumps(post_missing).encode('utf-8'),
                 headers={
                     "Content-Type": "application/json",
-                    "Origin": "https://mindpulse.top"
+                    "Origin": "https://mindpulse.top",
+                    "Authorization": "Bearer mock-token"
                 },
                 method="POST"
             )

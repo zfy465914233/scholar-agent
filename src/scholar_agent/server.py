@@ -23,6 +23,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import importlib
 import json
@@ -949,7 +950,7 @@ if SCHOLAR_ACADEMIC:
         return json.dumps(result_payload, ensure_ascii=False, indent=2)
 
     @tool
-    def download_paper(
+    async def download_paper(
         paper_id: str,
         title: str = "",
         domain: str = "",
@@ -970,79 +971,82 @@ if SCHOLAR_ACADEMIC:
                 If omitted, the PDF is stored directly under paper-notes/{title}/.
             output_dir: Override the output directory. If provided, domain and title are ignored.
         """
-        arxiv_id = _parse_arxiv_id(paper_id)
-        if not arxiv_id:
-            return json.dumps(
-                {
-                    "error": f"Could not parse arXiv ID from '{paper_id}'. "
-                    "Expected format: '2510.24701', 'https://arxiv.org/abs/2510.24701', etc.",
-                    "pdf_path": None,
-                }
-            )
-
-        # Determine folder name: title (sanitized) or arXiv ID
-        folder_name = _sanitize_title(title) if title and title.strip() else arxiv_id
-        pdf_filename = f"{folder_name}.pdf"
-
-        if output_dir and output_dir.strip():
-            paper_dir = _validate_path_within(output_dir.strip(), get_knowledge_dir().parent)
-            if paper_dir is None:
+        def _impl():
+            arxiv_id = _parse_arxiv_id(paper_id)
+            if not arxiv_id:
                 return json.dumps(
-                    {"error": "output_dir must be within the scholar knowledge directory tree", "pdf_path": None}
+                    {
+                        "error": f"Could not parse arXiv ID from '{paper_id}'. "
+                        "Expected format: '2510.24701', 'https://arxiv.org/abs/2510.24701', etc.",
+                        "pdf_path": None,
+                    }
                 )
-        elif domain and domain.strip():
-            pn_dir = get_paper_notes_dir()
-            paper_dir = pn_dir / domain.strip() / folder_name
-            if not paper_dir.resolve().is_relative_to(pn_dir.resolve()):
-                return json.dumps({"error": "domain must not contain path separators", "pdf_path": None})
-        else:
-            paper_dir = get_paper_notes_dir() / folder_name
 
-        pdf_path = paper_dir / pdf_filename
+            # Determine folder name: title (sanitized) or arXiv ID
+            folder_name = _sanitize_title(title) if title and title.strip() else arxiv_id
+            pdf_filename = f"{folder_name}.pdf"
 
-        if pdf_path.exists():
+            if output_dir and output_dir.strip():
+                paper_dir = _validate_path_within(output_dir.strip(), get_knowledge_dir().parent)
+                if paper_dir is None:
+                    return json.dumps(
+                        {"error": "output_dir must be within the scholar knowledge directory tree", "pdf_path": None}
+                    )
+            elif domain and domain.strip():
+                pn_dir = get_paper_notes_dir()
+                paper_dir = pn_dir / domain.strip() / folder_name
+                if not paper_dir.resolve().is_relative_to(pn_dir.resolve()):
+                    return json.dumps({"error": "domain must not contain path separators", "pdf_path": None})
+            else:
+                paper_dir = get_paper_notes_dir() / folder_name
+
+            pdf_path = paper_dir / pdf_filename
+
+            if pdf_path.exists():
+                return json.dumps(
+                    {
+                        "status": "cached",
+                        "pdf_path": str(pdf_path),
+                        "arxiv_id": arxiv_id,
+                        "title": title,
+                        "size_bytes": pdf_path.stat().st_size,
+                        "zotero_note": "PDF already downloaded. Import into Zotero if not done yet.",
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+            paper_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                from scholar_agent.engine.academic.image_extractor import download_arxiv_pdf
+
+                # download_arxiv_pdf saves as {arxiv_id}.pdf, rename to title-based name
+                local_path = download_arxiv_pdf(arxiv_id, str(paper_dir))
+                if not local_path:
+                    return json.dumps({"error": "Download returned no path", "pdf_path": None, "arxiv_id": arxiv_id})
+                if title and title.strip():
+                    final_path = paper_dir / pdf_filename
+                    Path(local_path).rename(final_path)
+                    local_path = str(final_path)
+            except Exception as e:
+                logger.exception("download_paper failed")
+                return json.dumps({"error": str(e), "pdf_path": None, "arxiv_id": arxiv_id})
+
             return json.dumps(
                 {
-                    "status": "cached",
-                    "pdf_path": str(pdf_path),
+                    "status": "ok",
+                    "pdf_path": local_path,
                     "arxiv_id": arxiv_id,
                     "title": title,
-                    "size_bytes": pdf_path.stat().st_size,
-                    "zotero_note": "PDF already downloaded. Import into Zotero if not done yet.",
+                    "size_bytes": Path(local_path).stat().st_size,
+                    "zotero_note": "PDF downloaded. Please import into Zotero: drag the PDF file into your Zotero library.",
                 },
                 ensure_ascii=False,
                 indent=2,
             )
 
-        paper_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            from scholar_agent.engine.academic.image_extractor import download_arxiv_pdf
-
-            # download_arxiv_pdf saves as {arxiv_id}.pdf, rename to title-based name
-            local_path = download_arxiv_pdf(arxiv_id, str(paper_dir))
-            if not local_path:
-                return json.dumps({"error": "Download returned no path", "pdf_path": None, "arxiv_id": arxiv_id})
-            if title and title.strip():
-                final_path = paper_dir / pdf_filename
-                Path(local_path).rename(final_path)
-                local_path = str(final_path)
-        except Exception as e:
-            logger.exception("download_paper failed")
-            return json.dumps({"error": str(e), "pdf_path": None, "arxiv_id": arxiv_id})
-
-        return json.dumps(
-            {
-                "status": "ok",
-                "pdf_path": local_path,
-                "arxiv_id": arxiv_id,
-                "title": title,
-                "size_bytes": Path(local_path).stat().st_size,
-                "zotero_note": "PDF downloaded. Please import into Zotero: drag the PDF file into your Zotero library.",
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+        return await asyncio.to_thread(_impl)
 
     @tool
     def extract_paper_images(
@@ -1212,7 +1216,7 @@ if SCHOLAR_ACADEMIC:
         )
 
     @tool
-    def daily_recommend(
+    async def daily_recommend(
         top_n: int = 10,
         language: str = "zh",
         skip_existing: bool = True,
@@ -1232,148 +1236,150 @@ if SCHOLAR_ACADEMIC:
             config_path: Optional YAML config path for research interests.
             dual_track: Use dual-track mode: 2 conference + 2 arXiv (default true).
         """
-        from scholar_agent.engine.academic.arxiv_search import _load_config
-        from scholar_agent.engine.academic.daily_workflow import (
-            build_daily_note,
-            generate_daily_recommendations,
-            generate_paper_notes_for_daily,
-        )
-
-        top_n = max(1, min(top_n, 50))
-        if language not in ("zh", "en"):
-            language = "zh"
-
-        # Load config
-        config = {}
-        if config_path:
-            validated_cp = _validate_path_within(config_path, get_knowledge_dir().parent)
-            if validated_cp is None:
-                return json.dumps({"error": "config_path must be within the scholar knowledge directory tree"})
-            config = _load_config(str(validated_cp))
-        if not config:
-            interests = get_research_interests()
-            if interests.get("research_domains"):
-                config = {
-                    "research_domains": interests["research_domains"],
-                    "excluded_keywords": interests.get("excluded_keywords", []),
-                }
-        if not config:
-            config = {"research_domains": {}, "excluded_keywords": []}
-
-        # Load dual-track settings from .scholar.json
-        daily_config = {}
-        full_config = load_config()
-        daily_config = full_config.get("academic", {}).get("daily_recommend", {})
-
-        paper_notes_dir = str(get_paper_notes_dir())
-
-        try:
-            result = generate_daily_recommendations(
-                config=config,
-                paper_notes_dir=paper_notes_dir,
-                top_n=top_n,
-                skip_existing=skip_existing,
-                dual_track=dual_track,
-                daily_config=daily_config,
+        def _impl():
+            from scholar_agent.engine.academic.arxiv_search import _load_config
+            from scholar_agent.engine.academic.daily_workflow import (
+                build_daily_note,
+                generate_daily_recommendations,
+                generate_paper_notes_for_daily,
             )
-        except Exception as e:
-            logger.exception("daily_recommend search failed")
-            return json.dumps({"error": str(e), "papers": []})
 
-        papers = result.get("papers", [])
-        date_str = result.get("date", "")
-        skipped = result.get("skipped", 0)
-        tracks = result.get("tracks")
+            top_n_val = max(1, min(top_n, 50))
+            lang_val = language if language in ("zh", "en") else "zh"
 
-        # Generate per-paper skeleton notes in paper-notes/
-        paper_note_stems: dict[str, str] = {}
-        try:
-            paper_note_stems = generate_paper_notes_for_daily(
-                papers, paper_notes_dir, language=language
-            )
-        except Exception:
-            logger.warning("Per-paper note generation partially failed", exc_info=True)
+            # Load config
+            config = {}
+            if config_path:
+                validated_cp = _validate_path_within(config_path, get_knowledge_dir().parent)
+                if validated_cp is None:
+                    return json.dumps({"error": "config_path must be within the scholar knowledge directory tree"})
+                config = _load_config(str(validated_cp))
+            if not config:
+                interests = get_research_interests()
+                if interests.get("research_domains"):
+                    config = {
+                        "research_domains": interests["research_domains"],
+                        "excluded_keywords": interests.get("excluded_keywords", []),
+                    }
+            if not config:
+                config = {"research_domains": {}, "excluded_keywords": []}
 
-        # Build daily note with wiki-links to per-paper notes
-        output_dir = str(get_daily_notes_dir())
-        try:
-            note_path = build_daily_note(
-                date_str,
-                papers,
-                output_dir,
-                language=language,
-                tracks=tracks,
-                paper_note_stems=paper_note_stems or None,
-            )
-        except Exception as e:
-            logger.exception("daily_recommend note generation failed")
-            return json.dumps({"error": f"Note generation failed: {e}", "papers": papers})
+            # Load dual-track settings from .scholar.json
+            daily_config = {}
+            full_config = load_config()
+            daily_config = full_config.get("academic", {}).get("daily_recommend", {})
 
-        # Auto wiki-link: cross-link paper-notes/ and the daily note
-        wiki_linked = False
-        try:
-            from scholar_agent.engine.academic.note_linker import apply_wiki_links, build_keyword_index
+            paper_notes_dir = str(get_paper_notes_dir())
 
-            pn_path = get_paper_notes_dir()
-            if pn_path.exists():
-                keyword_index = build_keyword_index(str(pn_path))
-                if keyword_index:
-                    for md_file in pn_path.rglob("*.md"):
-                        apply_wiki_links(str(md_file), keyword_index)
-                    # Also linkify the daily note
-                    apply_wiki_links(note_path, keyword_index)
-                    wiki_linked = True
-        except Exception:
-            logger.warning("Auto wiki-linking failed", exc_info=True)
+            try:
+                result = generate_daily_recommendations(
+                    config=config,
+                    paper_notes_dir=paper_notes_dir,
+                    top_n=top_n_val,
+                    skip_existing=skip_existing,
+                    dual_track=dual_track,
+                    daily_config=daily_config,
+                )
+            except Exception as e:
+                logger.exception("daily_recommend search failed")
+                return json.dumps({"error": str(e), "papers": []})
 
-        # Identify papers for deep analysis
-        top_for_analysis = []
-        for p in papers[:4]:
-            top_for_analysis.append(
-                {
+            papers = result.get("papers", [])
+            date_str = result.get("date", "")
+            skipped = result.get("skipped", 0)
+            tracks = result.get("tracks")
+
+            # Generate per-paper skeleton notes in paper-notes/
+            paper_note_stems: dict[str, str] = {}
+            try:
+                paper_note_stems = generate_paper_notes_for_daily(
+                    papers, paper_notes_dir, language=lang_val
+                )
+            except Exception:
+                logger.warning("Per-paper note generation partially failed", exc_info=True)
+
+            # Build daily note with wiki-links to per-paper notes
+            output_dir = str(get_daily_notes_dir())
+            try:
+                note_path = build_daily_note(
+                    date_str,
+                    papers,
+                    output_dir,
+                    language=lang_val,
+                    tracks=tracks,
+                    paper_note_stems=paper_note_stems or None,
+                )
+            except Exception as e:
+                logger.exception("daily_recommend note generation failed")
+                return json.dumps({"error": f"Note generation failed: {e}", "papers": papers})
+
+            # Auto wiki-link: cross-link paper-notes/ and the daily note
+            wiki_linked = False
+            try:
+                from scholar_agent.engine.academic.note_linker import apply_wiki_links, build_keyword_index
+
+                pn_path = get_paper_notes_dir()
+                if pn_path.exists():
+                    keyword_index = build_keyword_index(str(pn_path))
+                    if keyword_index:
+                        for md_file in pn_path.rglob("*.md"):
+                            apply_wiki_links(str(md_file), keyword_index)
+                        # Also linkify the daily note
+                        apply_wiki_links(note_path, keyword_index)
+                        wiki_linked = True
+            except Exception:
+                logger.warning("Auto wiki-linking failed", exc_info=True)
+
+            # Identify papers for deep analysis
+            top_for_analysis = []
+            for p in papers[:4]:
+                top_for_analysis.append(
+                    {
+                        "title": p.get("title", ""),
+                        "arxiv_id": p.get("arxiv_id", ""),
+                        "track": p.get("track", ""),
+                        "impact_score": round(p.get("_impact_score", 0), 2),
+                        "innovation_score": round(p.get("_innovation_final_score", 0), 3),
+                        "recommendation_score": p.get("scores", {}).get("recommendation", 0),
+                    }
+                )
+
+            paper_summaries = []
+            for p in papers:
+                entry = {
                     "title": p.get("title", ""),
                     "arxiv_id": p.get("arxiv_id", ""),
                     "track": p.get("track", ""),
-                    "impact_score": round(p.get("_impact_score", 0), 2),
-                    "innovation_score": round(p.get("_innovation_final_score", 0), 3),
-                    "recommendation_score": p.get("scores", {}).get("recommendation", 0),
+                    "domain": p.get("best_domain", ""),
                 }
+                if p.get("_impact_score") is not None:
+                    entry["impact_score"] = round(p["_impact_score"], 2)
+                if p.get("_innovation_final_score") is not None:
+                    entry["innovation_score"] = round(p["_innovation_final_score"], 3)
+                if p.get("scores", {}).get("recommendation"):
+                    entry["recommendation_score"] = p["scores"]["recommendation"]
+                paper_summaries.append(entry)
+
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "daily_note_path": note_path,
+                    "date": date_str,
+                    "total_found": result.get("total_found", 0),
+                    "recommended": len(papers),
+                    "skipped": skipped,
+                    "dual_track": result.get("dual_track", False),
+                    "tracks": {k: {"count": v.get("count", 0)} for k, v in (tracks or {}).items()},
+                    "paper_notes_created": list(paper_note_stems.values()),
+                    "wiki_linked": wiki_linked,
+                    "top_for_analysis": top_for_analysis,
+                    "papers": paper_summaries,
+                },
+                ensure_ascii=False,
+                indent=2,
             )
 
-        paper_summaries = []
-        for p in papers:
-            entry = {
-                "title": p.get("title", ""),
-                "arxiv_id": p.get("arxiv_id", ""),
-                "track": p.get("track", ""),
-                "domain": p.get("best_domain", ""),
-            }
-            if p.get("_impact_score") is not None:
-                entry["impact_score"] = round(p["_impact_score"], 2)
-            if p.get("_innovation_final_score") is not None:
-                entry["innovation_score"] = round(p["_innovation_final_score"], 3)
-            if p.get("scores", {}).get("recommendation"):
-                entry["recommendation_score"] = p["scores"]["recommendation"]
-            paper_summaries.append(entry)
-
-        return json.dumps(
-            {
-                "status": "ok",
-                "daily_note_path": note_path,
-                "date": date_str,
-                "total_found": result.get("total_found", 0),
-                "recommended": len(papers),
-                "skipped": skipped,
-                "dual_track": result.get("dual_track", False),
-                "tracks": {k: {"count": v.get("count", 0)} for k, v in (tracks or {}).items()},
-                "paper_notes_created": list(paper_note_stems.values()),
-                "wiki_linked": wiki_linked,
-                "top_for_analysis": top_for_analysis,
-                "papers": paper_summaries,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+        return await asyncio.to_thread(_impl)
 
     @tool
     def link_paper_keywords(
@@ -1566,6 +1572,47 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 data = json.loads(body.decode('utf-8'))
             except json.JSONDecodeError as e:
                 self.send_error_response(400, f"Invalid JSON body: {e!s}", origin)
+                return
+
+            if not isinstance(data, dict):
+                self.send_error_response(400, "Invalid JSON payload: expected a dictionary object", origin)
+                return
+
+            # Check Authentication Token
+            config = load_config()
+            configured_token = config.get("paperpulse_token", "").strip()
+
+            # Extract token from header or body
+            auth_header = self.headers.get("Authorization", "")
+            req_token = ""
+            if auth_header.lower().startswith("bearer "):
+                req_token = auth_header[7:].strip()
+            else:
+                req_token = data.get("token") or data.get("api_token") or ""
+            req_token = str(req_token).strip()
+
+            # If token is configured, enforce strict match.
+            # If token is NOT configured, allow ONLY if request comes from local origin or no origin (direct curl/test).
+            is_authenticated = False
+            if configured_token:
+                is_authenticated = (req_token == configured_token)
+            else:
+                host_header = self.headers.get("Host", "")
+                is_local_host = any(h in host_header for h in ("localhost", "127.0.0.1", "::1"))
+                is_local_origin = False
+                if origin is None:
+                    is_local_origin = True
+                else:
+                    from urllib.parse import urlparse
+                    try:
+                        parsed = urlparse(origin)
+                        is_local_origin = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+                    except Exception:
+                        is_local_origin = False
+                is_authenticated = is_local_host and is_local_origin
+
+            if not is_authenticated:
+                self.send_error_response(401, "Unauthorized: Invalid or missing token, or write rejected for security reasons.", origin)
                 return
 
             filename = data.get("filename")
