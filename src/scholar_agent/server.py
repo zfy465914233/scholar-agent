@@ -1265,9 +1265,14 @@ if SCHOLAR_ACADEMIC:
                 config = {"research_domains": {}, "excluded_keywords": []}
 
             # Load dual-track settings from .scholar.json
-            daily_config = {}
             full_config = load_config()
-            daily_config = full_config.get("academic", {}).get("daily_recommend", {})
+            daily_config = dict(full_config.get("academic", {}).get("daily_recommend", {}))
+            precision_config = full_config.get("academic", {}).get("precision_funnel", {})
+            # Merge unified_pipeline config from academic.unified_pipeline
+            if "unified_pipeline" not in daily_config:
+                uc = full_config.get("academic", {}).get("unified_pipeline", {})
+                if uc:
+                    daily_config["unified_pipeline"] = uc
 
             paper_notes_dir = str(get_paper_notes_dir())
 
@@ -1279,6 +1284,7 @@ if SCHOLAR_ACADEMIC:
                     skip_existing=skip_existing,
                     dual_track=dual_track,
                     daily_config=daily_config,
+                    precision_config=precision_config,
                 )
             except Exception as e:
                 logger.exception("daily_recommend search failed")
@@ -1288,6 +1294,8 @@ if SCHOLAR_ACADEMIC:
             date_str = result.get("date", "")
             skipped = result.get("skipped", 0)
             tracks = result.get("tracks")
+            funnel_stats = result.get("funnel_stats")
+            pipeline_stats = result.get("stats") if result.get("unified_pipeline") else None
 
             # Generate per-paper skeleton notes in paper-notes/
             paper_note_stems: dict[str, str] = {}
@@ -1308,6 +1316,8 @@ if SCHOLAR_ACADEMIC:
                     language=lang_val,
                     tracks=tracks,
                     paper_note_stems=paper_note_stems or None,
+                    funnel_stats=funnel_stats,
+                    pipeline_stats=pipeline_stats,
                 )
             except Exception as e:
                 logger.exception("daily_recommend note generation failed")
@@ -1360,21 +1370,30 @@ if SCHOLAR_ACADEMIC:
                     entry["recommendation_score"] = p["scores"]["recommendation"]
                 paper_summaries.append(entry)
 
+            response_data = {
+                "status": "ok",
+                "daily_note_path": note_path,
+                "date": date_str,
+                "total_found": result.get("total_found", 0),
+                "recommended": len(papers),
+                "skipped": skipped,
+                "dual_track": result.get("dual_track", False),
+                "tracks": {k: {"count": v.get("count", 0)} for k, v in (tracks or {}).items()},
+                "paper_notes_created": list(paper_note_stems.values()),
+                "wiki_linked": wiki_linked,
+                "top_for_analysis": top_for_analysis,
+                "papers": paper_summaries,
+            }
+            if funnel_stats:
+                response_data["precision_funnel"] = True
+                response_data["funnel_stats"] = funnel_stats
+
+            if result.get("unified_pipeline"):
+                response_data["unified_pipeline"] = True
+                response_data["pipeline_stats"] = result.get("stats", {})
+
             return json.dumps(
-                {
-                    "status": "ok",
-                    "daily_note_path": note_path,
-                    "date": date_str,
-                    "total_found": result.get("total_found", 0),
-                    "recommended": len(papers),
-                    "skipped": skipped,
-                    "dual_track": result.get("dual_track", False),
-                    "tracks": {k: {"count": v.get("count", 0)} for k, v in (tracks or {}).items()},
-                    "paper_notes_created": list(paper_note_stems.values()),
-                    "wiki_linked": wiki_linked,
-                    "top_for_analysis": top_for_analysis,
-                    "papers": paper_summaries,
-                },
+                response_data,
                 ensure_ascii=False,
                 indent=2,
             )

@@ -28,12 +28,38 @@ from scholar_agent.engine.common import parse_frontmatter
 
 
 def get_analyzed_paper_ids(paper_notes_dir: str) -> set[str]:
-    """Scan paper-notes/ for already-analyzed arxiv IDs."""
+    """Return arxiv IDs of already-analyzed papers.
+
+    Prefers SQLite paper store when available, falls back to scanning
+    paper-notes/ markdown files.
+    """
+    ids: set[str] = set()
+
+    # Try SQLite first
+    try:
+        from scholar_agent.engine.paper_store import PaperStore
+        from scholar_agent.engine.scholar_config import get_paper_db_path
+
+        db_path = get_paper_db_path()
+        if db_path.exists():
+            store = PaperStore(db_path)
+            store.initialize()
+            try:
+                recommended = store.get_papers_by_status("recommended")
+                for p in recommended:
+                    arxiv_id = p.get("arxiv_id", "")
+                    if arxiv_id:
+                        ids.add(arxiv_id)
+            finally:
+                store.close()
+    except Exception:
+        logger.debug("SQLite dedup unavailable, falling back to file scan")
+
+    # Fallback: scan paper-notes/ markdown files
     notes_path = Path(paper_notes_dir)
     if not notes_path.exists():
         return set()
 
-    ids: set[str] = set()
     for md_file in notes_path.rglob("*.md"):
         try:
             raw = md_file.read_text(encoding="utf-8", errors="replace")
@@ -184,16 +210,39 @@ def generate_daily_recommendations(
     target_date: datetime | None = None,
     dual_track: bool = True,
     daily_config: dict[str, Any] | None = None,
+    precision_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Dual-track search + dedup + score -> return recommended papers.
+    """Generate daily paper recommendations.
 
-    When *dual_track* is True (default):
-      - Track 1: 2 conference papers (impact-ranked)
-      - Track 2: 2 arXiv innovation papers (heuristic + LLM)
-
-    When False, falls back to the original single-track behavior.
+    Routing priority:
+      1. Unified pipeline (default when enabled)
+      2. Precision funnel (when precision_config.enabled=true)
+      3. Dual-track / single-track (legacy fallback)
     """
     date_str = (target_date or datetime.now()).strftime("%Y-%m-%d")
+
+    # Unified pipeline (default path)
+    dc = daily_config or {}
+    uc = dc.get("unified_pipeline", {})
+    if uc.get("enabled", True):
+        return _generate_unified(
+            config=config,
+            paper_notes_dir=paper_notes_dir,
+            target_date=target_date,
+            date_str=date_str,
+            unified_config=uc,
+        )
+
+    # Precision funnel path
+    pc = precision_config or {}
+    if pc.get("enabled"):
+        return _generate_precision(
+            config=config,
+            paper_notes_dir=paper_notes_dir,
+            target_date=target_date,
+            date_str=date_str,
+            precision_config=pc,
+        )
 
     if not dual_track:
         return _generate_single_track(
@@ -247,6 +296,101 @@ def generate_daily_recommendations(
         "skipped": conf_result["skipped"] + arxiv_result["skipped"],
         "total_found": conf_result["total_found"] + arxiv_result["total_found"],
         "dual_track": True,
+    }
+
+
+def _generate_unified(
+    config: dict[str, Any],
+    paper_notes_dir: str,
+    target_date: datetime | None,
+    date_str: str,
+    unified_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Unified lightweight pipeline: concurrent fetch -> CPU filter -> 1 LLM call."""
+    from scholar_agent.engine.academic.unified_pipeline import run_unified_pipeline
+
+    result = run_unified_pipeline(
+        config=config,
+        paper_notes_dir=paper_notes_dir,
+        target_date=target_date,
+        unified_config=unified_config,
+    )
+
+    result["date"] = date_str
+    return result
+
+
+def _generate_precision(
+    config: dict[str, Any],
+    paper_notes_dir: str,
+    target_date: datetime | None,
+    date_str: str,
+    precision_config: dict[str, Any],
+) -> dict[str, Any]:
+    """Precision funnel path: fetch recent papers, run 4-stage quality funnel."""
+    from scholar_agent.engine.academic.arxiv_search import query_arxiv
+    from scholar_agent.engine.academic.quality_funnel import QualityFunnel
+    from scholar_agent.engine.paper_store import PaperStore
+    from scholar_agent.engine.scholar_config import get_paper_db_path
+
+    # Build merged funnel config: research_interests + precision_funnel settings
+    funnel_config = {
+        "research_domains": config.get("research_domains", {}),
+        "excluded_keywords": config.get("excluded_keywords", []),
+        "precision_funnel": precision_config,
+    }
+
+    # Fetch recent arXiv papers (7-day window) — collect categories from ALL domains
+    all_cats: list[str] = []
+    for dcfg in config.get("research_domains", {}).values():
+        for c in dcfg.get("arxiv_categories", []):
+            if c not in all_cats:
+                all_cats.append(c)
+    cats = all_cats or ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
+
+    now = target_date or datetime.now()
+    start = now - timedelta(days=7)
+    raw_papers = query_arxiv(cats, start, now, limit=200)
+
+    # Filter already-analyzed papers before funnel
+    skipped = 0
+    if paper_notes_dir:
+        existing_ids = get_analyzed_paper_ids(paper_notes_dir)
+        if existing_ids:
+            raw_papers, skipped = filter_already_analyzed(raw_papers, existing_ids)
+
+    # Store papers in SQLite
+    db_path = get_paper_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    store = PaperStore(db_path)
+    store.initialize()
+    try:
+        for p in raw_papers:
+            store.upsert_paper(p)
+
+        # Run quality funnel — pass list directly (not None) to avoid loading stale papers
+        funnel = QualityFunnel(store, funnel_config)
+        result = funnel.run_daily(raw_papers)
+    finally:
+        store.close()
+
+    papers = result.recommended
+    for p in papers:
+        p["track"] = "precision_funnel"
+
+    return {
+        "date": date_str,
+        "papers": papers,
+        "skipped": skipped,
+        "total_found": result.stage_counts.get("input", 0),
+        "dual_track": False,
+        "precision_funnel": True,
+        "funnel_stats": {
+            "stage_counts": result.stage_counts,
+            "llm_calls": result.llm_calls,
+            "llm_tokens": result.llm_tokens,
+            "duration_seconds": result.duration_seconds,
+        },
     }
 
 
@@ -359,10 +503,14 @@ def build_daily_note(
     language: str = "zh",
     tracks: dict[str, Any] | None = None,
     paper_note_stems: dict[str, str] | None = None,
+    funnel_stats: dict[str, Any] | None = None,
+    pipeline_stats: dict[str, Any] | None = None,
 ) -> str:
     """Generate a daily recommendation note.
 
     When *tracks* is provided, renders a dual-section layout.
+    When *funnel_stats* is provided, renders the precision funnel layout.
+    When *pipeline_stats* is provided, renders the unified pipeline layout.
     When *paper_note_stems* is provided, renders [[wiki-links]] to per-paper
     notes inside each paper block.
     """
@@ -392,6 +540,10 @@ def build_daily_note(
     lines.append(f'date: "{date_str}"')
     if track_names:
         lines.append(f"tracks: {json.dumps(track_names)}")
+    if funnel_stats:
+        lines.append("precision_funnel: true")
+    if pipeline_stats:
+        lines.append("unified_pipeline: true")
     lines.append("---")
     lines.append("")
 
@@ -403,7 +555,11 @@ def build_daily_note(
     lines.append("")
 
     # --- Body ---
-    if tracks:
+    if pipeline_stats:
+        _render_unified_section(lines, papers, language, paper_note_stems, pipeline_stats)
+    elif funnel_stats:
+        _render_precision_section(lines, papers, language, paper_note_stems, funnel_stats)
+    elif tracks:
         _render_dual_sections(lines, papers, tracks, language, paper_note_stems)
     else:
         _render_flat_section(lines, papers, language, paper_note_stems)
@@ -416,6 +572,113 @@ def build_daily_note(
 # ---------------------------------------------------------------------------
 # Note rendering helpers
 # ---------------------------------------------------------------------------
+
+
+def _render_unified_section(
+    lines: list[str],
+    papers: list[dict[str, Any]],
+    language: str,
+    paper_note_stems: dict[str, str] | None = None,
+    pipeline_stats: dict[str, Any] | None = None,
+) -> None:
+    """Render unified pipeline recommendation section."""
+    ps = pipeline_stats or {}
+    arxiv_count = ps.get("arxiv_fetched", 0)
+    s2_count = ps.get("s2_fetched", 0)
+    candidates = ps.get("candidates", 0)
+    duration = ps.get("duration_seconds", 0)
+    llm_calls = ps.get("llm_calls", 0)
+
+    if language == "en":
+        lines.append("## Today's Top Papers")
+        lines.append("")
+        lines.append(
+            f"arXiv: {arxiv_count} + S2: {s2_count} → "
+            f"Candidates: {candidates} → "
+            f"**Recommended: {len(papers)}** "
+            f"({duration:.1f}s, {llm_calls} LLM call{'s' if llm_calls != 1 else ''})"
+        )
+        lines.append("")
+        lines.append(
+            "<!-- LLM: Summarize the recommended papers: identify the key theme, highlight why each is worth reading -->"
+        )
+    else:
+        lines.append("## 今日精选")
+        lines.append("")
+        lines.append(
+            f"arXiv: {arxiv_count} + S2: {s2_count} → "
+            f"候选: {candidates} 篇 → "
+            f"**推荐: {len(papers)} 篇** "
+            f"({duration:.1f}秒, {llm_calls} 次 LLM)"
+        )
+        lines.append("")
+        lines.append("<!-- LLM: 总结推荐的论文：识别关键主题，说明每篇为什么值得精读 -->")
+    lines.append("")
+
+    if not papers:
+        if language == "en":
+            lines.append("*No papers met the quality bar today.*")
+        else:
+            lines.append("*今日没有论文通过质量筛选。*")
+        lines.append("")
+        return
+
+    for p in papers:
+        stem = (paper_note_stems or {}).get(p.get("title", ""), "")
+        _render_paper_block(lines, p, language, is_top=True, paper_note_stem=stem)
+
+
+def _render_precision_section(
+    lines: list[str],
+    papers: list[dict[str, Any]],
+    language: str,
+    paper_note_stems: dict[str, str] | None = None,
+    funnel_stats: dict[str, Any] | None = None,
+) -> None:
+    """Render precision funnel recommendation section."""
+    sc = (funnel_stats or {}).get("stage_counts", {})
+
+    # Funnel overview
+    if language == "en":
+        lines.append("## Precision Funnel")
+        lines.append("")
+        lines.append(
+            f"Input: {sc.get('input', 0)} → "
+            f"Relevance: {sc.get('stage1_passed', 0)} → "
+            f"Hard filter: {sc.get('stage2_passed', 0)} → "
+            f"LLM review: {sc.get('stage3_passed', 0)} → "
+            f"**Recommended: {len(papers)}**"
+        )
+        lines.append("")
+        lines.append(
+            "<!-- LLM: Summarize the recommended papers: identify the key theme, highlight why each is worth reading -->"
+        )
+    else:
+        lines.append("## 精选推荐")
+        lines.append("")
+        lines.append(
+            f"输入: {sc.get('input', 0)} → "
+            f"相关性: {sc.get('stage1_passed', 0)} → "
+            f"硬过滤: {sc.get('stage2_passed', 0)} → "
+            f"LLM 审查: {sc.get('stage3_passed', 0)} → "
+            f"**推荐: {len(papers)} 篇**"
+        )
+        lines.append("")
+        lines.append("<!-- LLM: 总结推荐的论文：识别关键主题，说明每篇为什么值得精读 -->")
+    lines.append("")
+
+    if not papers:
+        if language == "en":
+            lines.append("*No papers met the quality bar today.*")
+        else:
+            lines.append("*今日没有论文通过质量筛选。*")
+        lines.append("")
+        return
+
+    for p in papers:
+        stem = (paper_note_stems or {}).get(p.get("title", ""), "")
+        _render_paper_block(lines, p, language, is_top=True, paper_note_stem=stem)
+
 
 
 def _render_dual_sections(
@@ -557,6 +820,43 @@ def _render_paper_block(
             )
 
     lines.append("")
+
+    # Precision funnel recommendation reason
+    rec_reason = p.get("recommendation_reason", "")
+    if rec_reason:
+        if language == "en":
+            lines.append(f"- **Why recommended**: {rec_reason}")
+        else:
+            lines.append(f"- **推荐理由**：{rec_reason}")
+
+    # Precision funnel LLM scores
+    llm_novelty = p.get("llm_novelty")
+    llm_credibility = p.get("llm_credibility")
+    llm_depth = p.get("llm_depth")
+    llm_rigor = p.get("llm_rigor")
+    if any(v is not None for v in (llm_novelty, llm_credibility, llm_depth, llm_rigor)):
+        if language == "en":
+            parts = []
+            if llm_novelty is not None:
+                parts.append(f"novelty={llm_novelty}")
+            if llm_credibility is not None:
+                parts.append(f"credibility={llm_credibility}")
+            if llm_depth is not None:
+                parts.append(f"depth={llm_depth}")
+            if llm_rigor is not None:
+                parts.append(f"rigor={llm_rigor}")
+            lines.append(f"- **LLM Scores**: {', '.join(parts)}")
+        else:
+            parts = []
+            if llm_novelty is not None:
+                parts.append(f"新颖性={llm_novelty}")
+            if llm_credibility is not None:
+                parts.append(f"可信度={llm_credibility}")
+            if llm_depth is not None:
+                parts.append(f"深度={llm_depth}")
+            if llm_rigor is not None:
+                parts.append(f"严谨性={llm_rigor}")
+            lines.append(f"- **LLM 评分**：{', '.join(parts)}")
 
     if is_top:
         if language == "en":

@@ -92,5 +92,34 @@ def build_default_config(*, env: Mapping[str, str] | None = None, scholar_root: 
                 "research_domains": {},
                 "excluded_keywords": ["survey", "workshop"],
             },
+            "precision_funnel": {
+                "enabled": False,
+                "max_daily_recommendations": 3,
+                "hard_negative": {
+                    "min_abstract_length": 500,
+                    "reject_title_patterns": ["survey of", "review of", "tutorial on", "workshop on"],
+                    "reject_abstract_starters": ["we present a survey", "this survey", "we review"],
+                },
+                "llm_review": {
+                    "required_passes": [
+                        "problem_defined",
+                        "method_specific",
+                        "contribution_genuine",
+                        "no_red_flags",
+                    ],
+                    "call_delay_seconds": 1.0,
+                    "max_survivors": 8,
+                },
+                "cross_comparison": {
+                    "max_candidates": 8,
+                },
+            },
+            "paper_db_path": "",
+            "unified_pipeline": {
+                "enabled": True,
+                "max_daily_recommendations": 3,
+                "arxiv_days": 7,
+                "max_candidates": 15,
+            },
         },
     }

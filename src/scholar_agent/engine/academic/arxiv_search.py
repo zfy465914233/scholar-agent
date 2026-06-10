@@ -306,6 +306,64 @@ def query_arxiv(
     return [r.to_dict() for r in PaperRecord.parse_feed(body)]
 
 
+def query_arxiv_paginated(
+    categories: list[str],
+    from_dt: datetime,
+    to_dt: datetime,
+    max_total: int = 2000,
+    page_size: int = 200,
+    retries: int = 3,
+    delay_seconds: float = 3.0,
+) -> list[dict[str, Any]]:
+    """Paginated arXiv query for backfill — iterates through all results.
+
+    Fetches up to *max_total* papers by requesting pages of *page_size*.
+    Adds *delay_seconds* between pages to respect arXiv rate limits.
+    """
+    cat_part = "+OR+".join(f"cat:{c}" for c in categories)
+    date_part = f"submittedDate:[{from_dt.strftime('%Y%m%d')}0000+TO+{to_dt.strftime('%Y%m%d')}2359]"
+
+    all_papers: list[dict[str, Any]] = []
+    start = 0
+
+    while start < max_total:
+        remaining = max_total - start
+        batch_size = min(page_size, remaining)
+        url = (
+            f"https://export.arxiv.org/api/query?"
+            f"search_query=({cat_part})+AND+{date_part}&"
+            f"start={start}&max_results={batch_size}&"
+            f"sortBy=submittedDate&sortOrder=descending"
+        )
+        logger.info("arxiv paginated query %s..%s (start=%d)", from_dt.date(), to_dt.date(), start)
+
+        body = _with_retry(
+            _fetch_arxiv_xml,
+            url,
+            max_tries=retries,
+            backoff_base=2,
+            log_prefix="arxiv_paginated",
+        )
+        if body is None:
+            break
+
+        records = PaperRecord.parse_feed(body)
+        if not records:
+            break
+
+        all_papers.extend(r.to_dict() for r in records)
+
+        if len(records) < batch_size:
+            break
+
+        start += len(records)
+
+        if start < max_total and delay_seconds > 0:
+            time.sleep(delay_seconds)
+
+    return all_papers
+
+
 # ---------------------------------------------------------------------------
 # Semantic Scholar search — functional pipeline
 # ---------------------------------------------------------------------------

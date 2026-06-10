@@ -347,6 +347,55 @@ def build_parser() -> argparse.ArgumentParser:
         help="PaperPulse base URL (overrides paperpulse_url in config.json).",
     )
 
+    backfill_parser = subparsers.add_parser(
+        "backfill",
+        help="Backfill historical papers from arXiv into the local paper store.",
+    )
+    backfill_parser.add_argument(
+        "--years",
+        type=int,
+        default=3,
+        help="Number of years to backfill (default: 3).",
+    )
+    backfill_parser.add_argument(
+        "--categories",
+        default="cs.AI,cs.LG,cs.CL,cs.CV",
+        help="Comma-separated arXiv categories (default: cs.AI,cs.LG,cs.CL,cs.CV).",
+    )
+    backfill_parser.add_argument(
+        "--max-per-month",
+        type=int,
+        default=2000,
+        help="Maximum papers per category per month (default: 2000).",
+    )
+    backfill_parser.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="text",
+        help="Output format.",
+    )
+
+    daily_process_parser = subparsers.add_parser(
+        "daily-process",
+        help="Run the daily paper recommendation pipeline and store results.",
+    )
+    daily_process_parser.add_argument(
+        "--date",
+        default="",
+        help="Target date in YYYY-MM-DD format (default: today).",
+    )
+    daily_process_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would happen without writing notes.",
+    )
+    daily_process_parser.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="text",
+        help="Output format.",
+    )
+
     return parser
 
 
@@ -893,6 +942,166 @@ def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
     return 0
 
 
+def _run_backfill(years: int, categories: str, max_per_month: int, output_format: str) -> int:
+    from datetime import datetime, timedelta
+
+    from scholar_agent.engine.academic.arxiv_search import query_arxiv_paginated
+    from scholar_agent.engine.paper_store import PaperStore
+    from scholar_agent.engine.scholar_config import get_paper_db_path, get_research_interests
+
+    interests = get_research_interests()
+    cats = [c.strip() for c in categories.split(",") if c.strip()]
+
+    db_path = get_paper_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    store = PaperStore(db_path)
+    store.initialize()
+
+    now = datetime.now()
+    total_upserted = 0
+    total_months = years * 12
+
+    try:
+        for month_offset in range(total_months):
+            # Iterate from oldest to newest
+            target = now - timedelta(days=(total_months - 1 - month_offset) * 30)
+            year = target.year
+            month = target.month
+
+            if month == 12:
+                from_dt = datetime(year, month, 1)
+                to_dt = datetime(year + 1, 1, 1) - timedelta(seconds=1)
+            else:
+                from_dt = datetime(year, month, 1)
+                to_dt = datetime(year, month + 1, 1) - timedelta(seconds=1)
+
+            if output_format == "text":
+                sys.stdout.write(f"  {year}-{month:02d}: fetching... ")
+                sys.stdout.flush()
+
+            papers = query_arxiv_paginated(
+                categories=cats,
+                from_dt=from_dt,
+                to_dt=to_dt,
+                max_total=max_per_month,
+            )
+
+            for p in papers:
+                p["is_historical"] = True
+            count = store.upsert_papers(papers)
+            total_upserted += count
+
+            if output_format == "text":
+                sys.stdout.write(f"{len(papers)} fetched, {count} upserted\n")
+            else:
+                sys.stdout.write(json.dumps({
+                    "month": f"{year}-{month:02d}",
+                    "fetched": len(papers),
+                    "upserted": count,
+                }) + "\n")
+            sys.stdout.flush()
+    finally:
+        counts = store.count_by_status()
+        store.close()
+
+    payload = {
+        "status": "ok",
+        "years": years,
+        "categories": cats,
+        "total_upserted": total_upserted,
+        "status_counts": counts,
+    }
+    _print_payload(payload, output_format)
+    return 0
+
+
+def _run_daily_process(date_str: str, dry_run: bool, output_format: str) -> int:
+    from datetime import datetime
+
+    from scholar_agent.engine.academic.daily_workflow import (
+        build_daily_note,
+        generate_daily_recommendations,
+        generate_paper_notes_for_daily,
+    )
+    from scholar_agent.engine.paper_store import PaperStore
+    from scholar_agent.engine.scholar_config import (
+        get_daily_notes_dir,
+        get_paper_db_path,
+        get_paper_notes_dir,
+        get_research_interests,
+        load_config,
+    )
+
+    target_date = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.now()
+    date_str_out = target_date.strftime("%Y-%m-%d")
+
+    config = load_config()
+    interests = get_research_interests()
+    search_config = {
+        "research_domains": interests.get("research_domains", {}),
+        "excluded_keywords": interests.get("excluded_keywords", []),
+    }
+    precision_config = config.get("academic", {}).get("precision_funnel", {})
+    daily_config = dict(config.get("academic", {}).get("daily_recommend", {}))
+    if "unified_pipeline" not in daily_config:
+        uc = config.get("academic", {}).get("unified_pipeline", {})
+        if uc:
+            daily_config["unified_pipeline"] = uc
+
+    paper_notes_dir = str(get_paper_notes_dir())
+
+    result = generate_daily_recommendations(
+        config=search_config,
+        paper_notes_dir=paper_notes_dir,
+        target_date=target_date,
+        precision_config=precision_config,
+        daily_config=daily_config,
+    )
+
+    papers = result.get("papers", [])
+    funnel_stats = result.get("funnel_stats")
+    pipeline_stats = result.get("stats") if result.get("unified_pipeline") else None
+
+    if dry_run:
+        payload = {
+            "status": "dry_run",
+            "date": date_str_out,
+            "papers_found": len(papers),
+            "papers": [{"title": p.get("title", ""), "arxiv_id": p.get("arxiv_id", "")} for p in papers],
+            "funnel_stats": funnel_stats,
+            "pipeline_stats": pipeline_stats,
+        }
+        _print_payload(payload, output_format)
+        return 0
+
+    # Generate per-paper notes
+    paper_note_stems = generate_paper_notes_for_daily(papers, paper_notes_dir)
+
+    # Build daily note
+    output_dir = str(get_daily_notes_dir())
+    note_path = build_daily_note(
+        date_str_out,
+        papers,
+        output_dir,
+        tracks=result.get("tracks"),
+        paper_note_stems=paper_note_stems or None,
+        funnel_stats=funnel_stats,
+        pipeline_stats=pipeline_stats,
+    )
+
+    payload = {
+        "status": "ok",
+        "date": date_str_out,
+        "daily_note_path": note_path,
+        "recommended": len(papers),
+        "total_found": result.get("total_found", 0),
+        "funnel_stats": funnel_stats,
+        "pipeline_stats": pipeline_stats,
+    }
+    _print_payload(payload, output_format)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -966,6 +1175,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             paper_id=args.paper_id,
             token=args.token,
             url=args.url,
+        )
+
+    if command == "backfill":
+        return _run_backfill(
+            years=args.years,
+            categories=args.categories,
+            max_per_month=args.max_per_month,
+            output_format=args.format,
+        )
+
+    if command == "daily-process":
+        return _run_daily_process(
+            date_str=args.date,
+            dry_run=args.dry_run,
+            output_format=args.format,
         )
 
     parser.error(f"unknown command: {command}")

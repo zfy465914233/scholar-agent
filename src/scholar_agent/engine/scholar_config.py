@@ -89,6 +89,19 @@ def get_daily_notes_dir() -> Path:
     return Path(config["knowledge_dir"]).parent / "daily-notes"
 
 
+def get_paper_db_path() -> Path:
+    """Return the path to the papers SQLite database.
+
+    Reads ``academic.paper_db_path`` from config.  Falls back to
+    ``{scholar_dir}/data/papers.db`` when the key is absent.
+    """
+    config = load_config()
+    configured = config.get("academic", {}).get("paper_db_path")
+    if configured:
+        return Path(configured)
+    return Path(config["scholar_dir"]) / "data" / "papers.db"
+
+
 # ── Cache management ────────────────────────────────────────────────
 
 

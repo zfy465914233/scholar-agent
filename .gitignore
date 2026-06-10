@@ -19,6 +19,7 @@ graph.html
 
 # Project-local data directory
 scholar/
+data/
 
 # Build artifacts
 dist/
