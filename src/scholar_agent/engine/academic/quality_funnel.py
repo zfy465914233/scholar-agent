@@ -41,7 +41,7 @@ Questions:
 1. PROBLEM_DEFINED: Is the problem clearly stated and meaningful?
 2. METHOD_SPECIFIC: Is the method described specifically enough to evaluate?
 3. RESULTS_CONCRETE: Are there quantitative results or theoretical guarantees? (reference only, not a hard gate)
-4. CONTRIBUTION_GENUISE: Is there a genuine technical contribution (not just engineering or recombination)?
+4. CONTRIBUTION_GENUINE: Is there a genuine technical contribution (not just engineering or recombination)?
 5. NO_RED_FLAGS: Are there NO red flags from this checklist?
    - Overclaimed ("revolutionary", "groundbreaking") without concrete support
    - Method described too vaguely to reproduce (e.g., "novel architecture" with no details)
@@ -256,7 +256,7 @@ class QualityFunnel:
 
         max_survivors = self.llm_cfg.get("max_survivors", 8)
         required_passes = set(self.llm_cfg.get("required_passes", [
-            "PROBLEM_DEFINED", "METHOD_SPECIFIC", "CONTRIBUTION_GENUISE", "NO_RED_FLAGS",
+            "PROBLEM_DEFINED", "METHOD_SPECIFIC", "CONTRIBUTION_GENUINE", "NO_RED_FLAGS",
         ]))
         delay = self.llm_cfg.get("call_delay_seconds", 1.0)
         model = os.environ.get("LLM_MODEL", "gpt-4o-mini")

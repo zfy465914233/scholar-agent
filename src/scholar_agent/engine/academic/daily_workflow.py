@@ -366,7 +366,7 @@ def _generate_precision(
     store.initialize()
     try:
         for p in raw_papers:
-            store.upsert_paper(p)
+            p["_db_id"] = store.upsert_paper(p)
 
         # Run quality funnel — pass list directly (not None) to avoid loading stale papers
         funnel = QualityFunnel(store, funnel_config)

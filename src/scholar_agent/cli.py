@@ -1023,10 +1023,8 @@ def _run_daily_process(date_str: str, dry_run: bool, output_format: str) -> int:
         generate_daily_recommendations,
         generate_paper_notes_for_daily,
     )
-    from scholar_agent.engine.paper_store import PaperStore
     from scholar_agent.engine.scholar_config import (
         get_daily_notes_dir,
-        get_paper_db_path,
         get_paper_notes_dir,
         get_research_interests,
         load_config,
@@ -1087,6 +1085,7 @@ def _run_daily_process(date_str: str, dry_run: bool, output_format: str) -> int:
         paper_note_stems=paper_note_stems or None,
         funnel_stats=funnel_stats,
         pipeline_stats=pipeline_stats,
+        language="en",
     )
 
     payload = {

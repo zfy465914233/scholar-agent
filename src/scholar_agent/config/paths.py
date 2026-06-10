@@ -102,10 +102,10 @@ def build_default_config(*, env: Mapping[str, str] | None = None, scholar_root: 
                 },
                 "llm_review": {
                     "required_passes": [
-                        "problem_defined",
-                        "method_specific",
-                        "contribution_genuine",
-                        "no_red_flags",
+                        "PROBLEM_DEFINED",
+                        "METHOD_SPECIFIC",
+                        "CONTRIBUTION_GENUINE",
+                        "NO_RED_FLAGS",
                     ],
                     "call_delay_seconds": 1.0,
                     "max_survivors": 8,
