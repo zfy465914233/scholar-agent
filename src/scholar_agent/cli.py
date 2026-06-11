@@ -945,6 +945,15 @@ def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
 def _run_backfill(years: int, categories: str, max_per_month: int, output_format: str) -> int:
     from datetime import datetime, timedelta
 
+    def _month_range(year: int, month: int) -> tuple[datetime, datetime]:
+        """Return (start, end) datetime for a calendar month."""
+        start = datetime(year, month, 1)
+        if month == 12:
+            end = datetime(year + 1, 1, 1) - timedelta(seconds=1)
+        else:
+            end = datetime(year, month + 1, 1) - timedelta(seconds=1)
+        return start, end
+
     from scholar_agent.engine.academic.arxiv_search import query_arxiv_paginated
     from scholar_agent.engine.paper_store import PaperStore
     from scholar_agent.engine.scholar_config import get_paper_db_path, get_research_interests
@@ -964,16 +973,11 @@ def _run_backfill(years: int, categories: str, max_per_month: int, output_format
     try:
         for month_offset in range(total_months):
             # Iterate from oldest to newest
-            target = now - timedelta(days=(total_months - 1 - month_offset) * 30)
-            year = target.year
-            month = target.month
+            steps_back = total_months - 1 - month_offset
+            year = now.year - (now.month - 1 - steps_back) // 12
+            month = (now.month - 1 - steps_back) % 12 + 1
 
-            if month == 12:
-                from_dt = datetime(year, month, 1)
-                to_dt = datetime(year + 1, 1, 1) - timedelta(seconds=1)
-            else:
-                from_dt = datetime(year, month, 1)
-                to_dt = datetime(year, month + 1, 1) - timedelta(seconds=1)
+            from_dt, to_dt = _month_range(year, month)
 
             if output_format == "text":
                 sys.stdout.write(f"  {year}-{month:02d}: fetching... ")

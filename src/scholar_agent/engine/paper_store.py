@@ -201,6 +201,42 @@ class PaperStore:
         fetched_at = raw.get("fetched_at") or datetime.now(timezone.utc).isoformat()
 
         with self._cursor() as cur:
+            # If no arxiv_id, look up by title as fallback dedup
+            existing_id: int | None = None
+            if not p["arxiv_id"]:
+                cur.execute("SELECT id FROM papers WHERE title = ?", (p["title"],))
+                row = cur.fetchone()
+                if row:
+                    existing_id = row["id"]
+
+            if existing_id is not None:
+                cur.execute(
+                    """UPDATE papers SET
+                        arxiv_id = COALESCE(?, arxiv_id),
+                        s2_id = COALESCE(?, s2_id),
+                        doi = COALESCE(?, doi),
+                        abstract = COALESCE(?, abstract),
+                        authors = COALESCE(?, authors),
+                        affiliations = COALESCE(?, affiliations),
+                        categories = COALESCE(?, categories),
+                        published_date = COALESCE(?, published_date),
+                        venue = COALESCE(?, venue),
+                        citation_count = MAX(?, citation_count),
+                        influential_citation_count = MAX(?, influential_citation_count),
+                        pdf_url = COALESCE(?, pdf_url),
+                        url = COALESCE(?, url)
+                    WHERE id = ?""",
+                    (
+                        p["arxiv_id"], p["s2_id"], p["doi"], p["abstract"],
+                        p["authors"], p["affiliations"], p["categories"],
+                        p["published_date"], p["venue"],
+                        p["citation_count"], p["influential_citation_count"],
+                        p["pdf_url"], p["url"],
+                        existing_id,
+                    ),
+                )
+                return existing_id
+
             cur.execute(
                 """INSERT INTO papers (
                     arxiv_id, s2_id, doi, title, abstract, authors, affiliations,
@@ -231,34 +267,11 @@ class PaperStore:
             return cur.lastrowid
 
     def upsert_papers(self, papers: list[dict[str, Any]]) -> int:
-        """Batch upsert in a single transaction. Returns count of inserted rows."""
+        """Batch upsert in a single transaction. Returns count of papers processed (inserts + updates)."""
         count = 0
-        with self._cursor() as cur:
-            for raw in papers:
-                p = _normalize_paper(raw)
-                is_historical = 1 if raw.get("is_historical") else 0
-                fetched_at = raw.get("fetched_at") or datetime.now(timezone.utc).isoformat()
-                cur.execute(
-                    """INSERT INTO papers (
-                        arxiv_id, s2_id, doi, title, abstract, authors, affiliations,
-                        categories, published_date, venue, source, citation_count,
-                        influential_citation_count, pdf_url, url, is_historical, fetched_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(arxiv_id) DO UPDATE SET
-                        title = COALESCE(excluded.title, papers.title),
-                        abstract = COALESCE(excluded.abstract, papers.abstract),
-                        citation_count = MAX(excluded.citation_count, papers.citation_count),
-                        influential_citation_count = MAX(excluded.influential_citation_count, papers.influential_citation_count)
-                    """,
-                    (
-                        p["arxiv_id"], p["s2_id"], p["doi"], p["title"], p["abstract"],
-                        p["authors"], p["affiliations"], p["categories"],
-                        p["published_date"], p["venue"], p["source"],
-                        p["citation_count"], p["influential_citation_count"],
-                        p["pdf_url"], p["url"], is_historical, fetched_at,
-                    ),
-                )
-                count += 1
+        for raw in papers:
+            self.upsert_paper(raw)
+            count += 1
         return count
 
     # -- Query ---------------------------------------------------------------
@@ -302,10 +315,10 @@ class PaperStore:
             ):
                 sets.append(f"{k} = ?")
                 vals.append(v)
-        if status == "recommended":
+        if status == "recommended" and "recommended_at" not in fields:
             sets.append("recommended_at = ?")
-            vals.append(fields.get("recommended_at") or datetime.now(timezone.utc).isoformat())
-        if status in ("recommended", "skipped"):
+            vals.append(datetime.now(timezone.utc).isoformat())
+        if status in ("recommended", "skipped") and "processed_at" not in fields:
             sets.append("processed_at = ?")
             vals.append(datetime.now(timezone.utc).isoformat())
 
