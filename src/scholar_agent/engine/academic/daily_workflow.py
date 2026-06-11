@@ -695,7 +695,6 @@ def _render_precision_section(
         _render_paper_block(lines, p, language, is_top=True, paper_note_stem=stem)
 
 
-
 def _render_dual_sections(
     lines: list[str],
     all_papers: list[dict[str, Any]],

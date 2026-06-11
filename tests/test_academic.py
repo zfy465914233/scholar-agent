@@ -417,8 +417,10 @@ class TestDailyWorkflow(unittest.TestCase):
 
         from scholar_agent.engine.academic.daily_workflow import get_analyzed_paper_ids
 
-        with tempfile.TemporaryDirectory() as tmp, \
-             patch("scholar_agent.engine.scholar_config.get_paper_db_path", return_value=Path(tmp) / "nonexistent.db"):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("scholar_agent.engine.scholar_config.get_paper_db_path", return_value=Path(tmp) / "nonexistent.db"),
+        ):
             note = Path(tmp) / "paper1.md"
             note.write_text(
                 '---\npaper_id: "2401.12345"\ntitle: "Test"\n---\nContent\n',
@@ -453,12 +455,15 @@ class TestDailyWorkflow(unittest.TestCase):
         from scholar_agent.engine.academic.daily_workflow import generate_daily_recommendations
 
         conf_result = {"papers": [{"title": "Conference Paper"}], "total_found": 1, "skipped": 0}
-        with patch(
-            "scholar_agent.engine.academic.daily_workflow._generate_track_conference",
-            return_value=conf_result,
-        ), patch(
-            "scholar_agent.engine.academic.daily_workflow._generate_track_arxiv_innovation",
-            side_effect=RuntimeError("arxiv down"),
+        with (
+            patch(
+                "scholar_agent.engine.academic.daily_workflow._generate_track_conference",
+                return_value=conf_result,
+            ),
+            patch(
+                "scholar_agent.engine.academic.daily_workflow._generate_track_arxiv_innovation",
+                side_effect=RuntimeError("arxiv down"),
+            ),
         ):
             result = generate_daily_recommendations(
                 config={},
@@ -476,12 +481,15 @@ class TestDailyWorkflow(unittest.TestCase):
         from scholar_agent.engine.academic.daily_workflow import generate_daily_recommendations
 
         arxiv_result = {"papers": [{"title": "Arxiv Paper"}], "total_found": 1, "skipped": 0}
-        with patch(
-            "scholar_agent.engine.academic.daily_workflow._generate_track_conference",
-            side_effect=RuntimeError("conf down"),
-        ), patch(
-            "scholar_agent.engine.academic.daily_workflow._generate_track_arxiv_innovation",
-            return_value=arxiv_result,
+        with (
+            patch(
+                "scholar_agent.engine.academic.daily_workflow._generate_track_conference",
+                side_effect=RuntimeError("conf down"),
+            ),
+            patch(
+                "scholar_agent.engine.academic.daily_workflow._generate_track_arxiv_innovation",
+                return_value=arxiv_result,
+            ),
         ):
             result = generate_daily_recommendations(
                 config={},
@@ -540,7 +548,12 @@ class TestDailyWorkflow(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             papers = [
                 {"title": "MoE Routing", "authors": ["Alice"], "arxiv_id": "2401.00001", "domain_keywords": ["MoE"]},
-                {"title": "Transformer Scaling", "authors": ["Bob"], "arxiv_id": "2401.00002", "domain_keywords": ["LLM"]},
+                {
+                    "title": "Transformer Scaling",
+                    "authors": ["Bob"],
+                    "arxiv_id": "2401.00002",
+                    "domain_keywords": ["LLM"],
+                },
             ]
             stems = {"MoE Routing": "MoE_Routing", "Transformer Scaling": "Transformer_Scaling"}
             path = build_daily_note("2025-06-01", papers, tmp, language="zh", paper_note_stems=stems)
@@ -598,8 +611,10 @@ class TestDailyWorkflow(unittest.TestCase):
             generate_paper_notes_for_daily,
         )
 
-        with tempfile.TemporaryDirectory() as tmp, \
-             patch("scholar_agent.engine.scholar_config.get_paper_db_path", return_value=Path(tmp) / "nonexistent.db"):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("scholar_agent.engine.scholar_config.get_paper_db_path", return_value=Path(tmp) / "nonexistent.db"),
+        ):
             paper_notes_dir = Path(tmp) / "paper-notes"
             paper_notes_dir.mkdir()
             # Create an existing note

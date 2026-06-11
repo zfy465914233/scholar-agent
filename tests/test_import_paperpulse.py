@@ -45,6 +45,7 @@ class TestImportPaperPulse(unittest.TestCase):
                 directory.rmdir()
                 return
             import time
+
             time.sleep(0.1)
 
     def tearDown(self) -> None:
@@ -88,8 +89,10 @@ class TestImportPaperPulse(unittest.TestCase):
         card_file = self.paper_notes_dir / "CLI_Mocked_Paper" / "CLI_Mocked_Paper.md"
         self.assertTrue(card_file.exists())
         self.assertIn("CLI Mocked Paper", card_file.read_text(encoding="utf-8"))
+
     def test_allowed_origin_matching(self) -> None:
         from scholar_agent.server import _host_header_is_loopback, _is_allowed_origin, _is_loopback_peer
+
         self.assertTrue(_is_allowed_origin("https://mindpulse.top"))
         self.assertTrue(_is_allowed_origin("http://localhost:3000"))
         self.assertTrue(_is_allowed_origin("http://127.0.0.1:8080"))
@@ -128,7 +131,7 @@ class TestImportPaperPulse(unittest.TestCase):
         from scholar_agent.server import ScholarAgentLocalServer
 
         # Start server on free port
-        server = HTTPServer(('127.0.0.1', 0), ScholarAgentLocalServer)
+        server = HTTPServer(("127.0.0.1", 0), ScholarAgentLocalServer)
         port = server.server_port
 
         t = threading.Thread(target=server.serve_forever, daemon=True)
@@ -139,20 +142,17 @@ class TestImportPaperPulse(unittest.TestCase):
 
         try:
             # 1. Health check
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{port}/health",
-                headers={"Origin": "https://mindpulse.top"}
-            )
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/health", headers={"Origin": "https://mindpulse.top"})
             with urllib.request.urlopen(req) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
+                data = json.loads(resp.read().decode("utf-8"))
                 self.assertEqual(data["status"], "ok")
 
             # 2. Import markdown (with correct token in header)
             post_data = {
                 "filename": "test-via-http.md",
-                "markdown": "---\ntitle: Test HTTP Sync\ndomain: Test\n---\n# Success Title\nContent here"
+                "markdown": "---\ntitle: Test HTTP Sync\ndomain: Test\n---\n# Success Title\nContent here",
             }
-            body = json.dumps(post_data).encode('utf-8')
+            body = json.dumps(post_data).encode("utf-8")
 
             req = urllib.request.Request(
                 f"http://127.0.0.1:{port}/import-markdown",
@@ -160,23 +160,20 @@ class TestImportPaperPulse(unittest.TestCase):
                 headers={
                     "Content-Type": "application/json",
                     "Origin": "https://mindpulse.top",
-                    "Authorization": "Bearer mock-token"
+                    "Authorization": "Bearer mock-token",
                 },
-                method="POST"
+                method="POST",
             )
             with urllib.request.urlopen(req) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
+                data = json.loads(resp.read().decode("utf-8"))
                 self.assertEqual(data["status"], "success")
 
             # 2b. Import markdown with missing token (expect 401)
             req_no_token = urllib.request.Request(
                 f"http://127.0.0.1:{port}/import-markdown",
                 data=body,
-                headers={
-                    "Content-Type": "application/json",
-                    "Origin": "https://mindpulse.top"
-                },
-                method="POST"
+                headers={"Content-Type": "application/json", "Origin": "https://mindpulse.top"},
+                method="POST",
             )
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(req_no_token)
@@ -189,9 +186,9 @@ class TestImportPaperPulse(unittest.TestCase):
                 headers={
                     "Content-Type": "application/json",
                     "Origin": "https://mindpulse.top",
-                    "Authorization": "Bearer wrong-token"
+                    "Authorization": "Bearer wrong-token",
                 },
-                method="POST"
+                method="POST",
             )
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(req_bad_token)
@@ -203,10 +200,7 @@ class TestImportPaperPulse(unittest.TestCase):
             self.assertIn("Success Title", written_file.read_text(encoding="utf-8"))
 
             # 3. Disallowed origin health check
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{port}/health",
-                headers={"Origin": "https://malicious.com"}
-            )
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/health", headers={"Origin": "https://malicious.com"})
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(req)
             self.assertEqual(cm.exception.code, 403)
@@ -218,14 +212,14 @@ class TestImportPaperPulse(unittest.TestCase):
                 headers={
                     "Content-Type": "application/json",
                     "Origin": "https://mindpulse.top",
-                    "Authorization": "Bearer mock-token"
+                    "Authorization": "Bearer mock-token",
                 },
-                method="POST"
+                method="POST",
             )
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(req)
             self.assertEqual(cm.exception.code, 400)
-            err_data = json.loads(cm.exception.read().decode('utf-8'))
+            err_data = json.loads(cm.exception.read().decode("utf-8"))
             self.assertIn("Invalid JSON body", err_data["error"])
 
             # 4a. Malformed Content-Length should return 400 instead of crashing the handler
@@ -253,32 +247,32 @@ class TestImportPaperPulse(unittest.TestCase):
                 headers={
                     "Content-Type": "application/json",
                     "Origin": "https://mindpulse.top",
-                    "Authorization": "Bearer mock-token"
+                    "Authorization": "Bearer mock-token",
                 },
-                method="POST"
+                method="POST",
             )
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(req)
             self.assertEqual(cm.exception.code, 400)
-            err_data = json.loads(cm.exception.read().decode('utf-8'))
+            err_data = json.loads(cm.exception.read().decode("utf-8"))
             self.assertIn("expected a dictionary object", err_data["error"])
 
             # 5. Missing fields
             post_missing = {"filename": "missing.md"}
             req = urllib.request.Request(
                 f"http://127.0.0.1:{port}/import-markdown",
-                data=json.dumps(post_missing).encode('utf-8'),
+                data=json.dumps(post_missing).encode("utf-8"),
                 headers={
                     "Content-Type": "application/json",
                     "Origin": "https://mindpulse.top",
-                    "Authorization": "Bearer mock-token"
+                    "Authorization": "Bearer mock-token",
                 },
-                method="POST"
+                method="POST",
             )
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(req)
             self.assertEqual(cm.exception.code, 400)
-            err_data = json.loads(cm.exception.read().decode('utf-8'))
+            err_data = json.loads(cm.exception.read().decode("utf-8"))
             self.assertIn("Missing filename or markdown content", err_data["error"])
 
         finally:

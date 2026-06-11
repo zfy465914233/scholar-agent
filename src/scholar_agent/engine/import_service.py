@@ -107,9 +107,7 @@ def import_from_url(
     try:
         with urllib.request.urlopen(req) as response:
             content_disposition = response.info().get("Content-Disposition", "")
-            filename = _parse_content_disposition_filename(
-                content_disposition, f"distilled-{paper_id}.md"
-            )
+            filename = _parse_content_disposition_filename(content_disposition, f"distilled-{paper_id}.md")
             markdown_content = response.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         if e.code == 401:

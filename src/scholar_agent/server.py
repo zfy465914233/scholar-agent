@@ -869,6 +869,7 @@ if SCHOLAR_ACADEMIC:
             pdf_path: Optional local PDF file path. If omitted and paper_json contains
                 an arxiv_id, auto-detects the local PDF in paper-notes/.
         """
+
         def _impl() -> str:
             from scholar_agent.engine.academic.note_linker import discover_related_notes
             from scholar_agent.engine.academic.paper_analyzer import generate_note
@@ -1053,6 +1054,7 @@ if SCHOLAR_ACADEMIC:
                 If omitted, the PDF is stored directly under paper-notes/{title}/.
             output_dir: Override the output directory. If provided, domain and title are ignored.
         """
+
         def _impl():
             arxiv_id = _parse_arxiv_id(paper_id)
             if not arxiv_id:
@@ -1151,6 +1153,7 @@ if SCHOLAR_ACADEMIC:
                 paper-notes/{title_or_id}/images/ under the knowledge root.
             pdf_path: Optional local PDF file path for extraction fallback.
         """
+
         def _impl() -> str:
             from scholar_agent.engine.academic.image_extractor import extract_paper_images as _extract
 
@@ -1324,6 +1327,7 @@ if SCHOLAR_ACADEMIC:
             config_path: Optional YAML config path for research interests.
             dual_track: Use dual-track mode: 2 conference + 2 arXiv (default true).
         """
+
         def _impl():
             from scholar_agent.engine.academic.arxiv_search import _load_config
             from scholar_agent.engine.academic.daily_workflow import (
@@ -1388,9 +1392,7 @@ if SCHOLAR_ACADEMIC:
             # Generate per-paper skeleton notes in paper-notes/
             paper_note_stems: dict[str, str] = {}
             try:
-                paper_note_stems = generate_paper_notes_for_daily(
-                    papers, paper_notes_dir, language=lang_val
-                )
+                paper_note_stems = generate_paper_notes_for_daily(papers, paper_notes_dir, language=lang_val)
             except Exception:
                 logger.warning("Per-paper note generation partially failed", exc_info=True)
 
@@ -1606,6 +1608,7 @@ def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
     from urllib.parse import urlparse
+
     try:
         parsed = urlparse(origin)
         if parsed.scheme not in ("http", "https"):
@@ -1653,6 +1656,7 @@ def _host_header_is_loopback(host_header: str) -> bool:
         host = host_header.rsplit(":", 1)[0] if ":" in host_header else host_header
     return _is_loopback_host(host)
 
+
 class ScholarAgentLocalServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Prevent printing to stdout to avoid corrupting MCP JSON-RPC protocol
@@ -1687,7 +1691,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
             if origin:
                 self.send_header("Access-Control-Allow-Origin", origin)
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "ok", "version": "1.0.0"}).encode('utf-8'))
+            self.wfile.write(json.dumps({"status": "ok", "version": "1.0.0"}).encode("utf-8"))
         else:
             self.send_response(404)
             self.end_headers()
@@ -1703,7 +1707,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
             # Cap body size at 10 MB to prevent OOM
             _MAX_BODY = 10 * 1024 * 1024
             try:
-                content_length = int(self.headers.get('Content-Length', 0))
+                content_length = int(self.headers.get("Content-Length", 0))
             except (TypeError, ValueError):
                 self.send_error_response(400, "Invalid Content-Length", origin)
                 return
@@ -1715,7 +1719,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 return
             body = self.rfile.read(content_length) if content_length > 0 else b""
             try:
-                data = json.loads(body.decode('utf-8'))
+                data = json.loads(body.decode("utf-8"))
             except json.JSONDecodeError as e:
                 self.send_error_response(400, f"Invalid JSON body: {e!s}", origin)
                 return
@@ -1741,7 +1745,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
             # If token is NOT configured, allow ONLY if request comes from local origin or no origin (direct curl/test).
             is_authenticated = False
             if configured_token:
-                is_authenticated = (req_token == configured_token)
+                is_authenticated = req_token == configured_token
             else:
                 host_header = self.headers.get("Host", "")
                 is_local_host = _host_header_is_loopback(host_header)
@@ -1750,6 +1754,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                     is_local_origin = _is_loopback_peer(str(self.client_address[0]))
                 else:
                     from urllib.parse import urlparse
+
                     try:
                         parsed = urlparse(origin)
                         is_local_origin = bool(parsed.hostname and _is_loopback_host(parsed.hostname))
@@ -1758,7 +1763,9 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 is_authenticated = is_local_host and is_local_origin
 
             if not is_authenticated:
-                self.send_error_response(401, "Unauthorized: Invalid or missing token, or write rejected for security reasons.", origin)
+                self.send_error_response(
+                    401, "Unauthorized: Invalid or missing token, or write rejected for security reasons.", origin
+                )
                 return
 
             filename = data.get("filename")
@@ -1770,6 +1777,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
 
             try:
                 from scholar_agent.engine.import_service import import_markdown
+
                 msg, saved_filename = import_markdown(filename, markdown_content)
 
                 if saved_filename is None:
@@ -1780,11 +1788,14 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 index_path = _configured_index_path(config)
                 _async_reindex(index_path)
 
-                self.send_success_response(origin, {
-                    "status": "success",
-                    "filename": saved_filename,
-                    "message": msg,
-                })
+                self.send_success_response(
+                    origin,
+                    {
+                        "status": "success",
+                        "filename": saved_filename,
+                        "message": msg,
+                    },
+                )
             except Exception:
                 logger.warning("HTTP /import-markdown failed", exc_info=True)
                 self.send_error_response(500, "Internal server error", origin)
@@ -1797,7 +1808,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
         if origin:
             self.send_header("Access-Control-Allow-Origin", origin)
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode('utf-8'))
+        self.wfile.write(json.dumps(data).encode("utf-8"))
 
     def send_error_response(self, code, message, origin=None):
         self.send_response(code)
@@ -1805,13 +1816,14 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
         if origin:
             self.send_header("Access-Control-Allow-Origin", origin)
         self.end_headers()
-        self.wfile.write(json.dumps({"error": message}).encode('utf-8'))
+        self.wfile.write(json.dumps({"error": message}).encode("utf-8"))
+
 
 def start_local_server() -> int:
     """Start the HTTP sync server. Returns 0 on success, 1 on failure."""
     port = 8374
     try:
-        server = HTTPServer(('127.0.0.1', port), ScholarAgentLocalServer)
+        server = HTTPServer(("127.0.0.1", port), ScholarAgentLocalServer)
         logger.info("Scholar Agent Local Sync Server listening on http://127.0.0.1:%d", port)
         server.serve_forever()
     except Exception:

@@ -297,10 +297,7 @@ class ToolTimeoutTest(unittest.TestCase):
     """C3: configurable per-tool timeout resolution."""
 
     def setUp(self) -> None:
-        self._saved = {
-            k: os.environ.pop(k, None)
-            for k in ("SCHOLAR_TOOL_TIMEOUT", "SCHOLAR_ANALYZE_PAPER_TIMEOUT")
-        }
+        self._saved = {k: os.environ.pop(k, None) for k in ("SCHOLAR_TOOL_TIMEOUT", "SCHOLAR_ANALYZE_PAPER_TIMEOUT")}
 
     def tearDown(self) -> None:
         for k, v in self._saved.items():
@@ -353,9 +350,7 @@ class RunBlockingTest(unittest.TestCase):
             async def report_progress(self, progress, total=None, message=None):
                 events.append(progress)
 
-        result = asyncio.run(
-            _run_blocking(lambda: "done", tool_name="unknown_tool", ctx=_Ctx())
-        )
+        result = asyncio.run(_run_blocking(lambda: "done", tool_name="unknown_tool", ctx=_Ctx()))
         self.assertEqual("done", result)
         self.assertEqual([0.0, 1.0], events)
 
@@ -364,13 +359,12 @@ class RunBlockingTest(unittest.TestCase):
 
         os.environ["SCHOLAR_TOOL_TIMEOUT"] = "0.05"
         try:
+
             def _slow() -> str:
                 time.sleep(0.5)
                 return "never"
 
-            result = json.loads(
-                asyncio.run(_run_blocking(_slow, tool_name="analyze_paper"))
-            )
+            result = json.loads(asyncio.run(_run_blocking(_slow, tool_name="analyze_paper")))
         finally:
             os.environ.pop("SCHOLAR_TOOL_TIMEOUT", None)
         self.assertEqual("timeout", result["status"])
