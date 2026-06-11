@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # Import config helpers
-from scholar_agent.engine.common import extract_entities, get_package_data_path, safe_slug
+from scholar_agent.engine.common import atomic_write_text, extract_entities, get_package_data_path, safe_slug
 
 ANSWER_SCHEMA_PATH = get_package_data_path("schemas", "answer.schema.json")
 
@@ -728,7 +728,7 @@ def build_knowledge_card(
     # Write to knowledge tree
     output_dir.mkdir(parents=True, exist_ok=True)
     card_path = output_dir / f"{card_id}.md"
-    card_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write_text(card_path, "\n".join(lines) + "\n", encoding="utf-8")
 
     # Record in changelog
     detail = f"type={card_type}, domain={major_domain}"

@@ -20,7 +20,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-from scholar_agent.engine.common import parse_frontmatter
+from scholar_agent.engine.common import atomic_write_text, parse_frontmatter
 
 # ---------------------------------------------------------------------------
 # Already-read dedup
@@ -260,39 +260,54 @@ def generate_daily_recommendations(
     arxiv_cfg = dc.get("arxiv_innovation", {})
 
     # Track 1: conference
-    conf_result = _generate_track_conference(
-        config=config,
-        paper_notes_dir=paper_notes_dir,
-        top_n=2,
-        skip_existing=skip_existing,
-        years=conf_cfg.get("years"),
-        venues=conf_cfg.get("venues"),
-        max_enrich=conf_cfg.get("max_enrich", 100),
-    )
+    track_errors: dict[str, str] = {}
+    try:
+        conf_result = _generate_track_conference(
+            config=config,
+            paper_notes_dir=paper_notes_dir,
+            top_n=2,
+            skip_existing=skip_existing,
+            years=conf_cfg.get("years"),
+            venues=conf_cfg.get("venues"),
+            max_enrich=conf_cfg.get("max_enrich", 100),
+        )
+    except Exception as exc:
+        logger.warning("conference track failed", exc_info=True)
+        track_errors["conference"] = str(exc)
+        conf_result = {"papers": [], "total_found": 0, "skipped": 0}
 
     # Track 2: arXiv innovation
-    arxiv_result = _generate_track_arxiv_innovation(
-        config=config,
-        paper_notes_dir=paper_notes_dir,
-        categories=categories,
-        top_n=2,
-        skip_existing=skip_existing,
-        days_window=arxiv_cfg.get("days_window", 7),
-        max_candidates=arxiv_cfg.get("max_candidates", 15),
-        target_date=target_date,
-    )
+    try:
+        arxiv_result = _generate_track_arxiv_innovation(
+            config=config,
+            paper_notes_dir=paper_notes_dir,
+            categories=categories,
+            top_n=2,
+            skip_existing=skip_existing,
+            days_window=arxiv_cfg.get("days_window", 7),
+            max_candidates=arxiv_cfg.get("max_candidates", 15),
+            target_date=target_date,
+        )
+    except Exception as exc:
+        logger.warning("arXiv innovation track failed", exc_info=True)
+        track_errors["arxiv_innovation"] = str(exc)
+        arxiv_result = {"papers": [], "total_found": 0, "skipped": 0}
 
     conf_papers = conf_result["papers"]
     arxiv_papers = arxiv_result["papers"]
     all_papers = conf_papers + arxiv_papers
+    tracks = {
+        "conference": {"count": len(conf_papers), "papers": conf_papers},
+        "arxiv_innovation": {"count": len(arxiv_papers), "papers": arxiv_papers},
+    }
+    for track_name, error in track_errors.items():
+        tracks[track_name]["error"] = error
 
     return {
         "date": date_str,
         "papers": all_papers,
-        "tracks": {
-            "conference": {"count": len(conf_papers), "papers": conf_papers},
-            "arxiv_innovation": {"count": len(arxiv_papers), "papers": arxiv_papers},
-        },
+        "tracks": tracks,
+        "track_errors": track_errors,
         "skipped": conf_result["skipped"] + arxiv_result["skipped"],
         "total_found": conf_result["total_found"] + arxiv_result["total_found"],
         "dual_track": True,
@@ -565,7 +580,7 @@ def build_daily_note(
         _render_flat_section(lines, papers, language, paper_note_stems)
 
     content = "\n".join(lines)
-    note_path.write_text(content, encoding="utf-8")
+    atomic_write_text(note_path, content, encoding="utf-8")
     return str(note_path)
 
 

@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 from typing import Any, cast
 
-from scholar_agent.engine.common import extract_wiki_links, parse_frontmatter, resolve_link_target
+from scholar_agent.engine.common import atomic_write_text, extract_wiki_links, parse_frontmatter, resolve_link_target
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ def _load_manifest(index_output: Path) -> dict[str, float]:
 def _save_manifest(manifest: dict[str, float], index_output: Path) -> None:
     mp = _manifest_path(index_output)
     mp.parent.mkdir(parents=True, exist_ok=True)
-    mp.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(mp, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def build_backlinks(documents: list[dict]) -> dict[str, list[str]]:
@@ -360,12 +360,12 @@ def write_index(
             payload = build_index(knowledge_root, extra_dirs)
             manifest = _build_manifest(payload, knowledge_root)
             index_output.parent.mkdir(parents=True, exist_ok=True)
-            index_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            atomic_write_text(index_output, json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             _save_manifest(manifest, index_output)
         else:
             payload = build_index_incremental(knowledge_root, index_output, extra_dirs)
             index_output.parent.mkdir(parents=True, exist_ok=True)
-            index_output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            atomic_write_text(index_output, json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
         if build_embedding_index:
             try:
@@ -377,7 +377,7 @@ def write_index(
                 total = len(emb_index["doc_ids"])
                 output_path = embedding_output or index_output.parent / "embeddings.json"
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_text(json.dumps(emb_index, ensure_ascii=False) + "\n", encoding="utf-8")
+                atomic_write_text(output_path, json.dumps(emb_index, ensure_ascii=False) + "\n", encoding="utf-8")
                 logger.info("Embedding index: %d/%d docs embedded → %s", valid, total, output_path)
             except Exception as exc:
                 logger.warning("embedding index build failed (%s), skipping", exc)

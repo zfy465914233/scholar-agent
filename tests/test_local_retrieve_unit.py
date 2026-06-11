@@ -130,6 +130,14 @@ class TestRetrieveBM25(unittest.TestCase):
             results = retrieve_bm25("markov", docs, limit=3, index_path=idx)
             self.assertIsInstance(results, list)
 
+    def test_missing_optional_fields_do_not_raise(self) -> None:
+        docs = [{"doc_id": "legacy", "title": "Legacy Markov note", "search_text": "markov chain"}]
+        results = retrieve_bm25("markov", docs, limit=1)
+        self.assertEqual("legacy", results[0]["doc_id"])
+        self.assertEqual("", results[0]["path"])
+        self.assertEqual("", results[0]["type"])
+        self.assertEqual("", results[0]["topic"])
+
 
 class TestRetrieveHybrid(unittest.TestCase):
     """Tests for retrieve_hybrid."""

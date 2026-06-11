@@ -88,11 +88,11 @@ def retrieve_bm25(query: str, documents: list[dict], limit: int, index_path: Pat
         doc = documents[doc_idx]
         results.append(
             {
-                "doc_id": doc["doc_id"],
-                "path": doc["path"],
-                "title": doc["title"],
-                "type": doc["type"],
-                "topic": doc["topic"],
+                "doc_id": doc.get("doc_id", ""),
+                "path": doc.get("path", ""),
+                "title": doc.get("title", ""),
+                "type": doc.get("type", ""),
+                "topic": doc.get("topic", ""),
                 "score": round(score, 4),
                 "matched_terms": sorted(set(matched_terms)),
                 "source": "bm25",

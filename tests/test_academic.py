@@ -262,6 +262,38 @@ class TestImageExtractor(unittest.TestCase):
         finally:
             image_extractor.HAS_FITZ = original
 
+    def test_fetch_bytes_urllib_fallback_closes_response(self):
+        from unittest.mock import patch
+
+        from scholar_agent.engine.academic import image_extractor
+
+        class FakeResponse:
+            status = 200
+
+            def __init__(self):
+                self.closed = False
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                self.closed = True
+
+            def read(self):
+                return b"payload"
+
+        response = FakeResponse()
+        original_requests_ok = image_extractor._REQUESTS_OK
+        image_extractor._REQUESTS_OK = False
+        try:
+            with patch.object(image_extractor._url_lib, "urlopen", return_value=response):
+                status, payload = image_extractor._fetch_bytes("https://example.com/file")
+            self.assertEqual(200, status)
+            self.assertEqual(b"payload", payload)
+            self.assertTrue(response.closed)
+        finally:
+            image_extractor._REQUESTS_OK = original_requests_ok
+
 
 # ---------------------------------------------------------------------------
 # Test: Note Linker
@@ -414,6 +446,52 @@ class TestDailyWorkflow(unittest.TestCase):
         self.assertEqual(len(remaining), 1)
         self.assertEqual(remaining[0]["title"], "B")
         self.assertEqual(filtered, 2)
+
+    def test_dual_track_returns_partial_results_when_arxiv_fails(self):
+        from unittest.mock import patch
+
+        from scholar_agent.engine.academic.daily_workflow import generate_daily_recommendations
+
+        conf_result = {"papers": [{"title": "Conference Paper"}], "total_found": 1, "skipped": 0}
+        with patch(
+            "scholar_agent.engine.academic.daily_workflow._generate_track_conference",
+            return_value=conf_result,
+        ), patch(
+            "scholar_agent.engine.academic.daily_workflow._generate_track_arxiv_innovation",
+            side_effect=RuntimeError("arxiv down"),
+        ):
+            result = generate_daily_recommendations(
+                config={},
+                paper_notes_dir="",
+                target_date=datetime(2026, 6, 11),
+                daily_config={"unified_pipeline": {"enabled": False}},
+            )
+        self.assertEqual([{"title": "Conference Paper"}], result["papers"])
+        self.assertIn("arxiv_innovation", result["track_errors"])
+        self.assertEqual("arxiv down", result["tracks"]["arxiv_innovation"]["error"])
+
+    def test_dual_track_returns_partial_results_when_conference_fails(self):
+        from unittest.mock import patch
+
+        from scholar_agent.engine.academic.daily_workflow import generate_daily_recommendations
+
+        arxiv_result = {"papers": [{"title": "Arxiv Paper"}], "total_found": 1, "skipped": 0}
+        with patch(
+            "scholar_agent.engine.academic.daily_workflow._generate_track_conference",
+            side_effect=RuntimeError("conf down"),
+        ), patch(
+            "scholar_agent.engine.academic.daily_workflow._generate_track_arxiv_innovation",
+            return_value=arxiv_result,
+        ):
+            result = generate_daily_recommendations(
+                config={},
+                paper_notes_dir="",
+                target_date=datetime(2026, 6, 11),
+                daily_config={"unified_pipeline": {"enabled": False}},
+            )
+        self.assertEqual([{"title": "Arxiv Paper"}], result["papers"])
+        self.assertIn("conference", result["track_errors"])
+        self.assertEqual("conf down", result["tracks"]["conference"]["error"])
 
     def test_build_daily_note_zh_has_frontmatter(self):
         from scholar_agent.engine.academic.daily_workflow import build_daily_note

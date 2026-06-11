@@ -11,9 +11,12 @@ Consolidates duplicated patterns across the codebase:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
 import re
+import tempfile
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -193,10 +196,37 @@ def load_json(path: Path) -> dict[str, Any]:
 def write_json(path: Path, data: Any, indent: int = 2) -> None:
     """Write JSON to a file, creating parent directories as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    atomic_write_text(
+        path,
         json.dumps(data, ensure_ascii=False, indent=indent) + "\n",
         encoding="utf-8",
     )
+
+
+def atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    """Atomically write text by replacing a same-directory temporary file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_name = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding=encoding,
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            tmp_name = handle.name
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        Path(tmp_name).replace(path)
+    except Exception:
+        if tmp_name:
+            with contextlib.suppress(OSError):
+                Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 # ── Date / time helpers ────────────────────────────────────────────

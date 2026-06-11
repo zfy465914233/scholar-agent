@@ -64,6 +64,17 @@ class TestValidateCardValid(unittest.TestCase):
                 errors = [i for i in issues if i.severity == "error" and i.field == "origin"]
                 self.assertEqual(len(errors), 0)
 
+    def test_generated_draft_card_values_are_valid(self):
+        issues = validate_card(
+            self._valid_card(
+                confidence="draft",
+                origin="web_research_with_synthesis",
+                review_status="draft",
+            )
+        )
+        self.assertEqual([], [i for i in issues if i.field == "confidence" and i.severity == "error"])
+        self.assertEqual([], [i for i in issues if i.field == "origin"])
+
 
 class TestValidateCardMissingRequired(unittest.TestCase):
     """Tests for missing required fields."""

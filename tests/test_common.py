@@ -11,6 +11,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 ENGINE = _ROOT / "src" / "scholar_agent" / "engine"
 
 from scholar_agent.engine.common import (
+    atomic_write_text,
     extract_entities,
     extract_wiki_links,
     load_json,
@@ -144,6 +145,14 @@ class WriteJsonTest(unittest.TestCase):
             write_json(path, {"text": "中文测试"})
             content = path.read_text(encoding="utf-8")
             self.assertIn("中文测试", content)
+
+    def test_atomic_write_text_replaces_existing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "note.md"
+            path.write_text("old", encoding="utf-8")
+            atomic_write_text(path, "new", encoding="utf-8")
+            self.assertEqual("new", path.read_text(encoding="utf-8"))
+            self.assertEqual([], list(Path(tmp).glob("*.tmp")))
 
 
 class NormalizeDateTest(unittest.TestCase):

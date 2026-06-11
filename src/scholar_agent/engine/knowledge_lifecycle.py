@@ -49,8 +49,8 @@ VALID_TRANSITIONS: dict[LifecycleState, set[LifecycleState]] = {
 # ── Schema definition ─────────────────────────────────────────────
 
 CARD_TYPES = {"knowledge", "method"}
-CONFIDENCE_LEVELS = {"confirmed", "likely", "unknown"}
-ORIGINS = {"local_seed", "manual_web_research", "distilled", "promoted", "imported"}
+CONFIDENCE_LEVELS = {"draft", "confirmed", "likely", "unknown"}
+ORIGINS = {"local_seed", "manual_web_research", "web_research_with_synthesis", "distilled", "promoted", "imported"}
 
 # Required fields for a valid card
 REQUIRED_FIELDS = {"id", "title", "type", "topic", "confidence", "updated_at"}

@@ -66,7 +66,7 @@ def _save_to_paper_notes(filename: str, markdown_content: str) -> tuple[Path, st
     Returns (dest_path, safe_filename).
     Raises ValueError on path safety check failures.
     """
-    from scholar_agent.engine.common import sanitize_title
+    from scholar_agent.engine.common import atomic_write_text, sanitize_title
 
     domain, title = _parse_frontmatter_domain_title(markdown_content)
     paper_notes_dir = _resolve_paper_notes_dir()
@@ -83,7 +83,7 @@ def _save_to_paper_notes(filename: str, markdown_content: str) -> tuple[Path, st
 
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / f"{safe_title}.md"
-    dest_path.write_text(markdown_content, encoding="utf-8")
+    atomic_write_text(dest_path, markdown_content, encoding="utf-8")
 
     return dest_path, f"{safe_title}.md"
 

@@ -127,8 +127,8 @@ def _fetch_bytes(url: str, *, timeout: int = 60, ua: str = "scholar-agent/1.0 (r
         r = _http.get(url, timeout=timeout, headers=headers)
         return r.status_code, r.content
     req = _url_lib.Request(url, headers=headers)
-    resp = _url_lib.urlopen(req, timeout=timeout)
-    return getattr(resp, "status", 200), resp.read()
+    with _url_lib.urlopen(req, timeout=timeout) as resp:
+        return getattr(resp, "status", 200), resp.read()
 
 
 # ---------------------------------------------------------------------------
@@ -219,9 +219,8 @@ def extract_pdf_text(pdf_path: str, max_chars: int = 80000) -> str:
         logger.warning("PyMuPDF unavailable — cannot extract text")
         return ""
     try:
-        doc = fitz.open(pdf_path)
-        chunks = [page.get_text() for page in doc]
-        doc.close()
+        with fitz.open(pdf_path) as doc:
+            chunks = [page.get_text() for page in doc]
         full = "\n\n".join(chunks)
         return full[:max_chars]
     except Exception as exc:
@@ -310,34 +309,33 @@ def _pull_embedded_images(
     # Phase 1: collect all image metadata across all pages
     candidates: list[dict[str, Any]] = []
     try:
-        doc = fitz.open(pdf_path)
-        for pg_idx in range(len(doc)):
-            page = doc[pg_idx]
-            for img_seq, info in enumerate(page.get_images(full=True)):
-                xref = info[0]
-                try:
-                    payload = doc.extract_image(xref)
-                except Exception:
-                    continue
-                if not payload:
-                    continue
-                w = payload.get("width", 0)
-                h = payload.get("height", 0)
-                blob = payload["image"]
-                area = w * h
-                candidates.append(
-                    {
-                        "page": pg_idx + 1,
-                        "seq": img_seq + 1,
-                        "width": w,
-                        "height": h,
-                        "area": area,
-                        "blob": blob,
-                        "ext": payload["ext"],
-                        "size": len(blob),
-                    }
-                )
-        doc.close()
+        with fitz.open(pdf_path) as doc:
+            for pg_idx in range(len(doc)):
+                page = doc[pg_idx]
+                for img_seq, info in enumerate(page.get_images(full=True)):
+                    xref = info[0]
+                    try:
+                        payload = doc.extract_image(xref)
+                    except Exception:
+                        continue
+                    if not payload:
+                        continue
+                    w = payload.get("width", 0)
+                    h = payload.get("height", 0)
+                    blob = payload["image"]
+                    area = w * h
+                    candidates.append(
+                        {
+                            "page": pg_idx + 1,
+                            "seq": img_seq + 1,
+                            "width": w,
+                            "height": h,
+                            "area": area,
+                            "blob": blob,
+                            "ext": payload["ext"],
+                            "size": len(blob),
+                        }
+                    )
     except Exception as exc:
         logger.error("PDF image extraction error: %s", exc)
         return []
