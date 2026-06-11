@@ -974,8 +974,9 @@ def _run_backfill(years: int, categories: str, max_per_month: int, output_format
         for month_offset in range(total_months):
             # Iterate from oldest to newest
             steps_back = total_months - 1 - month_offset
-            year = now.year - (now.month - 1 - steps_back) // 12
-            month = (now.month - 1 - steps_back) % 12 + 1
+            abs_month = now.year * 12 + (now.month - 1) - steps_back
+            year = abs_month // 12
+            month = abs_month % 12 + 1
 
             from_dt, to_dt = _month_range(year, month)
 
