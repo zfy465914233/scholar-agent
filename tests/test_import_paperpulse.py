@@ -89,7 +89,7 @@ class TestImportPaperPulse(unittest.TestCase):
         self.assertTrue(card_file.exists())
         self.assertIn("CLI Mocked Paper", card_file.read_text(encoding="utf-8"))
     def test_allowed_origin_matching(self) -> None:
-        from scholar_agent.server import _is_allowed_origin
+        from scholar_agent.server import _host_header_is_loopback, _is_allowed_origin, _is_loopback_peer
         self.assertTrue(_is_allowed_origin("https://mindpulse.top"))
         self.assertTrue(_is_allowed_origin("http://localhost:3000"))
         self.assertTrue(_is_allowed_origin("http://127.0.0.1:8080"))
@@ -101,6 +101,22 @@ class TestImportPaperPulse(unittest.TestCase):
         self.assertFalse(_is_allowed_origin("https://attacker.com/mindpulse.top"))
         self.assertFalse(_is_allowed_origin("https://malicious.com"))
         self.assertFalse(_is_allowed_origin(None))
+        self.assertTrue(_is_loopback_peer("127.0.0.1"))
+        self.assertTrue(_is_loopback_peer("::1"))
+        self.assertFalse(_is_loopback_peer("192.168.1.10"))
+        self.assertTrue(_host_header_is_loopback("localhost:8765"))
+        self.assertTrue(_host_header_is_loopback("127.0.0.1:8765"))
+        self.assertTrue(_host_header_is_loopback("[::1]:8765"))
+        self.assertFalse(_host_header_is_loopback("localhost.attacker.com"))
+        self.assertFalse(_host_header_is_loopback("127.0.0.1.attacker.com"))
+
+    def test_configured_index_path_falls_back_when_empty(self) -> None:
+        from scholar_agent.server import _configured_index_path
+
+        self.assertEqual(self.index_path, _configured_index_path({}))
+        self.assertEqual(self.index_path, _configured_index_path({"index_path": ""}))
+        custom = self.test_dir / "custom-index.json"
+        self.assertEqual(custom, _configured_index_path({"index_path": str(custom)}))
 
     def test_local_http_sync_server(self) -> None:
         import json
@@ -212,6 +228,24 @@ class TestImportPaperPulse(unittest.TestCase):
             err_data = json.loads(cm.exception.read().decode('utf-8'))
             self.assertIn("Invalid JSON body", err_data["error"])
 
+            # 4a. Malformed Content-Length should return 400 instead of crashing the handler
+            import socket
+
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+                sock.sendall(
+                    (
+                        "POST /import-markdown HTTP/1.1\r\n"
+                        f"Host: 127.0.0.1:{port}\r\n"
+                        "Origin: https://mindpulse.top\r\n"
+                        "Content-Type: application/json\r\n"
+                        "Authorization: Bearer mock-token\r\n"
+                        "Content-Length: nope\r\n"
+                        "\r\n"
+                    ).encode("ascii")
+                )
+                response = sock.recv(1024).decode("utf-8", errors="replace")
+            self.assertIn("400", response)
+
             # 4b. Invalid JSON type (list instead of dict)
             req = urllib.request.Request(
                 f"http://127.0.0.1:{port}/import-markdown",
@@ -255,4 +289,3 @@ class TestImportPaperPulse(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

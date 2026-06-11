@@ -1,8 +1,11 @@
 """Tests for MCP server tool functions (logic only, no MCP transport)."""
 
+import asyncio
 import json
+import os
 import subprocess
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -288,6 +291,96 @@ class QualityGateTest(unittest.TestCase):
         quality = quality_score_answer_data(thin_answer, source="save_research")
         self.assertFalse(quality["passed"])
         self.assertGreater(len(quality["violations"]), 0)
+
+
+class ToolTimeoutTest(unittest.TestCase):
+    """C3: configurable per-tool timeout resolution."""
+
+    def setUp(self) -> None:
+        self._saved = {
+            k: os.environ.pop(k, None)
+            for k in ("SCHOLAR_TOOL_TIMEOUT", "SCHOLAR_ANALYZE_PAPER_TIMEOUT")
+        }
+
+    def tearDown(self) -> None:
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_default_timeout(self) -> None:
+        from scholar_agent.server import _tool_timeout
+
+        self.assertEqual(600.0, _tool_timeout("analyze_paper"))
+        self.assertIsNone(_tool_timeout("unknown_tool"))
+
+    def test_global_env_override(self) -> None:
+        from scholar_agent.server import _tool_timeout
+
+        os.environ["SCHOLAR_TOOL_TIMEOUT"] = "42"
+        self.assertEqual(42.0, _tool_timeout("analyze_paper"))
+
+    def test_per_tool_env_takes_precedence(self) -> None:
+        from scholar_agent.server import _tool_timeout
+
+        os.environ["SCHOLAR_TOOL_TIMEOUT"] = "42"
+        os.environ["SCHOLAR_ANALYZE_PAPER_TIMEOUT"] = "10"
+        self.assertEqual(10.0, _tool_timeout("analyze_paper"))
+
+    def test_non_positive_disables_timeout(self) -> None:
+        from scholar_agent.server import _tool_timeout
+
+        os.environ["SCHOLAR_ANALYZE_PAPER_TIMEOUT"] = "0"
+        self.assertIsNone(_tool_timeout("analyze_paper"))
+
+    def test_invalid_env_ignored(self) -> None:
+        from scholar_agent.server import _tool_timeout
+
+        os.environ["SCHOLAR_ANALYZE_PAPER_TIMEOUT"] = "not-a-number"
+        self.assertEqual(600.0, _tool_timeout("analyze_paper"))
+
+
+class RunBlockingTest(unittest.TestCase):
+    """C3: _run_blocking runs work off-thread with timeout + progress."""
+
+    def test_returns_result_and_reports_progress(self) -> None:
+        from scholar_agent.server import _run_blocking
+
+        events: list[float] = []
+
+        class _Ctx:
+            async def report_progress(self, progress, total=None, message=None):
+                events.append(progress)
+
+        result = asyncio.run(
+            _run_blocking(lambda: "done", tool_name="unknown_tool", ctx=_Ctx())
+        )
+        self.assertEqual("done", result)
+        self.assertEqual([0.0, 1.0], events)
+
+    def test_timeout_returns_error_payload(self) -> None:
+        from scholar_agent.server import _run_blocking
+
+        os.environ["SCHOLAR_TOOL_TIMEOUT"] = "0.05"
+        try:
+            def _slow() -> str:
+                time.sleep(0.5)
+                return "never"
+
+            result = json.loads(
+                asyncio.run(_run_blocking(_slow, tool_name="analyze_paper"))
+            )
+        finally:
+            os.environ.pop("SCHOLAR_TOOL_TIMEOUT", None)
+        self.assertEqual("timeout", result["status"])
+        self.assertIn("timed out", result["error"])
+
+    def test_no_ctx_is_fine(self) -> None:
+        from scholar_agent.server import _run_blocking
+
+        result = asyncio.run(_run_blocking(lambda: "ok", tool_name="unknown_tool"))
+        self.assertEqual("ok", result)
 
 
 if __name__ == "__main__":

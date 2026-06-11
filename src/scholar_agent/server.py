@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib
+import ipaddress
 import json
 import logging
 import os
@@ -33,7 +34,10 @@ import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from scholar_agent.engine.close_knowledge_loop import (
     QUALITY_THRESHOLD_CAPTURE_ANSWER,
@@ -62,16 +66,81 @@ logger = logging.getLogger(__name__)
 SCHOLAR_ACADEMIC = os.environ.get("SCHOLAR_ACADEMIC", "").strip() in ("1", "true", "yes")
 
 try:
-    from fastmcp import FastMCP
+    from fastmcp import Context, FastMCP
 
     mcp = FastMCP("scholar-agent")
     tool = mcp.tool
 except ImportError:
     # Allow running without fastmcp — decorators become no-ops
     mcp = None  # type: ignore[assignment]
+    Context = None  # type: ignore[assignment,misc]
 
     def tool(fn):  # type: ignore[misc]
         return fn
+
+
+# ── Long-running tool execution (non-blocking + timeout + progress) ──
+#
+# Heavy tools (PDF download, LLM fill, tarball extraction, daily workflow) run
+# in a worker thread so they never block the asyncio event loop, are bounded by
+# a configurable timeout, and can report coarse progress + honor MCP-native
+# cancellation. NOTE: a worker thread cannot be force-killed; on timeout or
+# client cancellation the awaiting request returns immediately and the loop is
+# freed, but the orphaned thread runs to completion and its result is discarded.
+
+# Default per-tool timeouts in seconds. 0 / negative env value disables timeout.
+_DEFAULT_TOOL_TIMEOUTS: dict[str, float] = {
+    "analyze_paper": 600.0,
+    "extract_paper_images": 300.0,
+    "download_paper": 300.0,
+    "daily_recommend": 1800.0,
+}
+
+
+def _tool_timeout(tool_name: str) -> float | None:
+    """Resolve the timeout (seconds) for a tool.
+
+    Precedence: SCHOLAR_<TOOL>_TIMEOUT env > SCHOLAR_TOOL_TIMEOUT env > default.
+    A value <= 0 disables the timeout (returns None).
+    """
+    for env_key in (f"SCHOLAR_{tool_name.upper()}_TIMEOUT", "SCHOLAR_TOOL_TIMEOUT"):
+        raw = os.environ.get(env_key, "").strip()
+        if raw:
+            try:
+                value = float(raw)
+            except ValueError:
+                logger.warning("Invalid %s=%r — ignoring", env_key, raw)
+                continue
+            return value if value > 0 else None
+    return _DEFAULT_TOOL_TIMEOUTS.get(tool_name)
+
+
+async def _run_blocking(fn: Callable[[], str], *, tool_name: str, ctx: Any = None) -> str:
+    """Run a blocking, JSON-string-returning callable off the event loop.
+
+    Provides a bounded timeout, coarse start/finish progress (when a FastMCP
+    Context is supplied), and propagates cancellation so MCP request
+    cancellation works.
+    """
+    timeout = _tool_timeout(tool_name)
+    if ctx is not None:
+        with contextlib.suppress(Exception):
+            await ctx.report_progress(0.0, 1.0, f"{tool_name} started")
+    try:
+        if timeout is not None:
+            result = await asyncio.wait_for(asyncio.to_thread(fn), timeout)
+        else:
+            result = await asyncio.to_thread(fn)
+    except asyncio.TimeoutError:
+        logger.warning("%s timed out after %ss", tool_name, timeout)
+        return json.dumps(
+            {"status": "timeout", "error": f"{tool_name} timed out after {timeout}s"},
+            ensure_ascii=False,
+        )
+    if ctx is not None:
+        with contextlib.suppress(Exception):
+            await ctx.report_progress(1.0, 1.0, f"{tool_name} completed")
+    return result
 
 
 def _optional_dep_warnings() -> list[str]:
@@ -92,6 +161,12 @@ def _validate_path_within(path: str | Path, boundary: Path) -> Path | None:
     except ValueError:
         return None
     return resolved
+
+
+def _configured_index_path(config: dict[str, Any]) -> Path:
+    """Return configured index path, falling back when config is empty."""
+    configured = str(config.get("index_path", "")).strip()
+    return Path(configured) if configured else get_index_path()
 
 
 @tool
@@ -319,7 +394,7 @@ def list_knowledge(topic: str | None = None) -> str:
 
 
 @tool
-def capture_answer(query: str, answer: str, tags: str = "") -> str:
+def capture_answer(query: str, answer: str, tags: str = "", language: str = "zh") -> str:
     """Capture a useful Q&A answer as a draft knowledge card.
 
     Use this ONLY when a conversation produces a SUBSTANTIVE answer that is worth
@@ -342,6 +417,7 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
         query: The question that was answered.
         answer: The answer text (plain text or markdown). Minimum 150 characters.
         tags: Comma-separated tags for the card (optional).
+        language: Language for the card content — "zh" (Chinese, default) or "en" (English).
     """
     if not query or not query.strip():
         return json.dumps({"error": "query must not be empty"})
@@ -356,6 +432,7 @@ def capture_answer(query: str, answer: str, tags: str = "") -> str:
         "uncertainty": ["Captured from conversation — not yet verified against sources"],
         "missing_evidence": ["Source references needed"],
         "suggested_next_steps": ["Verify against authoritative sources", "Add supporting evidence"],
+        "language": language,
     }
 
     if tags and tags.strip():
@@ -759,13 +836,14 @@ if SCHOLAR_ACADEMIC:
         return json.dumps(result, ensure_ascii=False, indent=2, default=str)
 
     @tool
-    def analyze_paper(
+    async def analyze_paper(
         paper_json: str,
         output_dir: str = "",
         language: str = "zh",
         all_papers_json: str = "",
         images_json: str = "",
         pdf_path: str = "",
+        ctx: Context | None = None,
     ) -> str:
         """Analyze a paper and generate a structured deep-analysis markdown note.
 
@@ -791,163 +869,166 @@ if SCHOLAR_ACADEMIC:
             pdf_path: Optional local PDF file path. If omitted and paper_json contains
                 an arxiv_id, auto-detects the local PDF in paper-notes/.
         """
-        from scholar_agent.engine.academic.note_linker import discover_related_notes
-        from scholar_agent.engine.academic.paper_analyzer import generate_note
+        def _impl() -> str:
+            from scholar_agent.engine.academic.note_linker import discover_related_notes
+            from scholar_agent.engine.academic.paper_analyzer import generate_note
 
-        try:
-            paper = json.loads(paper_json)
-        except json.JSONDecodeError as e:
-            return json.dumps({"error": f"Invalid paper_json: {e}"})
-
-        if not paper.get("title"):
-            return json.dumps({"error": "paper_json must contain at least a 'title' field"})
-
-        # Auto-detect local PDF if pdf_path not provided
-        detected_pdf = None
-        if not pdf_path or not pdf_path.strip():
-            arxiv_id = paper.get("arxiv_id", "")
-            paper_title = paper.get("title", "")
-            detected_pdf = _find_local_pdf(arxiv_id, title=paper_title)
-        else:
-            validated_pdf = _validate_path_within(pdf_path.strip(), get_knowledge_dir().parent)
-            if validated_pdf is None:
-                return json.dumps({"error": "pdf_path must be within the scholar knowledge directory tree"})
-            detected_pdf = str(validated_pdf)
-
-        # Resolve output directory
-        if not output_dir or not output_dir.strip():
-            output_dir = str(get_paper_notes_dir())
-        out_path = _validate_path_within(output_dir, get_knowledge_dir().parent)
-        if out_path is None:
-            return json.dumps({"error": "output_dir must be within the scholar knowledge directory tree"})
-        out_path.mkdir(parents=True, exist_ok=True)
-
-        # Find related papers if provided
-        other_papers = []
-        if all_papers_json:
             try:
-                other_papers = json.loads(all_papers_json)
-                if not isinstance(other_papers, list):
-                    other_papers = []
-            except json.JSONDecodeError:
-                other_papers = []
+                paper = json.loads(paper_json)
+            except json.JSONDecodeError as e:
+                return json.dumps({"error": f"Invalid paper_json: {e}"})
 
-        if other_papers and not paper.get("related_papers"):
-            related = discover_related_notes(paper, other_papers, max_links=5)
-            if related:
-                paper["related_papers"] = related
+            if not paper.get("title"):
+                return json.dumps({"error": "paper_json must contain at least a 'title' field"})
 
-        # Validate language
-        if language not in ("zh", "en"):
-            language = "zh"
-
-        # Parse images — auto-extract when caller didn't provide them
-        images = None
-        auto_extracted_images: list[dict] = []
-        if images_json and images_json.strip():
-            try:
-                images = json.loads(images_json)
-                if not isinstance(images, list):
-                    images = None
-            except json.JSONDecodeError:
-                images = None
-        elif detected_pdf or paper.get("arxiv_id"):
-            # Auto-extract images when no explicit images_json provided
-            try:
-                from scholar_agent.engine.academic.image_extractor import extract_paper_images as _extract_imgs
-
+            # Auto-detect local PDF if pdf_path not provided
+            detected_pdf = None
+            if not pdf_path or not pdf_path.strip():
                 arxiv_id = paper.get("arxiv_id", "")
-                img_dir = str(out_path / "images")
-                auto_extracted_images = _extract_imgs(
-                    arxiv_id,
-                    img_dir,
-                    pdf_path=detected_pdf,
-                )
-                if auto_extracted_images:
-                    images = auto_extracted_images
-                    logger.info(
-                        "Auto-extracted %d images for %s",
-                        len(auto_extracted_images),
-                        paper.get("title", ""),
+                paper_title = paper.get("title", "")
+                detected_pdf = _find_local_pdf(arxiv_id, title=paper_title)
+            else:
+                validated_pdf = _validate_path_within(pdf_path.strip(), get_knowledge_dir().parent)
+                if validated_pdf is None:
+                    return json.dumps({"error": "pdf_path must be within the scholar knowledge directory tree"})
+                detected_pdf = str(validated_pdf)
+
+            # Resolve output directory
+            out_dir = output_dir
+            if not out_dir or not out_dir.strip():
+                out_dir = str(get_paper_notes_dir())
+            out_path = _validate_path_within(out_dir, get_knowledge_dir().parent)
+            if out_path is None:
+                return json.dumps({"error": "output_dir must be within the scholar knowledge directory tree"})
+            out_path.mkdir(parents=True, exist_ok=True)
+
+            # Find related papers if provided
+            other_papers = []
+            if all_papers_json:
+                try:
+                    other_papers = json.loads(all_papers_json)
+                    if not isinstance(other_papers, list):
+                        other_papers = []
+                except json.JSONDecodeError:
+                    other_papers = []
+
+            if other_papers and not paper.get("related_papers"):
+                related = discover_related_notes(paper, other_papers, max_links=5)
+                if related:
+                    paper["related_papers"] = related
+
+            # Validate language
+            lang = language if language in ("zh", "en") else "zh"
+
+            # Parse images — auto-extract when caller didn't provide them
+            images = None
+            auto_extracted_images: list[dict] = []
+            if images_json and images_json.strip():
+                try:
+                    images = json.loads(images_json)
+                    if not isinstance(images, list):
+                        images = None
+                except json.JSONDecodeError:
+                    images = None
+            elif detected_pdf or paper.get("arxiv_id"):
+                # Auto-extract images when no explicit images_json provided
+                try:
+                    from scholar_agent.engine.academic.image_extractor import extract_paper_images as _extract_imgs
+
+                    arxiv_id = paper.get("arxiv_id", "")
+                    img_dir = str(out_path / "images")
+                    auto_extracted_images = _extract_imgs(
+                        arxiv_id,
+                        img_dir,
+                        pdf_path=detected_pdf,
                     )
-            except Exception as exc:
-                logger.warning("Auto image extraction failed: %s", exc)
+                    if auto_extracted_images:
+                        images = auto_extracted_images
+                        logger.info(
+                            "Auto-extracted %d images for %s",
+                            len(auto_extracted_images),
+                            paper.get("title", ""),
+                        )
+                except Exception as exc:
+                    logger.warning("Auto image extraction failed: %s", exc)
 
-        try:
-            note_path = generate_note(
-                paper,
-                str(out_path),
-                language=language,
-                images=images,
-                local_pdf_path=detected_pdf or "",
-            )
-        except Exception as e:
-            logger.exception("analyze_paper failed")
-            return json.dumps({"error": f"Failed to generate note: {type(e).__name__}"})
-
-        # Extract full text from local PDF if available
-        pdf_text = ""
-        if detected_pdf and os.path.isfile(detected_pdf):
             try:
-                from scholar_agent.engine.academic.image_extractor import extract_pdf_text
+                note_path = generate_note(
+                    paper,
+                    str(out_path),
+                    language=lang,
+                    images=images,
+                    local_pdf_path=detected_pdf or "",
+                )
+            except Exception as e:
+                logger.exception("analyze_paper failed")
+                return json.dumps({"error": f"Failed to generate note: {type(e).__name__}"})
 
-                pdf_text = extract_pdf_text(detected_pdf)
+            # Extract full text from local PDF if available
+            pdf_text = ""
+            if detected_pdf and os.path.isfile(detected_pdf):
+                try:
+                    from scholar_agent.engine.academic.image_extractor import extract_pdf_text
+
+                    pdf_text = extract_pdf_text(detected_pdf)
+                except Exception:
+                    pdf_text = ""
+
+            # Auto-fill placeholders from PDF text via LLM
+            fill_result = None
+            if pdf_text:
+                try:
+                    from scholar_agent.engine.academic.paper_analyzer import fill_note_from_pdf
+
+                    fill_result = fill_note_from_pdf(note_path, pdf_text)
+                    logger.info("Auto-fill result: %s", fill_result)
+                except Exception as exc:
+                    logger.warning("Auto-fill failed: %s", exc)
+                    fill_result = {"status": "error", "reason": str(exc)}
+
+            # Quality check on the generated note
+            quality_check: dict[str, Any] = {"has_issues": False, "issues": [], "placeholder_count": 0}
+            try:
+                from scholar_agent.engine.academic.paper_analyzer import check_note_quality
+
+                quality_check = check_note_quality(note_path)
             except Exception:
-                pdf_text = ""
+                pass
 
-        # Auto-fill placeholders from PDF text via LLM
-        fill_result = None
-        if pdf_text:
-            try:
-                from scholar_agent.engine.academic.paper_analyzer import fill_note_from_pdf
+            # Build instructions for the caller about remaining placeholders
+            placeholder_count = quality_check.get("placeholder_count", 0)
+            instructions = None
+            if placeholder_count > 0 and pdf_text:
+                instructions = (
+                    "MUST fill all <!-- LLM: --> placeholders using pdf_text before showing to user. "
+                    f"Note has {placeholder_count} placeholders. "
+                    "Use Write tool to replace the skeleton note with fully filled content. "
+                    "See SKILL.md '内容填充规则' section for detailed rules."
+                )
 
-                fill_result = fill_note_from_pdf(note_path, pdf_text)
-                logger.info("Auto-fill result: %s", fill_result)
-            except Exception as exc:
-                logger.warning("Auto-fill failed: %s", exc)
-                fill_result = {"status": "error", "reason": str(exc)}
+            result_payload: dict[str, object] = {
+                "status": "ok",
+                "note_path": note_path,
+                "title": paper.get("title", ""),
+                "language": lang,
+                "has_related_links": bool(paper.get("related_papers")),
+                "pdf_path": detected_pdf,
+                "has_full_text": bool(pdf_text),
+                "pdf_text": pdf_text,
+                "quality_check": quality_check,
+                "instructions": instructions,
+                "images": [
+                    {"filename": img.get("filename", ""), "section": img.get("section", "")} for img in (images or [])
+                ],
+            }
+            if fill_result:
+                result_payload["fill_result"] = fill_result
+            dep_warnings = _optional_dep_warnings()
+            if dep_warnings:
+                result_payload["warnings"] = dep_warnings
+            return json.dumps(result_payload, ensure_ascii=False, indent=2)
 
-        # Quality check on the generated note
-        quality_check: dict[str, Any] = {"has_issues": False, "issues": [], "placeholder_count": 0}
-        try:
-            from scholar_agent.engine.academic.paper_analyzer import check_note_quality
-
-            quality_check = check_note_quality(note_path)
-        except Exception:
-            pass
-
-        # Build instructions for the caller about remaining placeholders
-        placeholder_count = quality_check.get("placeholder_count", 0)
-        instructions = None
-        if placeholder_count > 0 and pdf_text:
-            instructions = (
-                "MUST fill all <!-- LLM: --> placeholders using pdf_text before showing to user. "
-                f"Note has {placeholder_count} placeholders. "
-                "Use Write tool to replace the skeleton note with fully filled content. "
-                "See SKILL.md '内容填充规则' section for detailed rules."
-            )
-
-        result_payload: dict[str, object] = {
-            "status": "ok",
-            "note_path": note_path,
-            "title": paper.get("title", ""),
-            "language": language,
-            "has_related_links": bool(paper.get("related_papers")),
-            "pdf_path": detected_pdf,
-            "has_full_text": bool(pdf_text),
-            "pdf_text": pdf_text,
-            "quality_check": quality_check,
-            "instructions": instructions,
-            "images": [
-                {"filename": img.get("filename", ""), "section": img.get("section", "")} for img in (images or [])
-            ],
-        }
-        if fill_result:
-            result_payload["fill_result"] = fill_result
-        dep_warnings = _optional_dep_warnings()
-        if dep_warnings:
-            result_payload["warnings"] = dep_warnings
-        return json.dumps(result_payload, ensure_ascii=False, indent=2)
+        return await _run_blocking(_impl, tool_name="analyze_paper", ctx=ctx)
 
     @tool
     async def download_paper(
@@ -955,6 +1036,7 @@ if SCHOLAR_ACADEMIC:
         title: str = "",
         domain: str = "",
         output_dir: str = "",
+        ctx: Context | None = None,
     ) -> str:
         """Download a paper PDF to local storage.
 
@@ -1046,14 +1128,15 @@ if SCHOLAR_ACADEMIC:
                 indent=2,
             )
 
-        return await asyncio.to_thread(_impl)
+        return await _run_blocking(_impl, tool_name="download_paper", ctx=ctx)
 
     @tool
-    def extract_paper_images(
+    async def extract_paper_images(
         paper_id: str,
         title: str = "",
         output_dir: str = "",
         pdf_path: str = "",
+        ctx: Context | None = None,
     ) -> str:
         """Extract figures from an arXiv paper (source archive + PDF fallback).
 
@@ -1068,49 +1151,53 @@ if SCHOLAR_ACADEMIC:
                 paper-notes/{title_or_id}/images/ under the knowledge root.
             pdf_path: Optional local PDF file path for extraction fallback.
         """
-        from scholar_agent.engine.academic.image_extractor import extract_paper_images as _extract
+        def _impl() -> str:
+            from scholar_agent.engine.academic.image_extractor import extract_paper_images as _extract
 
-        if not paper_id or not paper_id.strip():
-            return json.dumps({"error": "paper_id must not be empty"})
+            if not paper_id or not paper_id.strip():
+                return json.dumps({"error": "paper_id must not be empty"})
 
-        paper_id = paper_id.strip()
+            pid = paper_id.strip()
 
-        if not output_dir or not output_dir.strip():
-            folder_name = _sanitize_title(title) if title and title.strip() else paper_id
-            output_dir = str(get_paper_notes_dir() / folder_name / "images")
-        else:
-            validated = _validate_path_within(output_dir, get_knowledge_dir().parent)
-            if validated is None:
-                return json.dumps({"error": "output_dir must be within the scholar knowledge directory tree"})
-            output_dir = str(validated)
+            if not output_dir or not output_dir.strip():
+                folder_name = _sanitize_title(title) if title and title.strip() else pid
+                out_dir = str(get_paper_notes_dir() / folder_name / "images")
+            else:
+                validated = _validate_path_within(output_dir, get_knowledge_dir().parent)
+                if validated is None:
+                    return json.dumps({"error": "output_dir must be within the scholar knowledge directory tree"})
+                out_dir = str(validated)
 
-        # Auto-detect local PDF if pdf_path not provided
-        if not pdf_path or not pdf_path.strip():
-            local_pdf = _find_local_pdf(paper_id, title=title)
-            if local_pdf:
-                pdf_path = local_pdf
-        elif pdf_path.strip():
-            validated_pdf = _validate_path_within(pdf_path.strip(), get_knowledge_dir().parent)
-            if validated_pdf is None:
-                return json.dumps({"error": "pdf_path must be within the scholar knowledge directory tree"})
-            pdf_path = str(validated_pdf)
+            # Auto-detect local PDF if pdf_path not provided
+            pdf = pdf_path
+            if not pdf or not pdf.strip():
+                local_pdf = _find_local_pdf(pid, title=title)
+                if local_pdf:
+                    pdf = local_pdf
+            elif pdf.strip():
+                validated_pdf = _validate_path_within(pdf.strip(), get_knowledge_dir().parent)
+                if validated_pdf is None:
+                    return json.dumps({"error": "pdf_path must be within the scholar knowledge directory tree"})
+                pdf = str(validated_pdf)
 
-        try:
-            images = _extract(paper_id, output_dir, pdf_path or None)
-        except Exception as e:
-            logger.exception("extract_paper_images failed")
-            return json.dumps({"error": str(type(e).__name__), "images": [], "count": 0})
+            try:
+                images = _extract(pid, out_dir, pdf or None)
+            except Exception as e:
+                logger.exception("extract_paper_images failed")
+                return json.dumps({"error": str(type(e).__name__), "images": [], "count": 0})
 
-        result: dict[str, object] = {
-            "status": "ok",
-            "images": images,
-            "count": len(images),
-            "output_dir": output_dir,
-        }
-        dep_warnings = _optional_dep_warnings()
-        if dep_warnings:
-            result["warnings"] = dep_warnings
-        return json.dumps(result, ensure_ascii=False, indent=2)
+            result: dict[str, object] = {
+                "status": "ok",
+                "images": images,
+                "count": len(images),
+                "output_dir": out_dir,
+            }
+            dep_warnings = _optional_dep_warnings()
+            if dep_warnings:
+                result["warnings"] = dep_warnings
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        return await _run_blocking(_impl, tool_name="extract_paper_images", ctx=ctx)
 
     @tool
     def paper_to_card(
@@ -1222,6 +1309,7 @@ if SCHOLAR_ACADEMIC:
         skip_existing: bool = True,
         config_path: str = "",
         dual_track: bool = True,
+        ctx: Context | None = None,
     ) -> str:
         """Generate daily paper recommendations: search, score, dedup, build note.
 
@@ -1398,7 +1486,7 @@ if SCHOLAR_ACADEMIC:
                 indent=2,
             )
 
-        return await asyncio.to_thread(_impl)
+        return await _run_blocking(_impl, tool_name="daily_recommend", ctx=ctx)
 
     @tool
     def link_paper_keywords(
@@ -1505,7 +1593,7 @@ def import_paperpulse_note(paper_id: str, api_token: str | None = None) -> str:
     msg, saved = import_from_url(paper_id, token, base_url)
 
     if saved is not None:
-        index_path = Path(config.get("index_path", ""))
+        index_path = _configured_index_path(config)
         _async_reindex(index_path)
 
     return msg
@@ -1532,6 +1620,38 @@ def _is_allowed_origin(origin: str | None) -> bool:
     except Exception:
         pass
     return False
+
+
+def _is_loopback_host(value: str) -> bool:
+    """Return True when a Host/Origin hostname represents this machine."""
+    host = value.strip().strip("[]").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_peer(peer: str) -> bool:
+    """Return True only for actual loopback peer addresses."""
+    try:
+        return ipaddress.ip_address(peer).is_loopback
+    except ValueError:
+        return False
+
+
+def _host_header_is_loopback(host_header: str) -> bool:
+    """Validate Host header hostname without trusting substring matches."""
+    if not host_header:
+        return False
+    if host_header.startswith("["):
+        host = host_header[1:].split("]", 1)[0]
+    elif host_header.count(":") > 1:
+        host = host_header
+    else:
+        host = host_header.rsplit(":", 1)[0] if ":" in host_header else host_header
+    return _is_loopback_host(host)
 
 class ScholarAgentLocalServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -1582,7 +1702,14 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
         if self.path == "/import-markdown":
             # Cap body size at 10 MB to prevent OOM
             _MAX_BODY = 10 * 1024 * 1024
-            content_length = int(self.headers.get('Content-Length', 0))
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+            except (TypeError, ValueError):
+                self.send_error_response(400, "Invalid Content-Length", origin)
+                return
+            if content_length < 0:
+                self.send_error_response(400, "Invalid Content-Length", origin)
+                return
             if content_length > _MAX_BODY:
                 self.send_error_response(413, "Payload too large (max 10 MB)", origin)
                 return
@@ -1617,15 +1744,15 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 is_authenticated = (req_token == configured_token)
             else:
                 host_header = self.headers.get("Host", "")
-                is_local_host = any(h in host_header for h in ("localhost", "127.0.0.1", "::1"))
+                is_local_host = _host_header_is_loopback(host_header)
                 is_local_origin = False
                 if origin is None:
-                    is_local_origin = True
+                    is_local_origin = _is_loopback_peer(str(self.client_address[0]))
                 else:
                     from urllib.parse import urlparse
                     try:
                         parsed = urlparse(origin)
-                        is_local_origin = parsed.hostname in ("localhost", "127.0.0.1", "::1")
+                        is_local_origin = bool(parsed.hostname and _is_loopback_host(parsed.hostname))
                     except Exception:
                         is_local_origin = False
                 is_authenticated = is_local_host and is_local_origin
@@ -1650,7 +1777,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                     return
 
                 config = load_config()
-                index_path = Path(config.get("index_path", ""))
+                index_path = _configured_index_path(config)
                 _async_reindex(index_path)
 
                 self.send_success_response(origin, {
@@ -1709,5 +1836,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
