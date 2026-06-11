@@ -79,7 +79,7 @@ def precision_cfg():
             "required_passes": [
                 "PROBLEM_DEFINED",
                 "METHOD_SPECIFIC",
-                "CONTRIBUTION_GENUISE",
+                "CONTRIBUTION_GENUINE",
                 "NO_RED_FLAGS",
             ],
             "call_delay_seconds": 0,
@@ -100,7 +100,7 @@ def _mock_llm_for_funnel(selected_indices=None):
         {"question": "PROBLEM_DEFINED", "passed": True, "evidence": "clear"},
         {"question": "METHOD_SPECIFIC", "passed": True, "evidence": "detailed"},
         {"question": "RESULTS_CONCRETE", "passed": True, "evidence": "numbers"},
-        {"question": "CONTRIBUTION_GENUISE", "passed": True, "evidence": "novel"},
+        {"question": "CONTRIBUTION_GENUINE", "passed": True, "evidence": "novel"},
         {"question": "NO_RED_FLAGS", "passed": True, "evidence": "clean"},
     ]
     stage3_response = json.dumps({

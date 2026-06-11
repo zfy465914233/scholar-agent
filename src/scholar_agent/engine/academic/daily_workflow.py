@@ -58,7 +58,7 @@ def get_analyzed_paper_ids(paper_notes_dir: str) -> set[str]:
     # Fallback: scan paper-notes/ markdown files
     notes_path = Path(paper_notes_dir)
     if not notes_path.exists():
-        return set()
+        return ids
 
     for md_file in notes_path.rglob("*.md"):
         try:

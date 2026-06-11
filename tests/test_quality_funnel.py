@@ -48,7 +48,7 @@ def config() -> dict:
                 "required_passes": [
                     "PROBLEM_DEFINED",
                     "METHOD_SPECIFIC",
-                    "CONTRIBUTION_GENUISE",
+                    "CONTRIBUTION_GENUINE",
                     "NO_RED_FLAGS",
                 ],
                 "call_delay_seconds": 0,
@@ -99,7 +99,7 @@ def _mock_llm_stage3(
         {"question": "PROBLEM_DEFINED", "passed": all_passed, "evidence": "clear"},
         {"question": "METHOD_SPECIFIC", "passed": all_passed, "evidence": "detailed"},
         {"question": "RESULTS_CONCRETE", "passed": True, "evidence": "numbers"},
-        {"question": "CONTRIBUTION_GENUISE", "passed": all_passed, "evidence": "novel"},
+        {"question": "CONTRIBUTION_GENUINE", "passed": all_passed, "evidence": "novel"},
         {"question": "NO_RED_FLAGS", "passed": all_passed, "evidence": "clean"},
     ]
     response = json.dumps({

@@ -283,7 +283,10 @@ class PaperStore:
                 "SELECT * FROM papers WHERE status = ? ORDER BY fetched_at DESC LIMIT ?",
                 (status, limit),
             )
-            return [dict(row) for row in cur.fetchall()]
+            rows = [dict(row) for row in cur.fetchall()]
+            for r in rows:
+                r["_db_id"] = r["id"]
+            return rows
 
     def update_status(self, paper_id: int, status: str, **fields: Any) -> None:
         """Update a paper's status and optional fields."""
