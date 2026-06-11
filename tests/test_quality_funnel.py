@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
@@ -16,6 +16,9 @@ from scholar_agent.engine.academic.quality_funnel import (
     _parse_stage4_response,
 )
 from scholar_agent.engine.paper_store import PaperStore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -91,9 +94,7 @@ def _store_papers(store: PaperStore, papers: list[dict]) -> list[dict]:
     return result
 
 
-def _mock_llm_stage3(
-    all_passed=True, novelty=4, credibility=4, depth=4, rigor=4
-):
+def _mock_llm_stage3(all_passed=True, novelty=4, credibility=4, depth=4, rigor=4):
     """Create a mock call_llm that returns valid Stage 3 responses."""
     checks = [
         {"question": "PROBLEM_DEFINED", "passed": all_passed, "evidence": "clear"},
@@ -102,13 +103,15 @@ def _mock_llm_stage3(
         {"question": "CONTRIBUTION_GENUINE", "passed": all_passed, "evidence": "novel"},
         {"question": "NO_RED_FLAGS", "passed": all_passed, "evidence": "clean"},
     ]
-    response = json.dumps({
-        "checks": checks,
-        "novelty": novelty,
-        "credibility": credibility,
-        "depth": depth,
-        "rigor": rigor,
-    })
+    response = json.dumps(
+        {
+            "checks": checks,
+            "novelty": novelty,
+            "credibility": credibility,
+            "depth": depth,
+            "rigor": rigor,
+        }
+    )
 
     def _call(payload):
         return {
@@ -116,6 +119,7 @@ def _mock_llm_stage3(
             "model": "test",
             "usage": {"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300},
         }
+
     return _call
 
 
@@ -124,12 +128,15 @@ def _mock_llm_stage4(selected_indices=None):
     if selected_indices is None:
         selected_indices = [1]
 
-    selected = [{"index": i, "reason": f"Paper {i} is excellent", "priority": j + 1}
-                for j, i in enumerate(selected_indices)]
-    response = json.dumps({
-        "selected": selected,
-        "rationale": "Selected based on novelty and rigor.",
-    })
+    selected = [
+        {"index": i, "reason": f"Paper {i} is excellent", "priority": j + 1} for j, i in enumerate(selected_indices)
+    ]
+    response = json.dumps(
+        {
+            "selected": selected,
+            "rationale": "Selected based on novelty and rigor.",
+        }
+    )
 
     call_count = [0]
     stage3_fn = _mock_llm_stage3()
@@ -163,25 +170,35 @@ class TestStage1:
         assert passed[0]["relevance_score"] > 0
 
     def test_irrelevant_paper_filtered(self, store: PaperStore, config: dict) -> None:
-        papers = _store_papers(store, [_paper(
-            title="Improved Water Distribution in Agricultural Fields",
-            abstract="We propose a method for optimizing water distribution in agricultural settings. "
-                     "Our system uses soil moisture sensors and weather data to reduce water waste.",
-            arxiv_id="2501.99999",
-            categories=["physics.geo-ph"],
-        )])
+        papers = _store_papers(
+            store,
+            [
+                _paper(
+                    title="Improved Water Distribution in Agricultural Fields",
+                    abstract="We propose a method for optimizing water distribution in agricultural settings. "
+                    "Our system uses soil moisture sensors and weather data to reduce water waste.",
+                    arxiv_id="2501.99999",
+                    categories=["physics.geo-ph"],
+                )
+            ],
+        )
         funnel = QualityFunnel(store, config)
         passed = funnel.stage1_relevance_filter(papers)
         assert len(passed) == 0
 
     def test_excluded_keyword_filters(self, store: PaperStore, config: dict) -> None:
         config["excluded_keywords"] = ["survey"]
-        papers = _store_papers(store, [_paper(
-            title="A Survey of Deep Learning Methods",
-            abstract="We survey deep learning approaches for NLP and computer vision. "
-                     "This comprehensive survey covers 200 papers from the past decade.",
-            arxiv_id="2501.00002",
-        )])
+        papers = _store_papers(
+            store,
+            [
+                _paper(
+                    title="A Survey of Deep Learning Methods",
+                    abstract="We survey deep learning approaches for NLP and computer vision. "
+                    "This comprehensive survey covers 200 papers from the past decade.",
+                    arxiv_id="2501.00002",
+                )
+            ],
+        )
         funnel = QualityFunnel(store, config)
         passed = funnel.stage1_relevance_filter(papers)
         assert len(passed) == 0
@@ -211,18 +228,22 @@ class TestStage2:
         assert len(passed) == 0
 
     def test_survey_title_filtered(self, store: PaperStore, config: dict) -> None:
-        papers = [_paper(
-            title="A Survey of Deep Learning",
-            abstract="x" * 200,
-        )]
+        papers = [
+            _paper(
+                title="A Survey of Deep Learning",
+                abstract="x" * 200,
+            )
+        ]
         funnel = QualityFunnel(store, config)
         passed = funnel.stage2_hard_negative_filter(papers)
         assert len(passed) == 0
 
     def test_survey_abstract_starter_filtered(self, store: PaperStore, config: dict) -> None:
-        papers = [_paper(
-            abstract="We present a survey of recent advances in deep learning. " + "x" * 200,
-        )]
+        papers = [
+            _paper(
+                abstract="We present a survey of recent advances in deep learning. " + "x" * 200,
+            )
+        ]
         funnel = QualityFunnel(store, config)
         passed = funnel.stage2_hard_negative_filter(papers)
         assert len(passed) == 0
@@ -254,7 +275,7 @@ class TestStage3:
 
         with patch("scholar_agent.engine.synthesize_answer.call_llm") as mock_llm:
             mock_llm.side_effect = _mock_llm_stage3(all_passed=False)
-            passed, calls, tokens = funnel.stage3_llm_review(papers)
+            passed, _calls, _tokens = funnel.stage3_llm_review(papers)
 
         assert len(passed) == 0
 
@@ -264,7 +285,7 @@ class TestStage3:
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("LLM_API_KEY", None)
-            passed, calls, tokens = funnel.stage3_llm_review(papers)
+            passed, calls, _tokens = funnel.stage3_llm_review(papers)
 
         assert len(passed) == 1  # passes through without LLM check
         assert calls == 0
@@ -272,14 +293,12 @@ class TestStage3:
     @patch.dict(os.environ, {"LLM_API_KEY": "test-key"})
     def test_survivors_capped(self, store: PaperStore, config: dict) -> None:
         config["precision_funnel"]["llm_review"]["max_survivors"] = 3
-        papers = _store_papers(store, [
-            _paper(arxiv_id=f"2501.{i:05d}", title=f"Paper {i}") for i in range(5)
-        ])
+        papers = _store_papers(store, [_paper(arxiv_id=f"2501.{i:05d}", title=f"Paper {i}") for i in range(5)])
         funnel = QualityFunnel(store, config)
 
         with patch("scholar_agent.engine.synthesize_answer.call_llm") as mock_llm:
             mock_llm.side_effect = _mock_llm_stage3(all_passed=True)
-            passed, calls, tokens = funnel.stage3_llm_review(papers)
+            passed, _calls, _tokens = funnel.stage3_llm_review(papers)
 
         assert len(passed) == 3
 
@@ -290,7 +309,7 @@ class TestStage3:
 
         with patch("scholar_agent.engine.synthesize_answer.call_llm") as mock_llm:
             mock_llm.side_effect = RuntimeError("LLM down")
-            passed, calls, tokens = funnel.stage3_llm_review(papers)
+            passed, _calls, _tokens = funnel.stage3_llm_review(papers)
 
         assert len(passed) == 0
 
@@ -314,14 +333,14 @@ class TestStage4:
 
         with patch("scholar_agent.engine.synthesize_answer.call_llm") as mock_llm:
             mock_llm.side_effect = _mock_llm_stage4(selected_indices=[1])
-            passed, calls, tokens = funnel.stage4_cross_comparison(papers)
+            passed, _calls, _tokens = funnel.stage4_cross_comparison(papers)
 
         assert len(passed) == 1
         assert passed[0]["title"] == "Paper A"
 
     def test_empty_input(self, store: PaperStore, config: dict) -> None:
         funnel = QualityFunnel(store, config)
-        passed, calls, tokens = funnel.stage4_cross_comparison([])
+        passed, calls, _tokens = funnel.stage4_cross_comparison([])
         assert passed == []
         assert calls == 0
 
@@ -334,7 +353,7 @@ class TestStage4:
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("LLM_API_KEY", None)
-            passed, calls, tokens = funnel.stage4_cross_comparison(papers)
+            passed, _calls, _tokens = funnel.stage4_cross_comparison(papers)
 
         assert len(passed) == 2
         assert passed[0]["title"] == "High"
@@ -388,10 +407,15 @@ class TestFullPipeline:
 
 class TestParsers:
     def test_parse_stage3_valid(self) -> None:
-        raw = json.dumps({
-            "checks": [{"question": "Q1", "passed": True, "evidence": "text"}],
-            "novelty": 4, "credibility": 3, "depth": 5, "rigor": 2,
-        })
+        raw = json.dumps(
+            {
+                "checks": [{"question": "Q1", "passed": True, "evidence": "text"}],
+                "novelty": 4,
+                "credibility": 3,
+                "depth": 5,
+                "rigor": 2,
+            }
+        )
         result = _parse_stage3_response(raw)
         assert result["novelty"] == 4
         assert result["depth"] == 5
@@ -414,10 +438,12 @@ class TestParsers:
         assert result["credibility"] == 1
 
     def test_parse_stage4_valid(self) -> None:
-        raw = json.dumps({
-            "selected": [{"index": 1, "reason": "great", "priority": 1}],
-            "rationale": "test",
-        })
+        raw = json.dumps(
+            {
+                "selected": [{"index": 1, "reason": "great", "priority": 1}],
+                "rationale": "test",
+            }
+        )
         result = _parse_stage4_response(raw)
         assert len(result["selected"]) == 1
         assert result["rationale"] == "test"

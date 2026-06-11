@@ -277,7 +277,7 @@ def _parse_batch_response(raw: str) -> dict[str, Any]:
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [ln for ln in lines if not ln.strip().startswith("```")]
         text = "\n".join(lines)
 
     start = text.find("{")
@@ -317,11 +317,7 @@ def batch_llm_select(
         title = p.get("title", "Untitled")
         abstract = (p.get("summary", "") or p.get("abstract", ""))[:300]
         h_score = p.get("_heuristic_score", 0)
-        candidates_text += (
-            f"\n[{i}] Title: {title}\n"
-            f"    Abstract: {abstract}\n"
-            f"    Heuristic score: {h_score}\n"
-        )
+        candidates_text += f"\n[{i}] Title: {title}\n    Abstract: {abstract}\n    Heuristic score: {h_score}\n"
 
     system_prompt = _BATCH_SYSTEM.format(max_select=max_select)
     user_prompt = _BATCH_USER_TEMPLATE.format(
@@ -333,15 +329,17 @@ def batch_llm_select(
     try:
         from scholar_agent.engine.synthesize_answer import call_llm
 
-        result = call_llm({
-            "model": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "temperature": 0.3,
-            "max_tokens": 1024,
-        })
+        result = call_llm(
+            {
+                "model": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.3,
+                "max_tokens": 1024,
+            }
+        )
 
         tokens = result.get("usage", {}).get("total_tokens", 0)
         llm_response = _parse_batch_response(result.get("raw_content", ""))

@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import json
-import sqlite3
-import tempfile
 import threading
-from datetime import datetime, timezone
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from scholar_agent.engine.paper_store import PaperStore
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @pytest.fixture
@@ -172,7 +172,8 @@ class TestUpdateStatus:
     def test_update_status_recommended_sets_recommended_at(self, store: PaperStore) -> None:
         row_id = store.upsert_paper(_arxiv_paper())
         store.update_status(
-            row_id, "recommended",
+            row_id,
+            "recommended",
             recommendation_score=8.5,
             recommendation_reason="Excellent contribution",
         )
@@ -223,7 +224,7 @@ class TestCountByStatus:
     def test_count_by_status(self, store: PaperStore) -> None:
         r1 = store.upsert_paper(_arxiv_paper(arxiv_id="2501.00001"))
         r2 = store.upsert_paper(_arxiv_paper(arxiv_id="2501.00002"))
-        r3 = store.upsert_paper(_arxiv_paper(arxiv_id="2501.00003"))
+        store.upsert_paper(_arxiv_paper(arxiv_id="2501.00003"))
         store.update_status(r1, "stage1_passed")
         store.update_status(r2, "recommended")
         counts = store.count_by_status()
@@ -245,9 +246,7 @@ class TestConcurrency:
             s = PaperStore(db_path)
             try:
                 for i in range(10):
-                    s.upsert_paper(
-                        _arxiv_paper(arxiv_id=f"2501.{offset * 10 + i:05d}", title=f"P {offset}-{i}")
-                    )
+                    s.upsert_paper(_arxiv_paper(arxiv_id=f"2501.{offset * 10 + i:05d}", title=f"P {offset}-{i}"))
             except Exception as e:
                 errors.append(e)
             finally:

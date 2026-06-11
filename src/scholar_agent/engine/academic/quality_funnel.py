@@ -14,12 +14,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from scholar_agent.engine.paper_store import PaperStore
+if TYPE_CHECKING:
+    from scholar_agent.engine.paper_store import PaperStore
 
 logger = logging.getLogger(__name__)
 
@@ -181,9 +181,7 @@ class QualityFunnel:
         for p in papers:
             fit_score, domain, keywords = scorer._fit(p)
             if fit_score <= 0:
-                self.store.update_status(
-                    p.get("_db_id", 0), "skipped", skip_reason="low_relevance"
-                )
+                self.store.update_status(p.get("_db_id", 0), "skipped", skip_reason="low_relevance")
                 continue
             p["relevance_score"] = fit_score
             p["best_domain"] = domain
@@ -191,7 +189,8 @@ class QualityFunnel:
             paper_id = p.get("_db_id", 0)
             if paper_id:
                 self.store.update_status(
-                    paper_id, "stage1_passed",
+                    paper_id,
+                    "stage1_passed",
                     relevance_score=fit_score,
                     best_domain=domain,
                     domain_keywords=json.dumps(keywords, ensure_ascii=False),
@@ -245,9 +244,7 @@ class QualityFunnel:
 
     # -- Stage 3: LLM review -------------------------------------------------
 
-    def stage3_llm_review(
-        self, papers: list[dict[str, Any]]
-    ) -> tuple[list[dict[str, Any]], int, int]:
+    def stage3_llm_review(self, papers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int, int]:
         """Per-paper LLM quality screening. Returns (passed, llm_calls, llm_tokens)."""
         api_key = os.environ.get("LLM_API_KEY", "")
         if not api_key:
@@ -255,9 +252,17 @@ class QualityFunnel:
             return papers, 0, 0
 
         max_survivors = self.llm_cfg.get("max_survivors", 8)
-        required_passes = set(self.llm_cfg.get("required_passes", [
-            "PROBLEM_DEFINED", "METHOD_SPECIFIC", "CONTRIBUTION_GENUINE", "NO_RED_FLAGS",
-        ]))
+        required_passes = set(
+            self.llm_cfg.get(
+                "required_passes",
+                [
+                    "PROBLEM_DEFINED",
+                    "METHOD_SPECIFIC",
+                    "CONTRIBUTION_GENUINE",
+                    "NO_RED_FLAGS",
+                ],
+            )
+        )
         delay = self.llm_cfg.get("call_delay_seconds", 1.0)
         model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
@@ -275,15 +280,17 @@ class QualityFunnel:
             try:
                 from scholar_agent.engine.synthesize_answer import call_llm
 
-                result = call_llm({
-                    "model": model,
-                    "messages": [
-                        {"role": "system", "content": _STAGE3_SYSTEM},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 1024,
-                })
+                result = call_llm(
+                    {
+                        "model": model,
+                        "messages": [
+                            {"role": "system", "content": _STAGE3_SYSTEM},
+                            {"role": "user", "content": user_prompt},
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": 1024,
+                    }
+                )
                 total_calls += 1
                 total_tokens += result.get("usage", {}).get("total_tokens", 0)
 
@@ -303,7 +310,8 @@ class QualityFunnel:
                 if all_required_passed:
                     if paper_id:
                         self.store.update_status(
-                            paper_id, "stage3_passed",
+                            paper_id,
+                            "stage3_passed",
                             llm_review_passed=1,
                             llm_review_detail=json.dumps(review, ensure_ascii=False),
                             llm_novelty=review.get("novelty"),
@@ -316,7 +324,8 @@ class QualityFunnel:
                 else:
                     if paper_id:
                         self.store.update_status(
-                            paper_id, "skipped",
+                            paper_id,
+                            "skipped",
                             skip_reason="llm_review_failed",
                             llm_review_detail=json.dumps(review, ensure_ascii=False),
                             llm_model=model,
@@ -345,9 +354,7 @@ class QualityFunnel:
 
     # -- Stage 4: Cross-comparison -------------------------------------------
 
-    def stage4_cross_comparison(
-        self, papers: list[dict[str, Any]]
-    ) -> tuple[list[dict[str, Any]], int, int]:
+    def stage4_cross_comparison(self, papers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int, int]:
         """Batch LLM comparison to select final ≤3 recommendations."""
         if not papers:
             return [], 0, 0
@@ -356,7 +363,7 @@ class QualityFunnel:
         if not api_key:
             logger.warning("[QualityFunnel] No LLM_API_KEY, using top relevance fallback")
             selected = sorted(papers, key=lambda x: x.get("relevance_score", 0), reverse=True)
-            return selected[:self.max_rec], 0, 0
+            return selected[: self.max_rec], 0, 0
 
         model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
 
@@ -382,15 +389,17 @@ class QualityFunnel:
         try:
             from scholar_agent.engine.synthesize_answer import call_llm
 
-            result = call_llm({
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": _STAGE4_SYSTEM},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": 0.3,
-                "max_tokens": 1024,
-            })
+            result = call_llm(
+                {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": _STAGE4_SYSTEM},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    "temperature": 0.3,
+                    "max_tokens": 1024,
+                }
+            )
 
             llm_response = _parse_stage4_response(result.get("raw_content", ""))
             selected_indices = {s["index"] - 1 for s in llm_response.get("selected", []) if isinstance(s, dict)}
@@ -399,12 +408,20 @@ class QualityFunnel:
             for i, p in enumerate(papers):
                 paper_id = p.get("_db_id", 0)
                 if i in selected_indices:
-                    sel = next((s for s in llm_response.get("selected", []) if isinstance(s, dict) and s.get("index") == i + 1), {})
+                    sel = next(
+                        (
+                            s
+                            for s in llm_response.get("selected", [])
+                            if isinstance(s, dict) and s.get("index") == i + 1
+                        ),
+                        {},
+                    )
                     p["recommendation_reason"] = sel.get("reason", "")
                     p["recommendation_priority"] = sel.get("priority", 99)
                     if paper_id:
                         self.store.update_status(
-                            paper_id, "recommended",
+                            paper_id,
+                            "recommended",
                             recommendation_score=p.get("relevance_score", 0),
                             recommendation_reason=sel.get("reason", ""),
                         )
@@ -419,14 +436,15 @@ class QualityFunnel:
         except Exception as e:
             logger.warning("[QualityFunnel] Stage 4 LLM error: %s — falling back to relevance", e)
             selected = sorted(papers, key=lambda x: x.get("relevance_score", 0), reverse=True)
-            for p in selected[:self.max_rec]:
+            for p in selected[: self.max_rec]:
                 paper_id = p.get("_db_id", 0)
                 if paper_id:
                     self.store.update_status(
-                        paper_id, "recommended",
+                        paper_id,
+                        "recommended",
                         recommendation_score=p.get("relevance_score", 0),
                     )
-            return selected[:self.max_rec], 0, 0
+            return selected[: self.max_rec], 0, 0
 
     # -- Helpers -------------------------------------------------------------
 
@@ -446,7 +464,7 @@ def _parse_stage3_response(raw: str) -> dict[str, Any]:
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [ln for ln in lines if not ln.strip().startswith("```")]
         text = "\n".join(lines)
 
     start = text.find("{")
@@ -478,7 +496,7 @@ def _parse_stage4_response(raw: str) -> dict[str, Any]:
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [ln for ln in lines if not ln.strip().startswith("```")]
         text = "\n".join(lines)
 
     start = text.find("{")

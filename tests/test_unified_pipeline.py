@@ -4,21 +4,16 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from scholar_agent.engine.academic.unified_pipeline import (
     _parse_batch_response,
     batch_llm_select,
-    concurrent_fetch,
     heuristic_pre_filter,
     refine_queries,
     run_unified_pipeline,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -153,10 +148,12 @@ class TestHeuristicPreFilter:
 
 class TestParseBatchResponse:
     def test_valid_json(self):
-        raw = json.dumps({
-            "selected": [{"index": 1, "reason": "Excellent", "novelty": 4, "credibility": 5}],
-            "rationale": "Strong paper.",
-        })
+        raw = json.dumps(
+            {
+                "selected": [{"index": 1, "reason": "Excellent", "novelty": 4, "credibility": 5}],
+                "rationale": "Strong paper.",
+            }
+        )
         result = _parse_batch_response(raw)
         assert len(result["selected"]) == 1
         assert result["selected"][0]["index"] == 1
@@ -183,19 +180,18 @@ class TestParseBatchResponse:
 class TestBatchLLMSelect:
     @patch.dict(os.environ, {"LLM_API_KEY": "test-key"})
     def test_selects_from_candidates(self):
-        candidates = [
-            _paper(arxiv_id=f"2501.{i:05d}", title=f"Paper {i}", _heuristic_score=float(i))
-            for i in range(5)
-        ]
+        candidates = [_paper(arxiv_id=f"2501.{i:05d}", title=f"Paper {i}", _heuristic_score=float(i)) for i in range(5)]
 
         mock_response = {
-            "raw_content": json.dumps({
-                "selected": [
-                    {"index": 3, "reason": "Novel approach", "novelty": 4, "credibility": 5},
-                    {"index": 5, "reason": "Strong results", "novelty": 5, "credibility": 4},
-                ],
-                "rationale": "Top 2 papers.",
-            }),
+            "raw_content": json.dumps(
+                {
+                    "selected": [
+                        {"index": 3, "reason": "Novel approach", "novelty": 4, "credibility": 5},
+                        {"index": 5, "reason": "Strong results", "novelty": 5, "credibility": 4},
+                    ],
+                    "rationale": "Top 2 papers.",
+                }
+            ),
             "usage": {"total_tokens": 500},
         }
 
@@ -216,13 +212,13 @@ class TestBatchLLMSelect:
         with patch.dict(os.environ, {}, clear=True):
             # Remove LLM_API_KEY
             os.environ.pop("LLM_API_KEY", None)
-            selected, calls, tokens = batch_llm_select(candidates, max_select=2)
+            selected, calls, _tokens = batch_llm_select(candidates, max_select=2)
 
         assert len(selected) == 2
         assert calls == 0
 
     def test_empty_candidates(self):
-        selected, calls, tokens = batch_llm_select([], max_select=3)
+        selected, calls, _tokens = batch_llm_select([], max_select=3)
         assert selected == []
         assert calls == 0
 
@@ -231,7 +227,7 @@ class TestBatchLLMSelect:
         candidates = [_paper(arxiv_id="2501.00001", _heuristic_score=3.0)]
 
         with patch("scholar_agent.engine.synthesize_answer.call_llm", side_effect=Exception("API error")):
-            selected, calls, tokens = batch_llm_select(candidates, max_select=3)
+            selected, calls, _tokens = batch_llm_select(candidates, max_select=3)
 
         assert len(selected) == 1
         assert calls == 0  # fallback means 0 LLM calls counted
@@ -246,7 +242,7 @@ class TestBatchLLMSelect:
         }
 
         with patch("scholar_agent.engine.synthesize_answer.call_llm", return_value=mock_response):
-            selected, calls, tokens = batch_llm_select(candidates, max_select=3)
+            selected, _calls, _tokens = batch_llm_select(candidates, max_select=3)
 
         # Falls back to heuristic top-3
         assert len(selected) == 1
@@ -274,12 +270,14 @@ class TestRunUnifiedPipeline:
         paper_notes_dir = str(tmp_path / "notes")
 
         mock_llm_response = {
-            "raw_content": json.dumps({
-                "selected": [
-                    {"index": 1, "reason": "Novel approach", "novelty": 4, "credibility": 5},
-                ],
-                "rationale": "Best paper.",
-            }),
+            "raw_content": json.dumps(
+                {
+                    "selected": [
+                        {"index": 1, "reason": "Novel approach", "novelty": 4, "credibility": 5},
+                    ],
+                    "rationale": "Best paper.",
+                }
+            ),
             "usage": {"total_tokens": 800},
         }
 

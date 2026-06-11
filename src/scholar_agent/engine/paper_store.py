@@ -14,7 +14,10 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Generator
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 logger = logging.getLogger(__name__)
 
@@ -122,9 +125,7 @@ def _normalize_paper(raw: dict[str, Any]) -> dict[str, Any]:
 
     # Citation counts
     p["citation_count"] = raw.get("citation_count") or raw.get("citationCount") or 0
-    p["influential_citation_count"] = (
-        raw.get("influential_citation_count") or raw.get("influentialCitationCount") or 0
-    )
+    p["influential_citation_count"] = raw.get("influential_citation_count") or raw.get("influentialCitationCount") or 0
 
     # Published date
     pd = raw.get("published_date") or raw.get("publicationDate") or raw.get("published") or None
@@ -227,11 +228,19 @@ class PaperStore:
                         url = COALESCE(?, url)
                     WHERE id = ?""",
                     (
-                        p["arxiv_id"], p["s2_id"], p["doi"], p["abstract"],
-                        p["authors"], p["affiliations"], p["categories"],
-                        p["published_date"], p["venue"],
-                        p["citation_count"], p["influential_citation_count"],
-                        p["pdf_url"], p["url"],
+                        p["arxiv_id"],
+                        p["s2_id"],
+                        p["doi"],
+                        p["abstract"],
+                        p["authors"],
+                        p["affiliations"],
+                        p["categories"],
+                        p["published_date"],
+                        p["venue"],
+                        p["citation_count"],
+                        p["influential_citation_count"],
+                        p["pdf_url"],
+                        p["url"],
                         existing_id,
                     ),
                 )
@@ -257,14 +266,29 @@ class PaperStore:
                     url = COALESCE(excluded.url, papers.url)
                 """,
                 (
-                    p["arxiv_id"], p["s2_id"], p["doi"], p["title"], p["abstract"],
-                    p["authors"], p["affiliations"], p["categories"],
-                    p["published_date"], p["venue"], p["source"],
-                    p["citation_count"], p["influential_citation_count"],
-                    p["pdf_url"], p["url"], is_historical, fetched_at,
+                    p["arxiv_id"],
+                    p["s2_id"],
+                    p["doi"],
+                    p["title"],
+                    p["abstract"],
+                    p["authors"],
+                    p["affiliations"],
+                    p["categories"],
+                    p["published_date"],
+                    p["venue"],
+                    p["source"],
+                    p["citation_count"],
+                    p["influential_citation_count"],
+                    p["pdf_url"],
+                    p["url"],
+                    is_historical,
+                    fetched_at,
                 ),
             )
-            return cur.lastrowid
+            row_id = cur.lastrowid
+            if row_id is None:
+                raise RuntimeError("INSERT did not produce a rowid")
+            return row_id
 
     def upsert_papers(self, papers: list[dict[str, Any]]) -> int:
         """Batch upsert in a single transaction. Returns count of papers processed (inserts + updates)."""
@@ -307,11 +331,22 @@ class PaperStore:
         vals: list[Any] = [status]
         for k, v in fields.items():
             if k in (
-                "relevance_score", "best_domain", "domain_keywords",
-                "skip_reason", "llm_review_passed", "llm_review_detail",
-                "llm_novelty", "llm_credibility", "llm_depth", "llm_rigor",
-                "llm_model", "recommendation_score", "recommendation_reason",
-                "recommended_at", "processed_at", "funnel_run_id",
+                "relevance_score",
+                "best_domain",
+                "domain_keywords",
+                "skip_reason",
+                "llm_review_passed",
+                "llm_review_detail",
+                "llm_novelty",
+                "llm_credibility",
+                "llm_depth",
+                "llm_rigor",
+                "llm_model",
+                "recommendation_score",
+                "recommendation_reason",
+                "recommended_at",
+                "processed_at",
+                "funnel_run_id",
             ):
                 sets.append(f"{k} = ?")
                 vals.append(v)
@@ -362,7 +397,10 @@ class PaperStore:
                 "INSERT INTO funnel_runs (run_date, config_snapshot) VALUES (?, ?)",
                 (date, snap_json),
             )
-            return cur.lastrowid
+            row_id = cur.lastrowid
+            if row_id is None:
+                raise RuntimeError("INSERT did not produce a rowid")
+            return row_id
 
     def update_funnel_run(self, run_id: int, **fields: Any) -> None:
         sets: list[str] = []

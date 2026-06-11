@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -17,7 +16,6 @@ from scholar_agent.engine.academic.daily_workflow import (
     get_analyzed_paper_ids,
 )
 from scholar_agent.engine.paper_store import PaperStore
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -103,17 +101,25 @@ def _mock_llm_for_funnel(selected_indices=None):
         {"question": "CONTRIBUTION_GENUINE", "passed": True, "evidence": "novel"},
         {"question": "NO_RED_FLAGS", "passed": True, "evidence": "clean"},
     ]
-    stage3_response = json.dumps({
-        "checks": checks,
-        "novelty": 4, "credibility": 4, "depth": 4, "rigor": 4,
-    })
+    stage3_response = json.dumps(
+        {
+            "checks": checks,
+            "novelty": 4,
+            "credibility": 4,
+            "depth": 4,
+            "rigor": 4,
+        }
+    )
 
-    selected = [{"index": i, "reason": f"Paper {i} is excellent", "priority": j + 1}
-                for j, i in enumerate(selected_indices)]
-    stage4_response = json.dumps({
-        "selected": selected,
-        "rationale": "Selected based on novelty and rigor.",
-    })
+    selected = [
+        {"index": i, "reason": f"Paper {i} is excellent", "priority": j + 1} for j, i in enumerate(selected_indices)
+    ]
+    stage4_response = json.dumps(
+        {
+            "selected": selected,
+            "rationale": "Selected based on novelty and rigor.",
+        }
+    )
 
     def _call(payload):
         user_msg = payload["messages"][-1]["content"]
@@ -128,6 +134,7 @@ def _mock_llm_for_funnel(selected_indices=None):
             "model": "test",
             "usage": {"prompt_tokens": 100, "completion_tokens": 200, "total_tokens": 300},
         }
+
     return _call
 
 
@@ -138,9 +145,7 @@ def _mock_llm_for_funnel(selected_indices=None):
 
 class TestPrecisionRecommendations:
     @patch.dict(os.environ, {"LLM_API_KEY": "test-key"})
-    def test_precision_path_returns_funnel_stats(
-        self, tmp_path, search_config, precision_cfg
-    ) -> None:
+    def test_precision_path_returns_funnel_stats(self, tmp_path, search_config, precision_cfg) -> None:
         mock_papers = [_paper(arxiv_id=f"2501.{i:05d}", title=f"Paper {i}") for i in range(3)]
         paper_notes_dir = str(tmp_path / "notes")
         db_path = tmp_path / "test.db"
@@ -188,7 +193,13 @@ class TestPrecisionNote:
             {**_paper(), "recommendation_reason": "Novel architecture with strong results"},
         ]
         funnel_stats = {
-            "stage_counts": {"input": 10, "stage1_passed": 6, "stage2_passed": 4, "stage3_passed": 2, "stage4_passed": 1},
+            "stage_counts": {
+                "input": 10,
+                "stage1_passed": 6,
+                "stage2_passed": 4,
+                "stage3_passed": 2,
+                "stage4_passed": 1,
+            },
             "llm_calls": 3,
             "llm_tokens": 800,
             "duration_seconds": 5.2,
@@ -347,12 +358,12 @@ class TestPaginatedQuery:
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<feed xmlns="http://www.w3.org/2005/Atom">'
-            '<entry><title>Paper 1</title><id>http://arxiv.org/abs/2501.00001v1</id>'
-            '<summary>Abstract 1</summary><published>2025-01-01T00:00:00Z</published>'
-            '<author><name>Alice</name></author>'
+            "<entry><title>Paper 1</title><id>http://arxiv.org/abs/2501.00001v1</id>"
+            "<summary>Abstract 1</summary><published>2025-01-01T00:00:00Z</published>"
+            "<author><name>Alice</name></author>"
             '<link title="pdf" href="https://arxiv.org/pdf/2501.00001v1" rel="related" type="application/pdf"/>'
             '<category term="cs.AI"/></entry>'
-            '</feed>'
+            "</feed>"
         )
 
         with patch("scholar_agent.engine.academic.arxiv_search._with_retry", return_value=xml):
@@ -369,10 +380,7 @@ class TestPaginatedQuery:
     def test_stops_on_empty_page(self) -> None:
         from scholar_agent.engine.academic.arxiv_search import query_arxiv_paginated
 
-        empty_xml = (
-            '<?xml version="1.0" encoding="UTF-8"?>'
-            '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
-        )
+        empty_xml = '<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>'
 
         with patch("scholar_agent.engine.academic.arxiv_search._with_retry", return_value=empty_xml):
             papers = query_arxiv_paginated(
@@ -400,18 +408,14 @@ class TestPaginatedQuery:
 
         def _make_xml(count, offset):
             entries = "".join(
-                f'<entry><title>Paper {offset + i}</title><id>http://arxiv.org/abs/2501.{offset + i:05d}v1</id>'
-                f'<summary>Abstract {offset + i}</summary><published>2025-01-01T00:00:00Z</published>'
-                f'<author><name>Alice</name></author>'
+                f"<entry><title>Paper {offset + i}</title><id>http://arxiv.org/abs/2501.{offset + i:05d}v1</id>"
+                f"<summary>Abstract {offset + i}</summary><published>2025-01-01T00:00:00Z</published>"
+                f"<author><name>Alice</name></author>"
                 f'<link title="pdf" href="https://arxiv.org/pdf/2501.{offset + i:05d}v1" rel="related" type="application/pdf"/>'
                 f'<category term="cs.AI"/></entry>'
                 for i in range(count)
             )
-            return (
-                '<?xml version="1.0" encoding="UTF-8"?>'
-                '<feed xmlns="http://www.w3.org/2005/Atom">'
-                f'{entries}</feed>'
-            )
+            return f'<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom">{entries}</feed>'
 
         call_count = [0]
 
@@ -423,16 +427,18 @@ class TestPaginatedQuery:
                 return _make_xml(1, 2)  # partial page of 1 → stops
             return _make_xml(0, 0)
 
-        with patch("scholar_agent.engine.academic.arxiv_search._with_retry", side_effect=mock_retry):
-            with patch("scholar_agent.engine.academic.arxiv_search.time.sleep"):
-                papers = query_arxiv_paginated(
-                    categories=["cs.AI"],
-                    from_dt=datetime(2025, 1, 1),
-                    to_dt=datetime(2025, 1, 31),
-                    max_total=200,
-                    page_size=2,
-                    delay_seconds=0.01,
-                )
+        with (
+            patch("scholar_agent.engine.academic.arxiv_search._with_retry", side_effect=mock_retry),
+            patch("scholar_agent.engine.academic.arxiv_search.time.sleep"),
+        ):
+            papers = query_arxiv_paginated(
+                categories=["cs.AI"],
+                from_dt=datetime(2025, 1, 1),
+                to_dt=datetime(2025, 1, 31),
+                max_total=200,
+                page_size=2,
+                delay_seconds=0.01,
+            )
 
         assert len(papers) == 3
         assert call_count[0] == 2  # second page was partial, stops

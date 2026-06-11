@@ -896,9 +896,7 @@ def _run_init(
 def _run_serve_mcp() -> int:
     from scholar_agent import __version__
 
-    sys.stderr.write(
-        f"\nScholar Agent v{__version__} — MCP Server\n\n"
-    )
+    sys.stderr.write(f"\nScholar Agent v{__version__} — MCP Server\n\n")
     sys.stderr.flush()
     return mcp_adapter.main()
 
@@ -907,9 +905,7 @@ def _run_serve_http() -> int:
     from scholar_agent import __version__
     from scholar_agent.server import start_local_server
 
-    sys.stderr.write(
-        f"\nScholar Agent v{__version__} — HTTP Sync Server\n\n"
-    )
+    sys.stderr.write(f"\nScholar Agent v{__version__} — HTTP Sync Server\n\n")
     sys.stderr.flush()
     return start_local_server()
 
@@ -932,6 +928,7 @@ def _run_import_paper(paper_id: str, token: str | None, url: str | None) -> int:
     # Reindex synchronously for short-lived CLI command
     try:
         from scholar_agent.engine.close_knowledge_loop import reindex
+
         knowledge_dir = Path(get_knowledge_dir())
         index_path = Path(config["index_path"])
         reindex(knowledge_dir, index_path)
@@ -956,9 +953,8 @@ def _run_backfill(years: int, categories: str, max_per_month: int, output_format
 
     from scholar_agent.engine.academic.arxiv_search import query_arxiv_paginated
     from scholar_agent.engine.paper_store import PaperStore
-    from scholar_agent.engine.scholar_config import get_paper_db_path, get_research_interests
+    from scholar_agent.engine.scholar_config import get_paper_db_path
 
-    interests = get_research_interests()
     cats = [c.strip() for c in categories.split(",") if c.strip()]
 
     db_path = get_paper_db_path()
@@ -999,11 +995,16 @@ def _run_backfill(years: int, categories: str, max_per_month: int, output_format
             if output_format == "text":
                 sys.stdout.write(f"{len(papers)} fetched, {count} upserted\n")
             else:
-                sys.stdout.write(json.dumps({
-                    "month": f"{year}-{month:02d}",
-                    "fetched": len(papers),
-                    "upserted": count,
-                }) + "\n")
+                sys.stdout.write(
+                    json.dumps(
+                        {
+                            "month": f"{year}-{month:02d}",
+                            "fetched": len(papers),
+                            "upserted": count,
+                        }
+                    )
+                    + "\n"
+                )
             sys.stdout.flush()
     finally:
         counts = store.count_by_status()
