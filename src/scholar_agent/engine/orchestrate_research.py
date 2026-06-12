@@ -126,7 +126,7 @@ def _probe_local_score(query: str, index_path: Path | None = None) -> float | No
         documents = payload.get("documents", [])
         if not documents:
             return None
-        results = retrieve_bm25(query, documents, 1)
+        results = retrieve_bm25(query, documents, 1, index_path=index_path)
         return results[0]["score"] if results else 0.0
     except Exception as exc:
         logger.warning("Local score probe failed: %s", exc)

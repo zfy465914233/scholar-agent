@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from scholar_agent.engine.common import resolve_link_target
+from scholar_agent.engine.common import atomic_write_text, resolve_link_target
 from scholar_agent.engine.knowledge_lifecycle import (
     VALID_TRANSITIONS,
     LifecycleState,
@@ -150,7 +150,7 @@ def cmd_transition(card_id: str, target_state: str, knowledge_root: Path) -> int
     fm_lines.append("---")
 
     new_content = "\n".join(fm_lines) + "\n\n" + body + "\n"
-    card_path.write_text(new_content, encoding="utf-8")
+    atomic_write_text(card_path, new_content, encoding="utf-8")
     print(f"Card '{card_id}' transitioned to '{target.value}'.")
     return 0
 

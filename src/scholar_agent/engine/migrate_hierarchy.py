@@ -15,6 +15,7 @@ import re
 import shutil
 from pathlib import Path
 
+from scholar_agent.engine.common import atomic_write_text
 from scholar_agent.engine.domain_router import clear_folder_cache
 
 OR_CHILDREN = [
@@ -62,7 +63,7 @@ def update_topic_frontmatter(card_path: Path, new_topic: str, dry_run: bool) -> 
         if dry_run:
             print(f"  [frontmatter] {card_path.name}: topic -> {new_topic}")
         else:
-            card_path.write_text(new_raw, encoding="utf-8")
+            atomic_write_text(card_path, new_raw, encoding="utf-8")
 
 
 def migrate(knowledge_root: Path, dry_run: bool) -> None:

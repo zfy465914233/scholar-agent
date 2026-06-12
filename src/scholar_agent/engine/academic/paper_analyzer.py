@@ -13,9 +13,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from urllib.request import Request, urlopen
 
-from scholar_agent.engine.common import sanitize_title
+from scholar_agent.engine.common import atomic_write_text, sanitize_title
+from scholar_agent.engine.llm_client import chat_with_fallback, resolve_providers
 
 logger = logging.getLogger(__name__)
 
@@ -161,64 +161,42 @@ def _get_sections() -> tuple[dict, dict]:
 # ---------------------------------------------------------------------------
 
 
-def _generate_zh_note(
-    paper_id: str,
-    title: str,
-    authors: str,
-    domain: str,
-    date: str,
-    scores: dict[str, float] | None = None,
-    abstract: str = "",
-    arxiv_id: str = "",
-    affiliations: list[str] | None = None,
-    conference: str = "",
-    pdf_url: str = "",
-    related_papers: list[str] | None = None,
-    images: list[dict[str, Any]] | None = None,
-    local_pdf_rel: str = "",
-    math_depth: str = "none",
-) -> str:
-    """Generate Chinese deep-analysis markdown note."""
-    # --- Tags ---
-    domain_tags = {
-        "LLM与Agent": ["LLM", "Agent", "大模型"],
-        "运筹优化与库存规划": ["运筹优化", "库存规划", "供应链"],
-        "LLM": ["LLM", "Large-Language-Model"],
-        "多模态": ["多模态", "Multimodal", "VLM"],
-        "Agent": ["Agent", "Autonomous-Agent"],
-    }
-    tags = ["论文笔记", *domain_tags.get(domain, [domain])]
-    tags_yaml = "\n".join(f"  - {tag}" for tag in tags)
+# ---------------------------------------------------------------------------
+# Localised strings for note generation
+# ---------------------------------------------------------------------------
 
-    score_str = f"{scores.get('recommendation', 0):.1f}/10" if scores else "[SCORE]/10"
-    _rps = related_papers or []
-    related_yaml = "\n" + "\n".join(f'  - "{rp}"' for rp in _rps) if _rps else " []"
-    affil_str = "、".join(affiliations[:3]) if affiliations else "<!-- LLM: 从论文中提取作者机构信息 -->"
-
-    # --- Links ---
-    links = f"[arXiv](https://arxiv.org/abs/{arxiv_id})" if arxiv_id else ""
-    # Prefer local PDF link over online URL
-    if local_pdf_rel:
-        links += f" | [PDF]({local_pdf_rel})" if links else f"[PDF]({local_pdf_rel})"
-    elif pdf_url:
-        links += f" | [PDF]({pdf_url})" if links else f"[PDF]({pdf_url})"
-    elif arxiv_id:
-        links += f" | [PDF](https://arxiv.org/pdf/{arxiv_id})"
-    if not links:
-        links = "<!-- LLM: 补充论文链接 -->"
-
-    # --- Image refs ---
-    framework_imgs = _format_image_refs(images, "framework")
-    results_imgs = _format_image_refs(images, "results")
-
-    # --- Math instructions based on depth ---
-    if math_depth == "heavy":
-        math_instruction_core = (
+_STRINGS: dict[str, dict[str, str]] = {
+    "zh": {
+        "default_tag": "论文笔记",
+        "core_heading": "## 核心信息",
+        "label_paper_id": "**论文ID**",
+        "label_authors": "**作者**",
+        "label_affiliation": "**机构**",
+        "label_pub_date": "**发布时间**",
+        "label_conference": "**会议/期刊**",
+        "label_domain": "**领域**",
+        "label_score": "**评分**",
+        "label_links": "**链接**",
+        "affiliation_joiner": "、",
+        "affiliation_placeholder": "<!-- LLM: 从论文中提取作者机构信息 -->",
+        "links_placeholder": "<!-- LLM: 补充论文链接 -->",
+        "conference_placeholder": "<!-- LLM: 从 categories 或论文信息推断 -->",
+        "abstract_placeholder": "<!-- LLM: 请从论文中提取英文摘要 -->",
+        "abstract_template_key": "abstract_translation",
+        "notes_heading": "## 我的笔记",
+        "notes_comment": "<!-- 在此记录个人想法、灵感、与自己研究的关联 -->",
+        "related_heading": "## 相关论文",
+        "related_placeholder": "<!-- LLM: 根据研究主题，链接知识库中的相关论文笔记 -->",
+        "resources_heading": "## 外部资源",
+        "local_pdf_label": "本地PDF",
+        "resources_placeholder": "<!-- LLM: 补充代码仓库、数据集、项目主页等链接 -->",
+        # Math instructions (3 levels x core/details)
+        "math_heavy_core": (
             "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新。"
             "在通俗解释之后，**必须**给出核心数学公式的直觉解释，"
             "用 $...$ 行内 LaTeX 引用关键符号。不要跳过数学本质。 -->"
-        )
-        math_instruction_details = (
+        ),
+        "math_heavy_details": (
             "<!-- LLM: 对每个核心模块分别描述：\n"
             "#### 模块1：[名称]\n"
             "- **功能**：[该模块的作用]\n"
@@ -236,12 +214,12 @@ def _generate_zh_note(
             "| $\\alpha$ | 学习率 | $\\alpha > 0$ |\n"
             "| ... | ... | ... |\n"
             "-->"
-        )
-    elif math_depth == "light":
-        math_instruction_core = (
-            "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新，在关键处用 $...$ 行内 LaTeX 标注核心公式 -->"
-        )
-        math_instruction_details = (
+        ),
+        "math_light_core": (
+            "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新，"
+            "在关键处用 $...$ 行内 LaTeX 标注核心公式 -->"
+        ),
+        "math_light_details": (
             "<!-- LLM: 对每个核心模块分别描述：\n"
             "#### 模块1：[名称]\n"
             "- **功能**：[该模块的作用]\n"
@@ -251,10 +229,9 @@ def _generate_zh_note(
             "#### 模块2：[名称]\n"
             "...（以此类推）\n"
             "-->"
-        )
-    else:
-        math_instruction_core = "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新 -->"
-        math_instruction_details = (
+        ),
+        "math_none_core": "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新 -->",
+        "math_none_details": (
             "<!-- LLM: 对每个核心模块分别描述：\n"
             "#### 模块1：[名称]\n"
             "- **功能**：[该模块的作用]\n"
@@ -263,162 +240,39 @@ def _generate_zh_note(
             "#### 模块2：[名称]\n"
             "...（以此类推）\n"
             "-->"
-        )
-
-    # --- Build note ---
-    parts: list[str] = []
-
-    # Frontmatter — reordered and added new fields
-    parts.append(f'''---
-title: "{_yaml_escape(title)}"
-paper_id: "{paper_id}"
-authors: "{_yaml_escape(authors)}"
-domain: "{domain}"
-date: "{date}"
-status: skeleton
-math_depth: "{math_depth}"
-tags:
-{tags_yaml}
-related_papers:{related_yaml}
-quality_score: "{score_str}"
-created: "{date}"
-updated: "{date}"
----''')
-
-    # Title
-    parts.append(f"\n# {title}\n")
-
-    # Core info
-    parts.append(f"""\
-## 核心信息
-- **论文ID**：{paper_id}
-- **作者**：{authors}
-- **机构**：{affil_str}
-- **发布时间**：{date}
-- **会议/期刊**：{conference or "<!-- LLM: 从 categories 或论文信息推断 -->"}
-- **领域**：{domain}
-- **评分**：{score_str}
-- **链接**：{links}
-""")
-
-    # Template sections
-    zh, _ = _get_sections()
-    parts.append(
-        zh["abstract_translation"].format(
-            abstract=abstract or "<!-- LLM: 请从论文中提取英文摘要 -->",
-        )
-    )
-    parts.append(zh["background"])
-    parts.append(zh["research_questions"])
-    parts.append(
-        zh["method"].format(
-            framework_images=framework_imgs + "\n" if framework_imgs else "",
-            math_instruction_core=math_instruction_core,
-            math_instruction_details=math_instruction_details,
-        )
-    )
-    parts.append(
-        zh["experiments"].format(
-            results_images=results_imgs + "\n" if results_imgs else "",
-        )
-    )
-    parts.append(zh["analysis"].format(domain=domain))
-    parts.append(zh["comparison"])
-    parts.append(zh["roadmap"])
-    parts.append(zh["future_work"])
-    parts.append(zh["evaluation"])
-
-    # Personal notes
-    parts.append("""\
-## 我的笔记
-
-<!-- 在此记录个人想法、灵感、与自己研究的关联 -->
-
-""")
-
-    # Related papers (wikilinks)
-    related_section = "## 相关论文\n\n"
-    if related_papers:
-        for rp in related_papers[:5]:
-            related_section += f"- [[{rp}]]\n"
-    else:
-        related_section += "<!-- LLM: 根据研究主题，链接知识库中的相关论文笔记 -->\n"
-    parts.append(related_section)
-
-    # External resources
-    ext_lines = "\n## 外部资源\n\n"
-    if arxiv_id:
-        ext_lines += f"- [arXiv](https://arxiv.org/abs/{arxiv_id})\n"
-    if local_pdf_rel:
-        ext_lines += f"- [本地PDF]({local_pdf_rel})\n"
-    elif arxiv_id:
-        ext_lines += f"- [PDF](https://arxiv.org/pdf/{arxiv_id})\n"
-    ext_lines += "<!-- LLM: 补充代码仓库、数据集、项目主页等链接 -->\n"
-    parts.append(ext_lines)
-
-    return "\n".join(parts)
-
-
-def _generate_en_note(
-    paper_id: str,
-    title: str,
-    authors: str,
-    domain: str,
-    date: str,
-    scores: dict[str, float] | None = None,
-    abstract: str = "",
-    arxiv_id: str = "",
-    affiliations: list[str] | None = None,
-    conference: str = "",
-    pdf_url: str = "",
-    related_papers: list[str] | None = None,
-    images: list[dict[str, Any]] | None = None,
-    local_pdf_rel: str = "",
-    math_depth: str = "none",
-) -> str:
-    """Generate English deep-analysis markdown note."""
-    # --- Tags ---
-    domain_tags = {
-        "LLM & Agents": ["LLM", "Autonomous-Agent"],
-        "LLM": ["LLM", "Large-Language-Model"],
-        "Multimodal": ["Multimodal", "VLM"],
-        "Agent": ["Agent", "Agentic-System"],
-    }
-    tags = ["paper-notes", *domain_tags.get(domain, [domain])]
-    tags_yaml = "\n".join(f"  - {tag}" for tag in tags)
-
-    score_str = f"{scores.get('recommendation', 0):.1f}/10" if scores else "[SCORE]/10"
-    _rps = related_papers or []
-    related_yaml = "\n" + "\n".join(f'  - "{rp}"' for rp in _rps) if _rps else " []"
-    affil_str = (
-        ", ".join(affiliations[:3]) if affiliations else "<!-- LLM: Extract author affiliations from the paper -->"
-    )
-
-    # --- Links ---
-    links = f"[arXiv](https://arxiv.org/abs/{arxiv_id})" if arxiv_id else ""
-    # Prefer local PDF link over online URL
-    if local_pdf_rel:
-        links += f" | [PDF]({local_pdf_rel})" if links else f"[PDF]({local_pdf_rel})"
-    elif pdf_url:
-        links += f" | [PDF]({pdf_url})" if links else f"[PDF]({pdf_url})"
-    elif arxiv_id:
-        links += f" | [PDF](https://arxiv.org/pdf/{arxiv_id})"
-    if not links:
-        links = "<!-- LLM: Add paper links -->"
-
-    # --- Image refs ---
-    framework_imgs = _format_image_refs(images, "framework")
-    results_imgs = _format_image_refs(images, "results")
-
-    # --- Math instructions based on depth ---
-    if math_depth == "heavy":
-        math_instruction_core = (
+        ),
+    },
+    "en": {
+        "default_tag": "paper-notes",
+        "core_heading": "## Core Information",
+        "label_paper_id": "**Paper ID**",
+        "label_authors": "**Authors**",
+        "label_affiliation": "**Affiliation**",
+        "label_pub_date": "**Publication Date**",
+        "label_conference": "**Conference/Journal**",
+        "label_domain": "**Domain**",
+        "label_score": "**Score**",
+        "label_links": "**Links**",
+        "affiliation_joiner": ", ",
+        "affiliation_placeholder": "<!-- LLM: Extract author affiliations from the paper -->",
+        "links_placeholder": "<!-- LLM: Add paper links -->",
+        "conference_placeholder": "<!-- LLM: Infer from categories or paper info -->",
+        "abstract_placeholder": "<!-- LLM: Extract the abstract from the paper -->",
+        "abstract_template_key": "abstract_analysis",
+        "notes_heading": "## My Notes",
+        "notes_comment": "<!-- Record personal thoughts, insights, connections to your own research -->",
+        "related_heading": "## Related Papers",
+        "related_placeholder": "<!-- LLM: Link to related paper notes in the knowledge base -->",
+        "resources_heading": "## External Resources",
+        "local_pdf_label": "Local PDF",
+        "resources_placeholder": "<!-- LLM: Add code repo, dataset, project page links -->",
+        "math_heavy_core": (
             "<!-- LLM: Explain the core innovation in plain language (1-2 paragraphs). "
             "After the intuitive explanation, you MUST provide the intuition behind "
             "the core mathematical formulas, using $...$ inline LaTeX for key symbols. "
             "Do not skip the mathematical essence. -->"
-        )
-        math_instruction_details = (
+        ),
+        "math_heavy_details": (
             "<!-- LLM: For each core module:\n"
             "#### Module 1: [Name]\n"
             "- **Function**: [what it does]\n"
@@ -436,13 +290,12 @@ def _generate_en_note(
             "| $\\alpha$ | Learning rate | $\\alpha > 0$ |\n"
             "| ... | ... | ... |\n"
             "-->"
-        )
-    elif math_depth == "light":
-        math_instruction_core = (
+        ),
+        "math_light_core": (
             "<!-- LLM: Explain the core innovation in plain language (1-2 paragraphs), "
             "annotating key formulas with $...$ inline LaTeX where appropriate -->"
-        )
-        math_instruction_details = (
+        ),
+        "math_light_details": (
             "<!-- LLM: For each core module:\n"
             "#### Module 1: [Name]\n"
             "- **Function**: [what it does]\n"
@@ -452,10 +305,9 @@ def _generate_en_note(
             "#### Module 2: [Name]\n"
             "...(and so on)\n"
             "-->"
-        )
-    else:
-        math_instruction_core = "<!-- LLM: Explain the core innovation in plain language (1-2 paragraphs) -->"
-        math_instruction_details = (
+        ),
+        "math_none_core": "<!-- LLM: Explain the core innovation in plain language (1-2 paragraphs) -->",
+        "math_none_details": (
             "<!-- LLM: For each core module:\n"
             "#### Module 1: [Name]\n"
             "- **Function**: [what it does]\n"
@@ -464,12 +316,82 @@ def _generate_en_note(
             "#### Module 2: [Name]\n"
             "...(and so on)\n"
             "-->"
-        )
+        ),
+    },
+}
+
+# Unified domain→tags covering both zh and en domain names
+_DOMAIN_TAGS: dict[str, list[str]] = {
+    "LLM与Agent": ["LLM", "Agent", "大模型"],
+    "LLM & Agents": ["LLM", "Autonomous-Agent"],
+    "LLM": ["LLM", "Large-Language-Model"],
+    "多模态": ["多模态", "Multimodal", "VLM"],
+    "Multimodal": ["Multimodal", "VLM"],
+    "Agent": ["Agent", "Autonomous-Agent"],
+    "运筹优化与库存规划": ["运筹优化", "库存规划", "供应链"],
+}
+
+
+# ---------------------------------------------------------------------------
+# Note generator (unified)
+# ---------------------------------------------------------------------------
+
+
+def _generate_note_body(
+    paper_id: str,
+    title: str,
+    authors: str,
+    domain: str,
+    date: str,
+    scores: dict[str, float] | None = None,
+    abstract: str = "",
+    arxiv_id: str = "",
+    affiliations: list[str] | None = None,
+    conference: str = "",
+    pdf_url: str = "",
+    related_papers: list[str] | None = None,
+    images: list[dict[str, Any]] | None = None,
+    local_pdf_rel: str = "",
+    math_depth: str = "none",
+    language: str = "zh",
+) -> str:
+    """Generate a deep-analysis markdown note (Chinese or English)."""
+    s = _STRINGS[language]
+
+    # --- Tags ---
+    tags = [s["default_tag"], *_DOMAIN_TAGS.get(domain, [domain])]
+    tags_yaml = "\n".join(f"  - {tag}" for tag in tags)
+
+    score_str = f"{scores.get('recommendation', 0):.1f}/10" if scores else "[SCORE]/10"
+    _rps = related_papers or []
+    related_yaml = "\n" + "\n".join(f'  - "{rp}"' for rp in _rps) if _rps else " []"
+    affil_str = (
+        s["affiliation_joiner"].join(affiliations[:3]) if affiliations else s["affiliation_placeholder"]
+    )
+
+    # --- Links ---
+    links = f"[arXiv](https://arxiv.org/abs/{arxiv_id})" if arxiv_id else ""
+    if local_pdf_rel:
+        links += f" | [PDF]({local_pdf_rel})" if links else f"[PDF]({local_pdf_rel})"
+    elif pdf_url:
+        links += f" | [PDF]({pdf_url})" if links else f"[PDF]({pdf_url})"
+    elif arxiv_id:
+        links += f" | [PDF](https://arxiv.org/pdf/{arxiv_id})"
+    if not links:
+        links = s["links_placeholder"]
+
+    # --- Image refs ---
+    framework_imgs = _format_image_refs(images, "framework")
+    results_imgs = _format_image_refs(images, "results")
+
+    # --- Math instructions ---
+    math_instruction_core = s[f"math_{math_depth}_core"]
+    math_instruction_details = s[f"math_{math_depth}_details"]
 
     # --- Build note ---
     parts: list[str] = []
 
-    # Frontmatter — reordered and added new fields
+    # Frontmatter
     parts.append(f'''---
 title: "{_yaml_escape(title)}"
 paper_id: "{paper_id}"
@@ -491,70 +413,72 @@ updated: "{date}"
 
     # Core info
     parts.append(f"""\
-## Core Information
-- **Paper ID**: {paper_id}
-- **Authors**: {authors}
-- **Affiliation**: {affil_str}
-- **Publication Date**: {date}
-- **Conference/Journal**: {conference or "<!-- LLM: Infer from categories or paper info -->"}
-- **Domain**: {domain}
-- **Score**: {score_str}
-- **Links**: {links}
+{s['core_heading']}
+- {s['label_paper_id']}：{paper_id}
+- {s['label_authors']}：{authors}
+- {s['label_affiliation']}：{affil_str}
+- {s['label_pub_date']}：{date}
+- {s['label_conference']}：{conference or s['conference_placeholder']}
+- {s['label_domain']}：{domain}
+- {s['label_score']}：{score_str}
+- {s['label_links']}：{links}
 """)
 
     # Template sections
-    _, en = _get_sections()
+    zh_sect, en_sect = _get_sections()
+    sections = zh_sect if language == "zh" else en_sect
+    abstract_key = s["abstract_template_key"]
     parts.append(
-        en["abstract_analysis"].format(
-            abstract=abstract or "<!-- LLM: Extract the abstract from the paper -->",
+        sections[abstract_key].format(
+            abstract=abstract or s["abstract_placeholder"],
         )
     )
-    parts.append(en["background"])
-    parts.append(en["research_questions"])
+    parts.append(sections["background"])
+    parts.append(sections["research_questions"])
     parts.append(
-        en["method"].format(
+        sections["method"].format(
             framework_images=framework_imgs + "\n" if framework_imgs else "",
             math_instruction_core=math_instruction_core,
             math_instruction_details=math_instruction_details,
         )
     )
     parts.append(
-        en["experiments"].format(
+        sections["experiments"].format(
             results_images=results_imgs + "\n" if results_imgs else "",
         )
     )
-    parts.append(en["analysis"].format(domain=domain))
-    parts.append(en["comparison"])
-    parts.append(en["roadmap"])
-    parts.append(en["future_work"])
-    parts.append(en["evaluation"])
+    parts.append(sections["analysis"].format(domain=domain))
+    parts.append(sections["comparison"])
+    parts.append(sections["roadmap"])
+    parts.append(sections["future_work"])
+    parts.append(sections["evaluation"])
 
     # Personal notes
-    parts.append("""\
-## My Notes
+    parts.append(f"""\
+{s['notes_heading']}
 
-<!-- Record personal thoughts, insights, connections to your own research -->
+{s['notes_comment']}
 
 """)
 
     # Related papers (wikilinks)
-    related_section = "## Related Papers\n\n"
+    related_section = f"{s['related_heading']}\n\n"
     if related_papers:
         for rp in related_papers[:5]:
             related_section += f"- [[{rp}]]\n"
     else:
-        related_section += "<!-- LLM: Link to related paper notes in the knowledge base -->\n"
+        related_section += f"{s['related_placeholder']}\n"
     parts.append(related_section)
 
     # External resources
-    ext_lines = "\n## External Resources\n\n"
+    ext_lines = f"\n{s['resources_heading']}\n\n"
     if arxiv_id:
         ext_lines += f"- [arXiv](https://arxiv.org/abs/{arxiv_id})\n"
     if local_pdf_rel:
-        ext_lines += f"- [Local PDF]({local_pdf_rel})\n"
+        ext_lines += f"- [{s['local_pdf_label']}]({local_pdf_rel})\n"
     elif arxiv_id:
         ext_lines += f"- [PDF](https://arxiv.org/pdf/{arxiv_id})\n"
-    ext_lines += "<!-- LLM: Add code repo, dataset, project page links -->\n"
+    ext_lines += f"{s['resources_placeholder']}\n"
     parts.append(ext_lines)
 
     return "\n".join(parts)
@@ -633,42 +557,24 @@ def generate_note(
     paper_abstract = abstract or ""
     math_depth = detect_math_depth(paper_abstract, domain)
 
-    if language == "zh":
-        content = _generate_zh_note(
-            paper_id,
-            title,
-            authors,
-            domain,
-            date,
-            scores,
-            abstract,
-            arxiv_id,
-            affiliations,
-            conference,
-            pdf_url,
-            related,
-            images,
-            local_pdf_rel=local_pdf_rel,
-            math_depth=math_depth,
-        )
-    else:
-        content = _generate_en_note(
-            paper_id,
-            title,
-            authors,
-            domain,
-            date,
-            scores,
-            abstract,
-            arxiv_id,
-            affiliations,
-            conference,
-            pdf_url,
-            related,
-            images,
-            local_pdf_rel=local_pdf_rel,
-            math_depth=math_depth,
-        )
+    content = _generate_note_body(
+        paper_id,
+        title,
+        authors,
+        domain,
+        date,
+        scores,
+        abstract,
+        arxiv_id,
+        affiliations,
+        conference,
+        pdf_url,
+        related,
+        images,
+        local_pdf_rel=local_pdf_rel,
+        math_depth=math_depth,
+        language=language,
+    )
 
     filename = title_to_filename(title)
     # Sanitize domain for directory name
@@ -678,8 +584,7 @@ def generate_note(
     os.makedirs(note_dir, exist_ok=True)
     note_path = os.path.join(note_dir, f"{filename}.md")
 
-    with open(note_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    atomic_write_text(Path(note_path), content)
 
     logger.info("Generated note: %s", note_path)
     return note_path
@@ -761,200 +666,10 @@ Rules:
 7. Output the COMPLETE note with all placeholders filled. Do NOT truncate."""
 
 
-def _resolve_providers() -> list[tuple[str, str, str, str]]:
-    """Resolve ordered list of LLM providers to try.
-
-    Each provider is a (format, url, key, model) tuple.  Providers are
-    tried in priority order; the first successful call wins.
-
-    Priority:
-      1. Explicit SCHOLAR_FILLER_* env vars (user-chosen override)
-      2. Anthropic credentials (ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY)
-      3. OpenAI-compatible credentials (SCHOLAR_ROUTER_*, LLM_*, GITHUB_TOKEN)
-
-    Deduplication: same (format, url) pair is only tried once.
-    """
-    providers: list[tuple[str, str, str, str]] = []
-    seen: set[tuple[str, str]] = set()
-
-    def _add(fmt: str, url: str, key: str, model: str) -> None:
-        signature = (fmt, url.rstrip("/"))
-        if signature not in seen and key:
-            seen.add(signature)
-            providers.append((fmt, url, key, model))
-
-    # --- Priority 1: Explicit SCHOLAR_FILLER_* override ---
-    # Only activate if user has explicitly configured at least FORMAT or URL.
-    # Otherwise we'd shadow Priority 2/3 with an incomplete config.
-    filler_explicit = bool(os.getenv("SCHOLAR_FILLER_API_FORMAT") or os.getenv("SCHOLAR_FILLER_API_URL"))
-    if filler_explicit:
-        filler_key = (
-            os.getenv("SCHOLAR_FILLER_API_KEY")
-            or os.getenv("ANTHROPIC_AUTH_TOKEN")
-            or os.getenv("ANTHROPIC_API_KEY")
-            or ""
-        )
-        if filler_key:
-            filler_fmt = os.getenv("SCHOLAR_FILLER_API_FORMAT", "").lower()
-            if filler_fmt not in ("anthropic", "openai"):
-                filler_fmt = "openai"  # safe default
-            filler_url = os.getenv("SCHOLAR_FILLER_API_URL", "")
-            if not filler_url:
-                filler_url = (
-                    os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-                    if filler_fmt == "anthropic"
-                    else "https://api.openai.com/v1"
-                )
-            filler_model = os.getenv("SCHOLAR_FILLER_MODEL", "")
-            if not filler_model:
-                filler_model = (
-                    os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
-                    if filler_fmt == "anthropic"
-                    else "gpt-4o-mini"
-                )
-            _add(filler_fmt, filler_url, filler_key, filler_model)
-
-    # --- Priority 2: Anthropic credentials ---
-    anth_key = os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY")
-    if anth_key:
-        anth_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
-        anth_model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
-        _add("anthropic", anth_url, anth_key, anth_model)
-
-    # --- Priority 3: OpenAI-compatible credentials ---
-    oai_key = (
-        os.getenv("SCHOLAR_ROUTER_API_KEY")
-        or os.getenv("LLM_API_KEY")
-        or os.getenv("OPENAI_API_KEY")
-        or os.getenv("GITHUB_TOKEN")
-        or ""
-    )
-    if oai_key:
-        oai_url = (
-            os.getenv("SCHOLAR_ROUTER_API_URL")
-            or os.getenv("LLM_API_URL")
-            or os.getenv("OPENAI_BASE_URL")
-            or "https://api.openai.com/v1"
-        )
-        oai_model = os.getenv("SCHOLAR_ROUTER_MODEL") or os.getenv("LLM_MODEL") or "gpt-4o-mini"
-        _add("openai", oai_url, oai_key, oai_model)
-
-    return providers
-
-
-def _call_llm_anthropic(api_url: str, api_key: str, model: str, system_prompt: str, user_prompt: str) -> str:
-    """Call Anthropic /messages endpoint. Returns assistant text."""
-    import json as _json
-
-    # Avoid double-appending /messages
-    base = api_url.rstrip("/")
-    if base.endswith("/messages"):
-        url = base
-    elif base.endswith("/v1"):
-        url = base + "/messages"
-    else:
-        url = base + "/v1/messages"
-    payload = {
-        "model": model,
-        "max_tokens": 8192,
-        "system": system_prompt,
-        "messages": [{"role": "user", "content": user_prompt}],
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-    }
-    req = Request(url, data=_json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-    with urlopen(req, timeout=300) as response:
-        data = _json.loads(response.read().decode("utf-8"))
-
-    # Handle API error responses
-    if "error" in data:
-        err = data["error"]
-        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-        raise RuntimeError(f"Anthropic API error: {msg}")
-
-    # Handle missing content field
-    if "content" not in data:
-        logger.error("Unexpected Anthropic response (no 'content' key): %s", _json.dumps(data)[:500])
-        # Try common proxy wrapper fields
-        for alt_key in ("output", "text", "response", "result"):
-            if alt_key in data:
-                val = data[alt_key]
-                if isinstance(val, str):
-                    return val.strip()
-                if isinstance(val, list):
-                    for item in val:
-                        if isinstance(item, dict) and item.get("type") == "text":
-                            return str(item["text"]).strip()
-                        if isinstance(item, str):
-                            return item.strip()
-        raise KeyError(
-            f"Anthropic response missing 'content' key. "
-            f"Available keys: {list(data.keys())}. "
-            f"Response preview: {_json.dumps(data)[:200]}"
-        )
-
-    # Find the first text block (content may start with thinking blocks)
-    for block in data["content"]:
-        if block.get("type") == "text":
-            return str(block["text"]).strip()
-    raise KeyError("No text block in Anthropic response")
-
-
-def _call_llm_openai(api_url: str, api_key: str, model: str, system_prompt: str, user_prompt: str) -> str:
-    """Call OpenAI-compatible /chat/completions endpoint. Returns assistant text."""
-    import json as _json
-
-    # Avoid double-appending /chat/completions
-    base = api_url.rstrip("/")
-    url = base if base.endswith("/chat/completions") else base + "/chat/completions"
-
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "temperature": 0.3,
-        "max_tokens": 8192,
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
-    req = Request(url, data=_json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-    with urlopen(req, timeout=120) as response:
-        data = _json.loads(response.read().decode("utf-8"))
-
-    # Handle API error responses
-    if "error" in data:
-        err = data["error"]
-        msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
-        raise RuntimeError(f"OpenAI API error: {msg}")
-
-    if "choices" not in data or not data["choices"]:
-        logger.error("Unexpected OpenAI response (no 'choices'): %s", _json.dumps(data)[:500])
-        raise KeyError(
-            f"OpenAI response has no choices. "
-            f"Available keys: {list(data.keys())}. "
-            f"Response preview: {_json.dumps(data)[:200]}"
-        )
-
-    return str(data["choices"][0]["message"]["content"]).strip()
-
-
 def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
     """Fill <!-- LLM: --> placeholders in a note using PDF text via LLM.
 
-    Automatically discovers available LLM providers from environment
-    variables and tries them in priority order until one succeeds.
-
-    Provider priority:
-      1. SCHOLAR_FILLER_* explicit override
-      2. ANTHROPIC_* credentials
-      3. OpenAI-compatible credentials
+    Uses the unified LLM client with automatic provider fallback.
 
     Args:
         note_path: Path to the generated markdown note.
@@ -968,7 +683,7 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
     if placeholder_count == 0:
         return {"status": "skipped", "reason": "No placeholders to fill", "placeholders_filled": 0}
 
-    providers = _resolve_providers()
+    providers = resolve_providers()
     if not providers:
         return {"status": "skipped", "reason": "No API key configured", "placeholders_filled": 0}
 
@@ -983,26 +698,18 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
         f"Now fill ALL <!-- LLM: --> placeholders in this note:\n\n{content}"
     )
 
-    # Try each provider in priority order
-    filled_content = None
-    used_provider = None
-    last_error = None
+    messages = [
+        {"role": "system", "content": _FILL_SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
 
-    for fmt, api_url, key, model in providers:
-        try:
-            logger.info("Trying LLM fill: %s @ %s (model=%s)", fmt, api_url, model)
-            call = _call_llm_anthropic if fmt == "anthropic" else _call_llm_openai
-            filled_content = call(api_url, key, model, _FILL_SYSTEM_PROMPT, user_prompt)
-            used_provider = (fmt, api_url, model)
-            break
-        except Exception as exc:
-            last_error = exc
-            logger.warning("LLM fill failed (%s @ %s): %s", fmt, api_url, exc)
-            continue
-
-    if filled_content is None:
-        reason = str(last_error) if last_error else "All providers failed"
-        return {"status": "error", "reason": reason, "placeholders_filled": 0}
+    try:
+        resp = chat_with_fallback(messages, providers=providers, max_tokens=8192, temperature=0.3)
+        filled_content = resp.content
+        used_model = resp.model
+        used_format = resp.provider_format
+    except Exception as exc:
+        return {"status": "error", "reason": str(exc), "placeholders_filled": 0}
 
     # Remove markdown code fences if the LLM wrapped its output
     if filled_content.startswith("```markdown\n"):
@@ -1018,14 +725,12 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
     # Update frontmatter status
     filled_content = filled_content.replace("status: skeleton", "status: filled", 1)
 
-    Path(note_path).write_text(filled_content, encoding="utf-8")
+    atomic_write_text(Path(note_path), filled_content)
 
-    if used_provider is None:
-        return {"status": "error", "reason": "All LLM providers failed"}
     return {
         "status": "ok",
         "placeholders_filled": filled_count,
         "placeholders_remaining": remaining,
-        "model_used": used_provider[2],
-        "api_format": used_provider[0],
+        "model_used": used_model,
+        "api_format": used_format,
     }

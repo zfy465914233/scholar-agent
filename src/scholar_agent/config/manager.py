@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from scholar_agent.config.loader import resolve_config
 from scholar_agent.config.paths import build_default_config, get_user_config_path, get_user_home
+from scholar_agent.engine.common import atomic_write_text
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -60,7 +61,7 @@ def initialize_user_home(
     if write_config and (force or not user_config_path.exists()):
         user_config_path.parent.mkdir(parents=True, exist_ok=True)
         payload = build_default_config(env=env)
-        user_config_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_text(user_config_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         wrote_config = True
 
     return {
@@ -107,7 +108,7 @@ def migrate_to_user_home(
 
     if not dry_run:
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(json.dumps(resolution.config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_text(target_path, json.dumps(resolution.config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     return {
         "status": "planned" if dry_run else "ok",

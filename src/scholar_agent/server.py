@@ -324,7 +324,7 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
             **domain_kw,
         )
     except Exception as e:
-        return json.dumps({"error": f"Failed to write card: {type(e).__name__}"})
+        return json.dumps({"error": f"Failed to write card: {e}"})
 
     index_path = get_index_path()
     _mark_index_stale(index_path)
@@ -465,7 +465,7 @@ def capture_answer(query: str, answer: str, tags: str = "", language: str = "zh"
     try:
         card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir(), index_path=get_index_path())
     except Exception as e:
-        return json.dumps({"error": f"Failed to write card: {type(e).__name__}"})
+        return json.dumps({"error": f"Failed to write card: {e}"})
 
     index_path = get_index_path()
     _mark_index_stale(index_path)
@@ -545,7 +545,7 @@ def ingest_source(source: str, title: str = "", tags: str = "", language: str = 
             auto_title, answer_data, None, get_knowledge_dir(), index_path=get_index_path()
         )
     except Exception as e:
-        return json.dumps({"error": f"Failed to write card: {type(e).__name__}"})
+        return json.dumps({"error": f"Failed to write card: {e}"})
 
     index_path = get_index_path()
     _mark_index_stale(index_path)
@@ -963,7 +963,7 @@ if SCHOLAR_ACADEMIC:
                 )
             except Exception as e:
                 logger.exception("analyze_paper failed")
-                return json.dumps({"error": f"Failed to generate note: {type(e).__name__}"})
+                return json.dumps({"error": f"Failed to generate note: {e}"})
 
             # Extract full text from local PDF if available
             pdf_text = ""
@@ -1187,7 +1187,7 @@ if SCHOLAR_ACADEMIC:
                 images = _extract(pid, out_dir, pdf or None)
             except Exception as e:
                 logger.exception("extract_paper_images failed")
-                return json.dumps({"error": str(type(e).__name__), "images": [], "count": 0})
+                return json.dumps({"error": str(e), "images": [], "count": 0})
 
             result: dict[str, object] = {
                 "status": "ok",
@@ -1257,6 +1257,17 @@ if SCHOLAR_ACADEMIC:
                     "confidence": "high" if rec >= 7 else "medium",
                 }
             )
+            # Preserve individual scoring dimensions
+            for dim in ("fit", "freshness", "impact", "rigor"):
+                val = scores.get(dim)
+                if val is not None:
+                    claims.append(
+                        {
+                            "claim": f"{dim.capitalize()} score: {val:.2f}",
+                            "evidence_ids": [],
+                            "confidence": "medium",
+                        }
+                    )
         if domain:
             claims.append(
                 {
@@ -1290,7 +1301,7 @@ if SCHOLAR_ACADEMIC:
                 index_path=get_index_path(),
             )
         except Exception as e:
-            return json.dumps({"error": f"Failed to write card: {type(e).__name__}"})
+            return json.dumps({"error": f"Failed to write card: {e}"})
 
         _mark_index_stale(get_index_path())
 
@@ -1522,7 +1533,7 @@ if SCHOLAR_ACADEMIC:
         try:
             keyword_index = build_keyword_index(str(notes_path))
         except Exception as e:
-            return json.dumps({"error": f"Failed to scan keywords: {type(e).__name__}"})
+            return json.dumps({"error": f"Failed to scan keywords: {e}"})
 
         if not keyword_index:
             return json.dumps(
@@ -1821,7 +1832,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
 
 def start_local_server() -> int:
     """Start the HTTP sync server. Returns 0 on success, 1 on failure."""
-    port = 8374
+    port = int(os.environ.get("SCHOLAR_PORT", "8374"))
     try:
         server = HTTPServer(("127.0.0.1", port), ScholarAgentLocalServer)
         logger.info("Scholar Agent Local Sync Server listening on http://127.0.0.1:%d", port)

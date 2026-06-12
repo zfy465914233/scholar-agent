@@ -6,7 +6,7 @@ import argparse
 import re
 from pathlib import Path
 
-from scholar_agent.engine.common import safe_slug
+from scholar_agent.engine.common import atomic_write_text, safe_slug
 from scholar_agent.engine.domain_router import infer_domain as _infer_domain
 
 
@@ -121,7 +121,8 @@ def main() -> int:
     output_dir = args.knowledge_root / folder
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"candidate-{safe_slug(query)}.md"
-    output_path.write_text(
+    atomic_write_text(
+        output_path,
         build_candidate_markdown(query, card_type, citation_ids, direct_support),
         encoding="utf-8",
     )

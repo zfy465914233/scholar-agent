@@ -22,6 +22,8 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
+from scholar_agent.engine.common import atomic_write_text
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -34,6 +36,8 @@ from scholar_agent.engine.scholar_config import (
 
 logger = logging.getLogger(__name__)
 
+_last_reindex_time: float = 0.0
+_reindex_interval: float = 60.0  # minimum seconds between background rebuilds
 
 # ── Stale marker helpers ────────────────────────────────────────────
 
@@ -46,7 +50,7 @@ def mark_stale(index_path: Path) -> None:
     """Signal that the index is out-of-date and should be rebuilt."""
     marker = _stale_marker_path(index_path)
     marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text("stale\n", encoding="utf-8")
+    atomic_write_text(marker, "stale\n", encoding="utf-8")
 
 
 def _clear_stale(index_path: Path) -> None:
@@ -113,9 +117,22 @@ def _do_reindex(knowledge_root: Path, index_path: Path) -> bool:
 
 
 def async_reindex(index_path: Path) -> None:
-    """Mark index stale and trigger a non-blocking rebuild in a background thread."""
+    """Mark index stale and trigger a non-blocking rebuild in a background thread.
+
+    Rate-limited to at most one rebuild per 60 seconds to prevent thread
+    spawning under rapid successive calls (e.g. bulk card writes).
+    """
+    import time
+
+    global _last_reindex_time
 
     mark_stale(index_path)
+
+    now = time.monotonic()
+    if now - _last_reindex_time < _reindex_interval:
+        logger.debug("Skipping background reindex — rate limited (%.0fs since last)", now - _last_reindex_time)
+        return
+    _last_reindex_time = now
 
     def _run() -> None:
         try:

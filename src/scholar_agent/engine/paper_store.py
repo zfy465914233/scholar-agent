@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -157,6 +158,7 @@ class PaperStore:
 
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
+        self._lock = threading.Lock()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(
             str(self.db_path),
@@ -170,17 +172,30 @@ class PaperStore:
     def close(self) -> None:
         self._conn.close()
 
+    def __enter__(self) -> PaperStore:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     @contextmanager
     def _cursor(self) -> Generator[sqlite3.Cursor, None, None]:
-        cur = self._conn.cursor()
-        try:
-            yield cur
-            self._conn.commit()
-        except Exception:
-            self._conn.rollback()
-            raise
-        finally:
-            cur.close()
+        """Yield a cursor with commit/rollback semantics.
+
+        Thread-safe: serializes concurrent database operations via an
+        internal lock so that only one thread can execute a transaction
+        at a time.
+        """
+        with self._lock:
+            cur = self._conn.cursor()
+            try:
+                yield cur
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+            finally:
+                cur.close()
 
     # -- Schema management ---------------------------------------------------
 

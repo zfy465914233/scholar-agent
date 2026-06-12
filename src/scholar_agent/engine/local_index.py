@@ -102,7 +102,12 @@ def build_search_text(metadata: dict[str, object], body: str) -> str:
 def is_card(path: Path) -> bool:
     if "templates" in path.parts or path.name.lower() == "readme.md" or not path.is_file():
         return False
-    return path.read_text(encoding="utf-8").startswith("---\n")
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            header = f.read(4)
+        return header in ("---\n", "---\r\n")
+    except (OSError, UnicodeDecodeError):
+        return False
 
 
 def _extra_scan_dirs(knowledge_root: Path) -> list[Path]:

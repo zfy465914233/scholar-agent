@@ -72,7 +72,7 @@ class TestBuildMarkdownAllFields(unittest.TestCase):
 
     def test_contains_origin(self):
         md = build_markdown(self._full_payload())
-        self.assertIn("origin: generated_from_answer_context", md)
+        self.assertIn("origin: distilled", md)
 
     def test_query_section(self):
         md = build_markdown(self._full_payload())

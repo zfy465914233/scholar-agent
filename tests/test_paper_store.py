@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import threading
 from typing import TYPE_CHECKING
 
@@ -266,3 +267,53 @@ class TestConcurrency:
         counts = store2.count_by_status()
         assert counts.get("fetched", 0) == 30
         store2.close()
+
+
+class TestContextManager:
+    """Tests for PaperStore __enter__/__exit__."""
+
+    def test_enter_returns_self(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "ctx_test.db"
+        with PaperStore(db_path) as store:
+            store.initialize()
+            assert isinstance(store, PaperStore)
+            # Should be usable inside the with block
+            store.upsert_paper(_arxiv_paper(arxiv_id="2501.ctx01"))
+
+    def test_exit_closes_connection(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "ctx_close.db"
+        store = PaperStore(db_path)
+        store.initialize()
+        store.__enter__()
+        store.__exit__(None, None, None)
+        # Connection should be closed; accessing cursor should raise
+        with pytest.raises((sqlite3.ProgrammingError, sqlite3.OperationalError)):
+            store._conn.execute("SELECT 1")
+
+    def test_with_statement_closes_on_success(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "ctx_success.db"
+        with PaperStore(db_path) as store:
+            store.initialize()
+            store.upsert_paper(_arxiv_paper(arxiv_id="2501.ctx02"))
+        # After with block, connection is closed
+        with pytest.raises((sqlite3.ProgrammingError, sqlite3.OperationalError)):
+            store._conn.execute("SELECT 1")
+
+    def test_with_statement_closes_on_exception(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "ctx_exc.db"
+        with pytest.raises(ValueError), PaperStore(db_path) as store:
+            store.initialize()
+            raise ValueError("test error")
+        with pytest.raises((sqlite3.ProgrammingError, sqlite3.OperationalError)):
+            store._conn.execute("SELECT 1")
+
+    def test_data_persists_across_contexts(self, tmp_path: Path) -> None:
+        db_path = tmp_path / "ctx_persist.db"
+        with PaperStore(db_path) as store:
+            store.initialize()
+            store.upsert_paper(_arxiv_paper(arxiv_id="2501.persist"))
+        with PaperStore(db_path) as store2:
+            store2.initialize()
+            papers = store2.get_papers_by_status("fetched")
+            ids = [p["arxiv_id"] for p in papers]
+            assert "2501.persist" in ids

@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import threading
 from pathlib import Path
 
 from scholar_agent.engine.bm25 import BM25
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_INDEX = Path("indexes/local/index.json")
 
 _bm25_cache: dict[tuple[str, float], tuple[BM25, list[dict]]] = {}
+_bm25_lock = threading.Lock()
 
 
 def _get_bm25(documents: list[dict], index_path: Path) -> BM25:
@@ -32,14 +34,19 @@ def _get_bm25(documents: list[dict], index_path: Path) -> BM25:
     except OSError:
         cache_key = (str(index_path), 0.0)
 
-    cached = _bm25_cache.get(cache_key)
-    if cached is not None:
-        return cached[0]
+    with _bm25_lock:
+        cached = _bm25_cache.get(cache_key)
+        if cached is not None:
+            return cached[0]
 
     bm25 = BM25(documents)
-    if len(_bm25_cache) > 4:
-        _bm25_cache.clear()
-    _bm25_cache[cache_key] = (bm25, documents)
+
+    with _bm25_lock:
+        _bm25_cache[cache_key] = (bm25, documents)
+        if len(_bm25_cache) > 4:
+            oldest = next(iter(_bm25_cache))
+            del _bm25_cache[oldest]
+
     return bm25
 
 

@@ -18,8 +18,8 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, cast
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+from scholar_agent.engine.llm_client import ProviderConfig, chat
 
 LLM_API_URL = os.environ.get("LLM_API_URL", "https://api.openai.com/v1")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
@@ -112,42 +112,32 @@ def build_chat_request(prompt_bundle: dict[str, Any], model: str) -> dict[str, A
 
 
 def call_llm(request_payload: dict[str, Any]) -> dict[str, Any]:
-    """Call an OpenAI-compatible chat completions endpoint."""
+    """Call an LLM via the unified client.  Returns the legacy dict format."""
     if not LLM_API_KEY:
         raise RuntimeError(
             "LLM_API_KEY environment variable is not set. Export it or use --local-answer to skip LLM calls."
         )
-    url = LLM_API_URL.rstrip("/") + "/chat/completions"
-    headers = {"Content-Type": "application/json"}
-    if LLM_API_KEY:
-        headers["Authorization"] = f"Bearer {LLM_API_KEY}"
 
-    body = json.dumps(request_payload).encode("utf-8")
-    req = Request(url, data=body, headers=headers, method="POST")
+    messages = request_payload.get("messages", [])
+    model = request_payload.get("model", LLM_MODEL)
+    temperature = request_payload.get("temperature", 0.3)
+    max_tokens = request_payload.get("max_tokens", 2048)
 
-    try:
-        with urlopen(req, timeout=LLM_TIMEOUT) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        raise RuntimeError(f"LLM API returned HTTP {exc.code}: {detail}") from exc
-    except (URLError, OSError) as exc:
-        raise RuntimeError(f"LLM API request failed: {exc}") from exc
+    provider = ProviderConfig(format="openai", url=LLM_API_URL, key=LLM_API_KEY, model=model)
+    resp = chat(
+        messages,
+        provider=provider,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=float(LLM_TIMEOUT),
+        max_retries=2,
+    )
 
-    choices = data.get("choices", [])
-    if not choices:
-        raise RuntimeError(f"LLM API returned no choices: {json.dumps(data)}")
-
-    content = choices[0].get("message", {}).get("content", "")
-    usage = data.get("usage", {})
     return {
-        "raw_content": content,
-        "model": data.get("model", request_payload["model"]),
-        "usage": {
-            "prompt_tokens": usage.get("prompt_tokens", 0),
-            "completion_tokens": usage.get("completion_tokens", 0),
-            "total_tokens": usage.get("total_tokens", 0),
-        },
+        "raw_content": resp.content,
+        "model": resp.model or model,
+        "usage": resp.usage,
     }
 
 

@@ -9,6 +9,7 @@ and merging.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 # ── Process-wide cache ──────────────────────────────────────────────
 # ``_config_cache`` is set directly by tests; ``_resolution_cache``
 # stores the full ``ConfigResolution`` for diagnostic access.
+_config_lock = threading.RLock()
 _config_cache: dict | None = None
 _resolution_cache: ConfigResolution | None = None
 
@@ -27,11 +29,12 @@ _resolution_cache: ConfigResolution | None = None
 def _get_resolution() -> ConfigResolution:
     """Return the cached ``ConfigResolution``, resolving it on first call."""
     global _resolution_cache
-    if _resolution_cache is None:
-        from scholar_agent.config.loader import resolve_config
+    with _config_lock:
+        if _resolution_cache is None:
+            from scholar_agent.config.loader import resolve_config
 
-        _resolution_cache = resolve_config()
-    return _resolution_cache
+            _resolution_cache = resolve_config()
+        return _resolution_cache
 
 
 def load_config() -> dict:
@@ -42,10 +45,11 @@ def load_config() -> dict:
     to force a re-read (e.g. after writing a new config file).
     """
     global _config_cache
-    if _config_cache is not None:
+    with _config_lock:
+        if _config_cache is not None:
+            return _config_cache
+        _config_cache = _get_resolution().config
         return _config_cache
-    _config_cache = _get_resolution().config
-    return _config_cache
 
 
 # ── Path getters ────────────────────────────────────────────────────
@@ -108,8 +112,9 @@ def get_paper_db_path() -> Path:
 def clear_cache() -> None:
     """Clear cached config (useful after setup_mcp.py writes new config)."""
     global _config_cache, _resolution_cache
-    _config_cache = None
-    _resolution_cache = None
+    with _config_lock:
+        _config_cache = None
+        _resolution_cache = None
 
 
 # ── Diagnostics ─────────────────────────────────────────────────────

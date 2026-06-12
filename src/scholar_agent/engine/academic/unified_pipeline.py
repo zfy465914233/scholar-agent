@@ -381,6 +381,7 @@ def run_unified_pipeline(
     paper_notes_dir: str,
     target_date: datetime | None = None,
     unified_config: dict[str, Any] | None = None,
+    existing_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Run the unified lightweight recommendation pipeline.
 
@@ -413,9 +414,10 @@ def run_unified_pipeline(
     )
 
     # 3. Dedup + skip already-analyzed
-    from scholar_agent.engine.academic.daily_workflow import get_analyzed_paper_ids
+    if existing_ids is None:
+        from scholar_agent.engine.academic.daily_workflow import get_analyzed_paper_ids
 
-    existing_ids = get_analyzed_paper_ids(paper_notes_dir)
+        existing_ids = get_analyzed_paper_ids(paper_notes_dir)
     merged, skipped = _dedup_papers(arxiv_papers, s2_papers, existing_ids)
 
     if not merged:
@@ -483,9 +485,8 @@ def _save_to_store(papers: list[dict[str, Any]]) -> None:
 
         db_path = get_paper_db_path()
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        store = PaperStore(db_path)
-        store.initialize()
-        try:
+        with PaperStore(db_path) as store:
+            store.initialize()
             for p in papers:
                 row_id = store.upsert_paper(p)
                 store.update_status(
@@ -494,7 +495,5 @@ def _save_to_store(papers: list[dict[str, Any]]) -> None:
                     recommendation_score=p.get("_heuristic_score", 0),
                     recommendation_reason=p.get("recommendation_reason", ""),
                 )
-        finally:
-            store.close()
     except Exception as exc:
         logger.warning("Failed to save to SQLite: %s", exc)

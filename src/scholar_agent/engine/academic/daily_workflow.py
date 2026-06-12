@@ -42,16 +42,13 @@ def get_analyzed_paper_ids(paper_notes_dir: str) -> set[str]:
 
         db_path = get_paper_db_path()
         if db_path.exists():
-            store = PaperStore(db_path)
-            store.initialize()
-            try:
+            with PaperStore(db_path) as store:
+                store.initialize()
                 recommended = store.get_papers_by_status("recommended")
                 for p in recommended:
                     arxiv_id = p.get("arxiv_id", "")
                     if arxiv_id:
                         ids.add(arxiv_id)
-            finally:
-                store.close()
     except Exception:
         logger.debug("SQLite dedup unavailable, falling back to file scan")
 
@@ -66,6 +63,11 @@ def get_analyzed_paper_ids(paper_notes_dir: str) -> set[str]:
         except OSError:
             continue
         meta, _ = parse_frontmatter(raw)
+        # Skip skeleton notes — they indicate a failed/incomplete analysis
+        # and should be allowed to reprocess.
+        status = str(meta.get("status", "")).strip().lower()
+        if status == "skeleton":
+            continue
         paper_id = meta.get("paper_id", "")
         if paper_id:
             normalized = re.sub(r"^arXiv:\s*", "", str(paper_id)).strip()
@@ -134,6 +136,7 @@ def _generate_track_conference(
     years: list[int] | None = None,
     venues: list[str] | None = None,
     max_enrich: int = 100,
+    existing_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Track 1: top conference papers ranked by citation impact."""
     from scholar_agent.engine.academic.conf_search import search_conferences_multi_year
@@ -147,9 +150,9 @@ def _generate_track_conference(
 
     skipped = 0
     if skip_existing and paper_notes_dir:
-        existing_ids = get_analyzed_paper_ids(paper_notes_dir)
-        if existing_ids:
-            candidates, skipped = filter_already_analyzed(candidates, existing_ids)
+        ids = existing_ids if existing_ids is not None else get_analyzed_paper_ids(paper_notes_dir)
+        if ids:
+            candidates, skipped = filter_already_analyzed(candidates, ids)
 
     # Diversity filter to ensure top_n cover different topics
     selected = _diversity_filter(candidates, top_n=top_n)
@@ -169,6 +172,7 @@ def _generate_track_arxiv_innovation(
     days_window: int = 7,
     max_candidates: int = 15,
     target_date: datetime | None = None,
+    existing_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Track 2: arXiv innovation papers — heuristic + LLM batch scoring."""
     from scholar_agent.engine.academic.arxiv_search import query_arxiv
@@ -189,9 +193,9 @@ def _generate_track_arxiv_innovation(
 
     skipped = 0
     if skip_existing and paper_notes_dir:
-        existing_ids = get_analyzed_paper_ids(paper_notes_dir)
-        if existing_ids:
-            candidates, skipped = filter_already_analyzed(candidates, existing_ids)
+        ids = existing_ids if existing_ids is not None else get_analyzed_paper_ids(paper_notes_dir)
+        if ids:
+            candidates, skipped = filter_already_analyzed(candidates, ids)
 
     selected = candidates[:top_n]
 
@@ -221,6 +225,9 @@ def generate_daily_recommendations(
     """
     date_str = (target_date or datetime.now()).strftime("%Y-%m-%d")
 
+    # Compute analyzed IDs once — avoids repeated SQLite + file scans
+    existing_ids = get_analyzed_paper_ids(paper_notes_dir) if skip_existing and paper_notes_dir else set()
+
     # Unified pipeline (default path)
     dc = daily_config or {}
     uc = dc.get("unified_pipeline", {})
@@ -231,6 +238,7 @@ def generate_daily_recommendations(
             target_date=target_date,
             date_str=date_str,
             unified_config=uc,
+            existing_ids=existing_ids,
         )
 
     # Precision funnel path
@@ -242,6 +250,7 @@ def generate_daily_recommendations(
             target_date=target_date,
             date_str=date_str,
             precision_config=pc,
+            existing_ids=existing_ids,
         )
 
     if not dual_track:
@@ -253,16 +262,20 @@ def generate_daily_recommendations(
             skip_existing,
             target_date,
             date_str,
+            existing_ids,
         )
 
     dc = daily_config or {}
     conf_cfg = dc.get("conference", {})
     arxiv_cfg = dc.get("arxiv_innovation", {})
 
-    # Track 1: conference
+    # Run both tracks in parallel — they are fully independent
     track_errors: dict[str, str] = {}
-    try:
-        conf_result = _generate_track_conference(
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        conf_future = pool.submit(
+            _generate_track_conference,
             config=config,
             paper_notes_dir=paper_notes_dir,
             top_n=2,
@@ -270,15 +283,10 @@ def generate_daily_recommendations(
             years=conf_cfg.get("years"),
             venues=conf_cfg.get("venues"),
             max_enrich=conf_cfg.get("max_enrich", 100),
+            existing_ids=existing_ids,
         )
-    except Exception as exc:
-        logger.warning("conference track failed", exc_info=True)
-        track_errors["conference"] = str(exc)
-        conf_result = {"papers": [], "total_found": 0, "skipped": 0}
-
-    # Track 2: arXiv innovation
-    try:
-        arxiv_result = _generate_track_arxiv_innovation(
+        arxiv_future = pool.submit(
+            _generate_track_arxiv_innovation,
             config=config,
             paper_notes_dir=paper_notes_dir,
             categories=categories,
@@ -287,7 +295,19 @@ def generate_daily_recommendations(
             days_window=arxiv_cfg.get("days_window", 7),
             max_candidates=arxiv_cfg.get("max_candidates", 15),
             target_date=target_date,
+            existing_ids=existing_ids,
         )
+
+    # Collect results
+    try:
+        conf_result = conf_future.result()
+    except Exception as exc:
+        logger.warning("conference track failed", exc_info=True)
+        track_errors["conference"] = str(exc)
+        conf_result = {"papers": [], "total_found": 0, "skipped": 0}
+
+    try:
+        arxiv_result = arxiv_future.result()
     except Exception as exc:
         logger.warning("arXiv innovation track failed", exc_info=True)
         track_errors["arxiv_innovation"] = str(exc)
@@ -320,6 +340,7 @@ def _generate_unified(
     target_date: datetime | None,
     date_str: str,
     unified_config: dict[str, Any],
+    existing_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Unified lightweight pipeline: concurrent fetch -> CPU filter -> 1 LLM call."""
     from scholar_agent.engine.academic.unified_pipeline import run_unified_pipeline
@@ -329,6 +350,7 @@ def _generate_unified(
         paper_notes_dir=paper_notes_dir,
         target_date=target_date,
         unified_config=unified_config,
+        existing_ids=existing_ids,
     )
 
     result["date"] = date_str
@@ -341,6 +363,7 @@ def _generate_precision(
     target_date: datetime | None,
     date_str: str,
     precision_config: dict[str, Any],
+    existing_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Precision funnel path: fetch recent papers, run 4-stage quality funnel."""
     from scholar_agent.engine.academic.arxiv_search import query_arxiv
@@ -370,24 +393,21 @@ def _generate_precision(
     # Filter already-analyzed papers before funnel
     skipped = 0
     if paper_notes_dir:
-        existing_ids = get_analyzed_paper_ids(paper_notes_dir)
-        if existing_ids:
-            raw_papers, skipped = filter_already_analyzed(raw_papers, existing_ids)
+        ids = existing_ids if existing_ids is not None else get_analyzed_paper_ids(paper_notes_dir)
+        if ids:
+            raw_papers, skipped = filter_already_analyzed(raw_papers, ids)
 
     # Store papers in SQLite
     db_path = get_paper_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    store = PaperStore(db_path)
-    store.initialize()
-    try:
+    with PaperStore(db_path) as store:
+        store.initialize()
         for p in raw_papers:
             p["_db_id"] = store.upsert_paper(p)
 
         # Run quality funnel — pass list directly (not None) to avoid loading stale papers
         funnel = QualityFunnel(store, funnel_config)
         result = funnel.run_daily(raw_papers)
-    finally:
-        store.close()
 
     papers = result.recommended
     for p in papers:
@@ -417,6 +437,7 @@ def _generate_single_track(
     skip_existing: bool,
     target_date: datetime | None,
     date_str: str,
+    existing_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     """Original single-track behavior (backward compatible)."""
     from scholar_agent.engine.academic.arxiv_search import search_and_score
@@ -437,9 +458,9 @@ def _generate_single_track(
     skipped = 0
 
     if skip_existing and paper_notes_dir:
-        existing_ids = get_analyzed_paper_ids(paper_notes_dir)
-        if existing_ids:
-            papers, skipped = filter_already_analyzed(papers, existing_ids)
+        ids = existing_ids if existing_ids is not None else get_analyzed_paper_ids(paper_notes_dir)
+        if ids:
+            papers, skipped = filter_already_analyzed(papers, ids)
 
     papers = papers[:top_n]
 
@@ -461,6 +482,7 @@ def generate_paper_notes_for_daily(
     papers: list[dict[str, Any]],
     paper_notes_dir: str,
     language: str = "zh",
+    existing_ids: set[str] | None = None,
 ) -> dict[str, str]:
     """Generate skeleton paper notes for each recommended paper.
 
@@ -474,6 +496,8 @@ def generate_paper_notes_for_daily(
             is used for dedup).
         paper_notes_dir: Path to the ``paper-notes/`` directory.
         language: ``"zh"`` or ``"en"``.
+        existing_ids: Pre-computed set of already-analyzed arxiv IDs.
+            If None, will be computed from file scan.
 
     Returns:
         Mapping of ``{paper_title: sanitize_title(title)}`` for all papers
@@ -482,7 +506,8 @@ def generate_paper_notes_for_daily(
     from scholar_agent.engine.academic.paper_analyzer import generate_note
     from scholar_agent.engine.common import sanitize_title
 
-    existing_ids = get_analyzed_paper_ids(paper_notes_dir)
+    if existing_ids is None:
+        existing_ids = get_analyzed_paper_ids(paper_notes_dir)
 
     stems: dict[str, str] = {}
     for p in papers:

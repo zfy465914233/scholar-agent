@@ -415,15 +415,13 @@ def _card_note_tag(card_type: str) -> str:
     return f"{prefix}-note"
 
 
-def build_knowledge_card(
+def _resolve_card_metadata(
     query: str,
     answer_data: dict,
-    research_data: dict | None,
     knowledge_root: Path,
-    index_path: Path | None = None,
-    domain_override: str | None = None,
-) -> Path:
-    """Build a knowledge card from research evidence and structured answer."""
+    domain_override: str | None,
+) -> dict:
+    """Resolve domain, type, slug, and other card metadata."""
     card_summary = str(answer_data.get("answer", ""))[:500]
     routing = _infer_domain_decision(
         query,
@@ -432,32 +430,23 @@ def build_knowledge_card(
         card_summary=card_summary,
         domain_override=domain_override,
     )
-    major_domain = str(routing["major_domain"])
-    topic = str(routing.get("subdomain", "")).strip()
-    output_dir = Path(str(routing["output_path"]))
     card_type = _infer_card_type(query, answer_data)
     slug = safe_slug(query)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    source_urls = collect_source_urls(research_data)
-    # Also accept sources from answer_data (for save_research without research_data)
-    if not source_urls:
-        ans_sources = answer_data.get("sources") or answer_data.get("source_refs") or []
-        if isinstance(ans_sources, list):
-            source_urls = [str(s) for s in ans_sources if s]
+    return {
+        "major_domain": str(routing["major_domain"]),
+        "topic": str(routing.get("subdomain", "")).strip(),
+        "output_dir": Path(str(routing["output_path"])),
+        "card_type": card_type,
+        "slug": slug,
+        "now": now,
+        "card_id": _card_id(card_type, slug),
+        "note_label": _card_note_label(card_type),
+    }
 
-    # Extract structured content — answer_data itself is the structured dict
-    main_answer = _normalize_answer_markdown(answer_data.get("answer", str(answer_data)))
-    claims = answer_data.get("supporting_claims", [])
-    inferences = answer_data.get("inferences", [])
-    uncertainties = answer_data.get("uncertainty", [])
-    missing = answer_data.get("missing_evidence", [])
-    next_steps = answer_data.get("suggested_next_steps", [])
-    expected_output = answer_data.get("expected_output", "")
-    example = answer_data.get("example", "")
-    card_id = _card_id(card_type, slug)
-    note_label = _card_note_label(card_type)
 
-    # Infer tags from query and domain
+def _collect_tags(query: str, answer_data: dict, major_domain: str, topic: str, card_type: str) -> list[str]:
+    """Infer tags from query, domain, and answer_data."""
     base_tags = [_card_note_tag(card_type), major_domain]
     if topic:
         base_tags.append(topic)
@@ -478,30 +467,37 @@ def build_knowledge_card(
     ]:
         if keyword in query_lower and tag not in base_tags:
             base_tags.append(tag)
-
-    # Merge user-supplied tags from answer_data (e.g. from capture_answer)
     for extra_tag in answer_data.get("tags", []):
         if extra_tag and extra_tag not in base_tags:
             base_tags.append(extra_tag)
+    return base_tags
 
-    # Index visual aids by their target section for inline placement
-    visual_aids = answer_data.get("visual_aids", [])
-    _SECTION_ORDER = [
-        "answer",
-        "supporting_claims",
-        "inferences",
-        "uncertainty",
-        "missing_evidence",
-        "suggested_next_steps",
-    ]
+
+def _index_visual_aids(visual_aids: list[dict]) -> dict[str | None, list[dict]]:
+    """Group visual aids by their target section."""
     va_by_section: dict[str | None, list[dict]] = {}
     for va in visual_aids:
         if not isinstance(va, dict):
             continue
         section = va.get("after_section") or None
         va_by_section.setdefault(section, []).append(va)
+    return va_by_section
 
-    # Build frontmatter — use ensure_ascii=False to preserve Chinese characters
+
+def _build_frontmatter(
+    card_id: str,
+    note_label: str,
+    query: str,
+    card_type: str,
+    major_domain: str,
+    topic: str,
+    tags: list[str],
+    source_urls: list[str],
+    now: str,
+    answer_data: dict,
+) -> list[str]:
+    """Build the YAML frontmatter and card header lines."""
+    card_language = answer_data.get("language", "zh")
     lines = [
         "---",
         f"id: {json.dumps(card_id, ensure_ascii=False)}",
@@ -512,14 +508,13 @@ def build_knowledge_card(
     ]
     if topic:
         lines.insert(len(lines) - 1, f"topic: {json.dumps(topic, ensure_ascii=False)}")
-    for tag in base_tags:
+    for tag in tags:
         lines.append(f"  - {tag}")
     if source_urls:
         lines.append("source_refs:")
         for url in source_urls[:10]:
             lines.append(f"  - {url}")
     card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
-    card_language = answer_data.get("language", "zh")
     lines.extend(
         [
             "confidence: draft",
@@ -535,7 +530,6 @@ def build_knowledge_card(
             ">",
         ]
     )
-    # Primary references from source URLs
     if source_urls:
         lines.append(f"> 主要参考：{', '.join(source_urls[:5])}")
     lines.extend(
@@ -545,59 +539,78 @@ def build_knowledge_card(
             "",
         ]
     )
+    return lines
 
-    # --- Build TOC (目录) ---
-    toc_entries = []
-    toc_entries.append("1. [问题](#问题)")
-    toc_entries.append("2. [回答](#回答)")
-    section_idx = 3
+
+def _build_toc(
+    claims: list,
+    inferences: list,
+    uncertainties: list,
+    missing: list,
+    next_steps: list,
+    card_type: str,
+    expected_output: str,
+    example: str,
+    unplaced_aids: list[dict],
+    source_images: list[dict],
+) -> list[str]:
+    """Build the table-of-contents section."""
+    entries = []
+    entries.append("1. [问题](#问题)")
+    entries.append("2. [回答](#回答)")
+    idx = 3
     if claims:
-        toc_entries.append(f"{section_idx}. [支撑论据](#支撑论据)")
-        section_idx += 1
+        entries.append(f"{idx}. [支撑论据](#支撑论据)")
+        idx += 1
     if inferences:
-        toc_entries.append(f"{section_idx}. [推论](#推论)")
-        section_idx += 1
+        entries.append(f"{idx}. [推论](#推论)")
+        idx += 1
     if uncertainties:
-        toc_entries.append(f"{section_idx}. [不确定性](#不确定性)")
-        section_idx += 1
+        entries.append(f"{idx}. [不确定性](#不确定性)")
+        idx += 1
     if missing:
-        toc_entries.append(f"{section_idx}. [缺失证据](#缺失证据)")
-        section_idx += 1
+        entries.append(f"{idx}. [缺失证据](#缺失证据)")
+        idx += 1
     if next_steps:
-        toc_entries.append(f"{section_idx}. [建议后续步骤](#建议后续步骤)")
-        section_idx += 1
+        entries.append(f"{idx}. [建议后续步骤](#建议后续步骤)")
+        idx += 1
     if card_type == "method":
         if expected_output:
-            toc_entries.append(f"{section_idx}. [预期输出](#预期输出)")
-            section_idx += 1
+            entries.append(f"{idx}. [预期输出](#预期输出)")
+            idx += 1
         if example:
-            toc_entries.append(f"{section_idx}. [具体示例](#具体示例)")
-            section_idx += 1
-    unplaced = va_by_section.get(None, [])
-    if unplaced:
-        toc_entries.append(f"{section_idx}. [可视化辅助](#可视化辅助)")
-        section_idx += 1
-    source_images = collect_source_images(research_data)
+            entries.append(f"{idx}. [具体示例](#具体示例)")
+            idx += 1
+    if unplaced_aids:
+        entries.append(f"{idx}. [可视化辅助](#可视化辅助)")
+        idx += 1
     if source_images:
-        toc_entries.append(f"{section_idx}. [来源图片](#来源图片)")
-        section_idx += 1
-    toc_entries.append(f"{section_idx}. [参考文献](#参考文献)")
-    section_idx += 1
-    toc_entries.append(f"{section_idx}. [See Also](#see-also)")
+        entries.append(f"{idx}. [来源图片](#来源图片)")
+        idx += 1
+    entries.append(f"{idx}. [参考文献](#参考文献)")
+    idx += 1
+    entries.append(f"{idx}. [See Also](#see-also)")
+    return ["## 目录", "", *entries, "", "---", ""]
 
-    lines.append("## 目录")
-    lines.append("")
-    for entry in toc_entries:
-        lines.append(entry)
-    lines.extend(["", "---", ""])
 
-    # --- Body sections ---
-    lines.append("## 问题")
-    lines.append("")
-    lines.append(query)
-    lines.append("")
-    lines.append("## 回答")
-    lines.append("")
+def _build_body_sections(
+    query: str,
+    main_answer: str,
+    claims: list,
+    inferences: list,
+    uncertainties: list,
+    missing: list,
+    next_steps: list,
+    card_type: str,
+    expected_output: str,
+    example: str,
+    va_by_section: dict[str | None, list[dict]],
+) -> list[str]:
+    """Build the main body sections (answer, claims, inferences, etc.)."""
+    lines: list[str] = []
+
+    lines.extend(["## 问题", "", query, ""])
+    lines.extend(["## 回答", ""])
     lines.extend(main_answer.splitlines())
     lines.append("")
     _append_visual_aids(lines, va_by_section.get("answer", []))
@@ -643,26 +656,41 @@ def build_knowledge_card(
         lines.append("")
     _append_visual_aids(lines, va_by_section.get("suggested_next_steps", []))
 
-    # Method-specific sections: Expected Output and Concrete Example
     if card_type == "method":
         if expected_output:
             lines.extend(["## 预期输出", "", expected_output, ""])
         if example:
             lines.extend(["## 具体示例", "", example, ""])
 
-    # Visual aids without a section go at the end
-    if unplaced:
-        lines.extend(["## 可视化辅助", ""])
-        _append_visual_aids(lines, unplaced)
+    return lines
 
-    # Auto-collect relevant images from research source pages
+
+def _build_footer(
+    unplaced_aids: list[dict],
+    source_images: list[dict],
+    research_data: dict | None,
+    full_text: str,
+    source_urls: list[str],
+    query: str,
+    claims: list,
+    major_domain: str,
+    index_path: Path,
+    now: str,
+    card_label: str,
+) -> list[str]:
+    """Build footer sections: visual aids, images, entities, references, see-also."""
+    lines: list[str] = []
+
+    if unplaced_aids:
+        lines.extend(["## 可视化辅助", ""])
+        _append_visual_aids(lines, unplaced_aids)
+
     if source_images:
         lines.extend(["## 来源图片", ""])
         for img in source_images:
             url = img.get("url", "")
             alt = img.get("alt_text", "") or img.get("title", "") or "Source image"
             source_url = ""
-            # Find which evidence item this image came from
             if research_data:
                 for item in research_data.get("evidence", []):
                     for si in item.get("source_images", []):
@@ -676,8 +704,6 @@ def build_knowledge_card(
                 lines.append(f"*{alt}*")
             lines.append("")
 
-    # Auto-extract entities and add wiki-links
-    full_text = "\n".join(lines)
     entities = extract_entities(full_text)
     if entities:
         lines.extend(["## Entities", ""])
@@ -686,10 +712,8 @@ def build_knowledge_card(
             lines.append(f"- [[{entity_slug}|{entity}]]")
         lines.append("")
 
-    # --- 参考文献 ---
     if source_urls:
         lines.extend(["## 参考文献", ""])
-        # Build a title lookup from research evidence for richer reference entries
         url_title_map: dict[str, str] = {}
         if research_data:
             for item in research_data.get("evidence", []):
@@ -705,10 +729,8 @@ def build_knowledge_card(
                 lines.append(f"{i}. [{url}]({url})")
         lines.extend(["", "---", ""])
 
-    # --- See Also (always present) ---
     lines.extend(["## See Also", ""])
-    _idx = index_path if index_path is not None else DEFAULT_INDEX
-    related = check_contradictions(query, claims, _idx, current_domain=major_domain)
+    related = check_contradictions(query, claims, index_path, current_domain=major_domain)
     if related:
         for r in related:
             lines.append(f"- [[{r['card_id']}]] — {r['title']} (similarity: {r['score']:.1f})")
@@ -716,7 +738,6 @@ def build_knowledge_card(
         lines.append("<!-- No related cards yet — links appear automatically as the knowledge base grows -->")
     lines.extend(["", "---", ""])
 
-    # --- Footer ---
     lines.extend(
         [
             f"*文档生成时间：{now}*",
@@ -724,13 +745,79 @@ def build_knowledge_card(
             "",
         ]
     )
+    return lines
 
-    # Write to knowledge tree
+
+def build_knowledge_card(
+    query: str,
+    answer_data: dict,
+    research_data: dict | None,
+    knowledge_root: Path,
+    index_path: Path | None = None,
+    domain_override: str | None = None,
+) -> Path:
+    """Build a knowledge card from research evidence and structured answer."""
+    # 1. Resolve metadata
+    meta = _resolve_card_metadata(query, answer_data, knowledge_root, domain_override)
+    major_domain = meta["major_domain"]
+    topic = meta["topic"]
+    output_dir = meta["output_dir"]
+    card_type = meta["card_type"]
+    now = meta["now"]
+    card_id = meta["card_id"]
+    note_label = meta["note_label"]
+
+    # 2. Collect sources
+    source_urls = collect_source_urls(research_data)
+    if not source_urls:
+        ans_sources = answer_data.get("sources") or answer_data.get("source_refs") or []
+        if isinstance(ans_sources, list):
+            source_urls = [str(s) for s in ans_sources if s]
+
+    # 3. Extract structured content
+    main_answer = _normalize_answer_markdown(answer_data.get("answer", str(answer_data)))
+    claims = answer_data.get("supporting_claims", [])
+    inferences = answer_data.get("inferences", [])
+    uncertainties = answer_data.get("uncertainty", [])
+    missing = answer_data.get("missing_evidence", [])
+    next_steps = answer_data.get("suggested_next_steps", [])
+    expected_output = answer_data.get("expected_output", "")
+    example = answer_data.get("example", "")
+
+    # 4. Tags and visual aids
+    tags = _collect_tags(query, answer_data, major_domain, topic, card_type)
+    va_by_section = _index_visual_aids(answer_data.get("visual_aids", []))
+    source_images = collect_source_images(research_data)
+
+    # 5. Assemble card
+    lines = _build_frontmatter(
+        card_id, note_label, query, card_type, major_domain, topic,
+        tags, source_urls, now, answer_data,
+    )
+    lines.extend(_build_toc(
+        claims, inferences, uncertainties, missing, next_steps,
+        card_type, expected_output, example,
+        va_by_section.get(None, []), source_images,
+    ))
+    lines.extend(_build_body_sections(
+        query, main_answer, claims, inferences, uncertainties,
+        missing, next_steps, card_type, expected_output, example, va_by_section,
+    ))
+
+    unplaced_aids = va_by_section.get(None, [])
+    card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
+    full_text = "\n".join(lines)
+    _idx = index_path if index_path is not None else DEFAULT_INDEX
+    lines.extend(_build_footer(
+        unplaced_aids, source_images, research_data, full_text,
+        source_urls, query, claims, major_domain, _idx, now, card_label,
+    ))
+
+    # 6. Write to knowledge tree
     output_dir.mkdir(parents=True, exist_ok=True)
-    card_path = output_dir / f"{card_id}.md"
+    card_path: Path = output_dir / f"{card_id}.md"
     atomic_write_text(card_path, "\n".join(lines) + "\n", encoding="utf-8")
 
-    # Record in changelog
     detail = f"type={card_type}, domain={major_domain}"
     if topic:
         detail += f", topic={topic}"
@@ -800,7 +887,7 @@ def append_changelog(
     try:
         if not changelog_path.exists():
             header = "# Knowledge Base Changelog\n\nAll changes to knowledge cards are recorded here.\n\n"
-            changelog_path.write_text(header + entry, encoding="utf-8")
+            atomic_write_text(changelog_path, header + entry, encoding="utf-8")
         else:
             with open(changelog_path, "a", encoding="utf-8") as f:
                 f.write(entry)

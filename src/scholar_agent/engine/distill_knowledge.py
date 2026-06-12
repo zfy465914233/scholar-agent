@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from scholar_agent.engine.common import safe_slug
+from scholar_agent.engine.common import atomic_write_text, safe_slug
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,7 +50,7 @@ def build_markdown(payload: dict[str, Any]) -> str:
         "  - answer_context",
         "confidence: draft",
         "updated_at: 2026-04-01",
-        "origin: generated_from_answer_context",
+        "origin: distilled",
         "---",
         "",
         "## Query",
@@ -93,7 +93,7 @@ def main() -> int:
     payload = json.loads(args.answer_context.read_text(encoding="utf-8"))
     markdown = build_markdown(payload)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(markdown, encoding="utf-8")
+    atomic_write_text(args.output, markdown)
     return 0
 
 

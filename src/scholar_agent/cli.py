@@ -959,14 +959,13 @@ def _run_backfill(years: int, categories: str, max_per_month: int, output_format
 
     db_path = get_paper_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    store = PaperStore(db_path)
-    store.initialize()
+    with PaperStore(db_path) as store:
+        store.initialize()
 
-    now = datetime.now()
-    total_upserted = 0
-    total_months = years * 12
+        now = datetime.now()
+        total_upserted = 0
+        total_months = years * 12
 
-    try:
         for month_offset in range(total_months):
             # Iterate from oldest to newest
             steps_back = total_months - 1 - month_offset
@@ -1006,9 +1005,8 @@ def _run_backfill(years: int, categories: str, max_per_month: int, output_format
                     + "\n"
                 )
             sys.stdout.flush()
-    finally:
+
         counts = store.count_by_status()
-        store.close()
 
     payload = {
         "status": "ok",

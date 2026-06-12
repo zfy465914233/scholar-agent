@@ -16,10 +16,9 @@ import os
 import re
 from pathlib import Path
 from typing import Any, TypedDict
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 from scholar_agent.engine.common import get_package_data_path
+from scholar_agent.engine.llm_client import ProviderConfig, chat
 
 SKILL_PATH = get_package_data_path("schemas", "routing_skill.md")
 POLICY_PATH = get_package_data_path("schemas", "domain_routing_policy.json")
@@ -399,56 +398,45 @@ def match_route(
 # ── AI routing ─────────────────────────────────────────────────────
 
 
-def _router_api_url() -> str:
-    return os.getenv("SCHOLAR_ROUTER_API_URL") or os.getenv("LLM_API_URL") or "https://api.openai.com/v1"
-
-
-def _router_api_key() -> str:
-    return os.getenv("SCHOLAR_ROUTER_API_KEY") or os.getenv("LLM_API_KEY") or os.getenv("GITHUB_TOKEN") or ""
-
-
-def _router_model() -> str:
-    return os.getenv("SCHOLAR_ROUTER_MODEL") or os.getenv("LLM_MODEL") or "gpt-4o-mini"
+def _router_provider() -> ProviderConfig | None:
+    """Resolve the OpenAI-compatible router provider."""
+    key = (
+        os.getenv("SCHOLAR_ROUTER_API_KEY", "")
+        or os.getenv("LLM_API_KEY", "")
+        or os.getenv("OPENAI_API_KEY", "")
+        or os.getenv("GITHUB_TOKEN", "")
+    )
+    if not key:
+        return None
+    url = (
+        os.getenv("SCHOLAR_ROUTER_API_URL", "")
+        or os.getenv("LLM_API_URL", "")
+        or os.getenv("OPENAI_BASE_URL", "")
+        or "https://api.openai.com/v1"
+    )
+    model = os.getenv("SCHOLAR_ROUTER_MODEL", "") or os.getenv("LLM_MODEL", "") or "gpt-4o-mini"
+    return ProviderConfig(format="openai", url=url, key=key, model=model)
 
 
 def _call_router_llm(system_prompt: str, user_message: str) -> str | None:
     """Call an OpenAI-compatible endpoint for folder classification."""
-    api_key = _router_api_key()
-    if not api_key:
+    provider = _router_provider()
+    if provider is None:
         return None
-
-    payload = {
-        "model": _router_model(),
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-        "temperature": 0,
-        "max_tokens": 128,
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
-    }
-    req = Request(
-        _router_api_url().rstrip("/") + "/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
-
     try:
-        with urlopen(req, timeout=20) as response:
-            data = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, OSError, json.JSONDecodeError):
-        return None
-
-    try:
-        content = data["choices"][0]["message"]["content"]
-        if isinstance(content, str):
-            return content.strip()
-        return None
-    except (KeyError, IndexError, TypeError):
+        resp = chat(
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            provider=provider,
+            temperature=0,
+            max_tokens=128,
+            timeout=20.0,
+            max_retries=0,
+        )
+        return resp.content or None
+    except Exception:
         return None
 
 
