@@ -384,7 +384,7 @@ class TestUnifiedDailyNote:
             pipeline_stats=pipeline_stats,
         )
 
-        content = Path(note_path).read_text()
+        content = Path(note_path).read_text(encoding="utf-8")
         assert "unified_pipeline: true" in content
         assert "今日精选" in content
         assert "arXiv: 50" in content
@@ -420,7 +420,7 @@ class TestUnifiedDailyNote:
             pipeline_stats=pipeline_stats,
         )
 
-        content = Path(note_path).read_text()
+        content = Path(note_path).read_text(encoding="utf-8")
         assert "Today's Top Papers" in content
         assert "arXiv: 30 + S2: 5" in content
         assert "Recommended: 1" in content
@@ -444,5 +444,5 @@ class TestUnifiedDailyNote:
             pipeline_stats=pipeline_stats,
         )
 
-        content = Path(note_path).read_text()
+        content = Path(note_path).read_text(encoding="utf-8")
         assert "今日没有论文通过质量筛选" in content

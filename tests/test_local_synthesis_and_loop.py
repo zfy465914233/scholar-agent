@@ -39,8 +39,8 @@ class LocalAnswerSynthesisTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             bundle_path = Path(tmpdir) / "bundle.json"
             answer_path = Path(tmpdir) / "answer.json"
-            bundle_path.write_text(json.dumps(prompt_bundle))
-            answer_path.write_text(json.dumps(local_answer))
+            bundle_path.write_text(json.dumps(prompt_bundle), encoding="utf-8")
+            answer_path.write_text(json.dumps(local_answer), encoding="utf-8")
 
             result = subprocess.run(
                 [
@@ -105,7 +105,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             answer_path = Path(tmpdir) / "answer.json"
-            answer_path.write_text(json.dumps(answer))
+            answer_path.write_text(json.dumps(answer), encoding="utf-8")
 
             result = subprocess.run(
                 [
@@ -180,7 +180,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             answer_path = Path(tmpdir) / "answer.json"
-            answer_path.write_text(json.dumps(answer))
+            answer_path.write_text(json.dumps(answer), encoding="utf-8")
 
             result = subprocess.run(
                 [
@@ -248,7 +248,7 @@ class CloseKnowledgeLoopTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             answer_path = Path(tmpdir) / "answer.json"
-            answer_path.write_text(json.dumps(answer))
+            answer_path.write_text(json.dumps(answer), encoding="utf-8")
 
             result = subprocess.run(
                 [

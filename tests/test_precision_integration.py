@@ -213,7 +213,7 @@ class TestPrecisionNote:
             funnel_stats=funnel_stats,
         )
 
-        content = Path(note_path).read_text()
+        content = Path(note_path).read_text(encoding="utf-8")
         assert "精选推荐" in content
         assert "输入: 10" in content
         assert "推荐: 1 篇" in content
@@ -244,7 +244,7 @@ class TestPrecisionNote:
             funnel_stats=funnel_stats,
         )
 
-        content = Path(note_path).read_text()
+        content = Path(note_path).read_text(encoding="utf-8")
         assert "Precision Funnel" in content
         assert "novelty=4" in content
         assert "credibility=5" in content
@@ -262,7 +262,7 @@ class TestPrecisionNote:
             funnel_stats=funnel_stats,
         )
 
-        content = Path(note_path).read_text()
+        content = Path(note_path).read_text(encoding="utf-8")
         assert "今日没有论文通过质量筛选" in content
 
 
@@ -294,7 +294,7 @@ class TestAnalyzedPaperIds:
 
         # Create a fake paper note
         note = notes_dir / "test.md"
-        note.write_text("---\npaper_id: arXiv:2501.12345\n---\nContent")
+        note.write_text("---\npaper_id: arXiv:2501.12345\n---\nContent", encoding="utf-8")
 
         with patch("scholar_agent.engine.scholar_config.get_paper_db_path", return_value=tmp_path / "nonexistent.db"):
             ids = get_analyzed_paper_ids(str(notes_dir))
