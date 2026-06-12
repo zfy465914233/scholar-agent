@@ -108,7 +108,9 @@ def migrate_to_user_home(
 
     if not dry_run:
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(target_path, json.dumps(resolution.config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_text(
+            target_path, json.dumps(resolution.config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
 
     return {
         "status": "planned" if dry_run else "ok",

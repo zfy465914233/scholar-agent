@@ -265,12 +265,14 @@ class TestFillNoteFromPdf(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
             f.write("---\nstatus: skeleton\n---\n\n## Test\n<!-- LLM: fill this -->\n")
             f.flush()
-            pa = _reload_paper_analyzer()
-            result = pa.fill_note_from_pdf(f.name, "some pdf text")
+            tmp_name = f.name
+
+        pa = _reload_paper_analyzer()
+        result = pa.fill_note_from_pdf(tmp_name, "some pdf text")
 
         self.assertEqual(result["status"], "skipped")
         self.assertIn("No API key", result["reason"])
-        os.unlink(f.name)
+        os.unlink(tmp_name)
 
     def test_no_placeholders_skips(self):
         """Note with no placeholders -> returns skipped."""
@@ -284,11 +286,13 @@ class TestFillNoteFromPdf(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
             f.write("---\nstatus: filled\n---\n\n## Already filled\nContent here.\n")
             f.flush()
-            result = pa.fill_note_from_pdf(f.name, "some pdf text")
+            tmp_name = f.name
+
+        result = pa.fill_note_from_pdf(tmp_name, "some pdf text")
 
         self.assertEqual(result["status"], "skipped")
         self.assertIn("No placeholders", result["reason"])
-        os.unlink(f.name)
+        os.unlink(tmp_name)
 
     def test_fallback_on_primary_failure(self):
         """Primary provider fails -> fallback provider succeeds."""
@@ -322,15 +326,16 @@ class TestFillNoteFromPdf(unittest.TestCase):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
             f.write("---\nstatus: skeleton\n---\n\n## Test\n<!-- LLM: fill this -->\n")
             f.flush()
+            tmp_name = f.name
 
-            with patch("scholar_agent.engine.llm_client.urlopen", side_effect=mock_urlopen):
-                pa = _reload_paper_analyzer()
-                result = pa.fill_note_from_pdf(f.name, "pdf text")
+        with patch("scholar_agent.engine.llm_client.urlopen", side_effect=mock_urlopen):
+            pa = _reload_paper_analyzer()
+            result = pa.fill_note_from_pdf(tmp_name, "pdf text")
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["api_format"], "openai")
         self.assertGreater(call_count["n"], 1)
-        os.unlink(f.name)
+        os.unlink(tmp_name)
 
 
 # ============================================================================

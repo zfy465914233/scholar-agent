@@ -724,7 +724,10 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
     # Update frontmatter status
     filled_content = filled_content.replace("status: skeleton", "status: filled", 1)
 
-    atomic_write_text(Path(note_path), filled_content)
+    try:
+        atomic_write_text(Path(note_path), filled_content)
+    except OSError as exc:
+        return {"status": "error", "reason": f"Write failed: {exc}", "placeholders_filled": 0}
 
     return {
         "status": "ok",
