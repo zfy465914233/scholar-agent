@@ -791,27 +791,66 @@ def build_knowledge_card(
 
     # 5. Assemble card
     lines = _build_frontmatter(
-        card_id, note_label, query, card_type, major_domain, topic,
-        tags, source_urls, now, answer_data,
+        card_id,
+        note_label,
+        query,
+        card_type,
+        major_domain,
+        topic,
+        tags,
+        source_urls,
+        now,
+        answer_data,
     )
-    lines.extend(_build_toc(
-        claims, inferences, uncertainties, missing, next_steps,
-        card_type, expected_output, example,
-        va_by_section.get(None, []), source_images,
-    ))
-    lines.extend(_build_body_sections(
-        query, main_answer, claims, inferences, uncertainties,
-        missing, next_steps, card_type, expected_output, example, va_by_section,
-    ))
+    lines.extend(
+        _build_toc(
+            claims,
+            inferences,
+            uncertainties,
+            missing,
+            next_steps,
+            card_type,
+            expected_output,
+            example,
+            va_by_section.get(None, []),
+            source_images,
+        )
+    )
+    lines.extend(
+        _build_body_sections(
+            query,
+            main_answer,
+            claims,
+            inferences,
+            uncertainties,
+            missing,
+            next_steps,
+            card_type,
+            expected_output,
+            example,
+            va_by_section,
+        )
+    )
 
     unplaced_aids = va_by_section.get(None, [])
     card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
     full_text = "\n".join(lines)
     _idx = index_path if index_path is not None else DEFAULT_INDEX
-    lines.extend(_build_footer(
-        unplaced_aids, source_images, research_data, full_text,
-        source_urls, query, claims, major_domain, _idx, now, card_label,
-    ))
+    lines.extend(
+        _build_footer(
+            unplaced_aids,
+            source_images,
+            research_data,
+            full_text,
+            source_urls,
+            query,
+            claims,
+            major_domain,
+            _idx,
+            now,
+            card_label,
+        )
+    )
 
     # 6. Write to knowledge tree
     output_dir.mkdir(parents=True, exist_ok=True)

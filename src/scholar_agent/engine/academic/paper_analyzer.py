@@ -178,6 +178,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "label_score": "**评分**",
         "label_links": "**链接**",
         "affiliation_joiner": "、",
+        "label_sep": "：",
         "affiliation_placeholder": "<!-- LLM: 从论文中提取作者机构信息 -->",
         "links_placeholder": "<!-- LLM: 补充论文链接 -->",
         "conference_placeholder": "<!-- LLM: 从 categories 或论文信息推断 -->",
@@ -216,8 +217,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "-->"
         ),
         "math_light_core": (
-            "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新，"
-            "在关键处用 $...$ 行内 LaTeX 标注核心公式 -->"
+            "<!-- LLM: 用通俗语言（1-2段）概括方法的核心创新，在关键处用 $...$ 行内 LaTeX 标注核心公式 -->"
         ),
         "math_light_details": (
             "<!-- LLM: 对每个核心模块分别描述：\n"
@@ -254,6 +254,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "label_score": "**Score**",
         "label_links": "**Links**",
         "affiliation_joiner": ", ",
+        "label_sep": ": ",
         "affiliation_placeholder": "<!-- LLM: Extract author affiliations from the paper -->",
         "links_placeholder": "<!-- LLM: Add paper links -->",
         "conference_placeholder": "<!-- LLM: Infer from categories or paper info -->",
@@ -365,9 +366,7 @@ def _generate_note_body(
     score_str = f"{scores.get('recommendation', 0):.1f}/10" if scores else "[SCORE]/10"
     _rps = related_papers or []
     related_yaml = "\n" + "\n".join(f'  - "{rp}"' for rp in _rps) if _rps else " []"
-    affil_str = (
-        s["affiliation_joiner"].join(affiliations[:3]) if affiliations else s["affiliation_placeholder"]
-    )
+    affil_str = s["affiliation_joiner"].join(affiliations[:3]) if affiliations else s["affiliation_placeholder"]
 
     # --- Links ---
     links = f"[arXiv](https://arxiv.org/abs/{arxiv_id})" if arxiv_id else ""
@@ -413,15 +412,15 @@ updated: "{date}"
 
     # Core info
     parts.append(f"""\
-{s['core_heading']}
-- {s['label_paper_id']}：{paper_id}
-- {s['label_authors']}：{authors}
-- {s['label_affiliation']}：{affil_str}
-- {s['label_pub_date']}：{date}
-- {s['label_conference']}：{conference or s['conference_placeholder']}
-- {s['label_domain']}：{domain}
-- {s['label_score']}：{score_str}
-- {s['label_links']}：{links}
+{s["core_heading"]}
+- {s["label_paper_id"]}{s["label_sep"]}{paper_id}
+- {s["label_authors"]}{s["label_sep"]}{authors}
+- {s["label_affiliation"]}{s["label_sep"]}{affil_str}
+- {s["label_pub_date"]}{s["label_sep"]}{date}
+- {s["label_conference"]}{s["label_sep"]}{conference or s["conference_placeholder"]}
+- {s["label_domain"]}{s["label_sep"]}{domain}
+- {s["label_score"]}{s["label_sep"]}{score_str}
+- {s["label_links"]}{s["label_sep"]}{links}
 """)
 
     # Template sections
@@ -455,9 +454,9 @@ updated: "{date}"
 
     # Personal notes
     parts.append(f"""\
-{s['notes_heading']}
+{s["notes_heading"]}
 
-{s['notes_comment']}
+{s["notes_comment"]}
 
 """)
 

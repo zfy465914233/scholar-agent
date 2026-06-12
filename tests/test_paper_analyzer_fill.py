@@ -53,6 +53,7 @@ def _clean_env():
             del os.environ[key]
     # Clear the provider resolution cache
     from scholar_agent.engine import llm_client
+
     llm_client._resolved_cache = None
     llm_client._cache_ts = 0.0
 
@@ -227,15 +228,23 @@ class TestUrlConstruction(unittest.TestCase):
 
     def test_anthropic_url_no_double_messages(self):
         provider = ProviderConfig(format="anthropic", url="https://api.anthropic.com/v1/messages", key="k", model="m")
-        with patch("scholar_agent.engine.llm_client.urlopen", return_value=self._mock_response({"content": [{"type": "text", "text": "ok"}]})) as mock_open:
+        with patch(
+            "scholar_agent.engine.llm_client.urlopen",
+            return_value=self._mock_response({"content": [{"type": "text", "text": "ok"}]}),
+        ) as mock_open:
             _send_anthropic(provider, [{"role": "user", "content": "hi"}])
             req = mock_open.call_args[0][0]
             self.assertNotIn("/messages/messages", req.full_url)
             self.assertTrue(req.full_url.endswith("/messages"))
 
     def test_openai_url_no_double_chat_completions(self):
-        provider = ProviderConfig(format="openai", url="https://api.example.com/v1/chat/completions", key="k", model="m")
-        with patch("scholar_agent.engine.llm_client.urlopen", return_value=self._mock_response({"choices": [{"message": {"content": "ok"}}]})) as mock_open:
+        provider = ProviderConfig(
+            format="openai", url="https://api.example.com/v1/chat/completions", key="k", model="m"
+        )
+        with patch(
+            "scholar_agent.engine.llm_client.urlopen",
+            return_value=self._mock_response({"choices": [{"message": {"content": "ok"}}]}),
+        ) as mock_open:
             _send_openai(provider, [{"role": "user", "content": "hi"}])
             req = mock_open.call_args[0][0]
             self.assertNotIn("/chat/completions/chat/completions", req.full_url)

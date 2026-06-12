@@ -90,7 +90,9 @@ def resolve_providers(force: bool = False) -> list[ProviderConfig]:
             or os.getenv("ANTHROPIC_API_KEY", "")
         )
         if fmt == "anthropic":
-            url = os.getenv("SCHOLAR_FILLER_API_URL", "") or os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+            url = os.getenv("SCHOLAR_FILLER_API_URL", "") or os.getenv(
+                "ANTHROPIC_BASE_URL", "https://api.anthropic.com"
+            )
             model = os.getenv("SCHOLAR_FILLER_MODEL", "") or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
         else:
             url = os.getenv("SCHOLAR_FILLER_API_URL", "") or os.getenv("LLM_API_URL", "https://api.openai.com/v1")
@@ -297,9 +299,9 @@ def _parse_openai(data: dict[str, Any]) -> LLMResponse:
         raise RuntimeError(f"OpenAI API error: {msg}")
 
     choices = data.get("choices", [])
-    content = ""
+    content: str = ""
     if choices:
-        content = choices[0].get("message", {}).get("content", "")
+        content = choices[0].get("message", {}).get("content", "") or ""
 
     resp_usage = data.get("usage", {})
     return LLMResponse(
@@ -348,7 +350,10 @@ def chat(
     effective = provider
     if model and model != provider.model:
         effective = ProviderConfig(
-            format=provider.format, url=provider.url, key=provider.key, model=model,
+            format=provider.format,
+            url=provider.url,
+            key=provider.key,
+            model=model,
         )
 
     tout = timeout or _DEFAULT_TIMEOUTS.get(effective.format, 60.0)
