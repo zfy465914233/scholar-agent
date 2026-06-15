@@ -159,6 +159,18 @@ def _bm25_ranked_with_expansion(
     ]
 
 
+SNIPPET_MAX_CHARS = 300
+
+
+def _snippet(doc: dict) -> str:
+    """Truncated search_text for a result preview.
+
+    Lets the caller judge relevance — and often answer directly — from the
+    retrieval payload, without a second file Read per hit.
+    """
+    return str(doc.get("search_text", ""))[:SNIPPET_MAX_CHARS]
+
+
 def retrieve_bm25(query: str, documents: list[dict], limit: int, index_path: Path | None = None) -> list[dict]:
     """BM25-only retrieval with synonym query expansion (score blend)."""
     bm25 = _get_bm25(documents, index_path) if index_path is not None else BM25(documents)
@@ -173,6 +185,7 @@ def retrieve_bm25(query: str, documents: list[dict], limit: int, index_path: Pat
                 "title": doc.get("title", ""),
                 "type": doc.get("type", ""),
                 "topic": doc.get("topic", ""),
+                "snippet": _snippet(doc),
                 "score": round(score, 4),
                 "matched_terms": sorted(set(matched_terms)),
                 "source": "bm25",
@@ -221,6 +234,7 @@ def retrieve_hybrid(
                     "title": doc["title"],
                     "type": doc["type"],
                     "topic": doc["topic"],
+                    "snippet": _snippet(doc),
                     "score": round(score, 4),
                     "matched_terms": sorted(set(matched_terms)),
                     "source": "bm25",
@@ -263,6 +277,7 @@ def retrieve_hybrid(
                 "title": doc.get("title", ""),
                 "type": doc.get("type", ""),
                 "topic": doc.get("topic", ""),
+                "snippet": _snippet(doc),
                 "score": round(score, 4),
                 "matched_terms": sorted(set(matched_terms_map.get(doc_id, []))),
                 "source": "hybrid",
@@ -319,6 +334,11 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
         except Exception as exc:
             logger.warning("rerank failed, returning unranked candidates: %s", exc)
 
+    # Annotate each result with the card's confidence so callers can weight
+    # trust (reviewed/trusted outrank draft) without an extra file read.
+    doc_confidence = {d.get("doc_id"): d.get("confidence", "draft") for d in documents}
+    for r in results:
+        r["confidence"] = doc_confidence.get(r.get("doc_id"), "draft")
     return {"query": query, "results": results}
 
 

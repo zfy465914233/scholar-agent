@@ -475,5 +475,40 @@ class TestExpansionBlend(unittest.TestCase):
         self.assertEqual(ranked[0][0], 0)  # doc index 0 = A, surfaced by expansion
 
 
+class TestResultSnippet(unittest.TestCase):
+    """retrieve results carry a body snippet so callers need no second Read."""
+
+    def test_bm25_results_have_snippet(self) -> None:
+        docs = _make_documents(5)
+        results = retrieve_bm25("markov chain", docs, 3)
+        self.assertGreater(len(results), 0)
+        for r in results:
+            self.assertIn("snippet", r)
+            self.assertIsInstance(r["snippet"], str)
+            self.assertLessEqual(len(r["snippet"]), 300)
+
+    def test_hybrid_results_have_snippet(self) -> None:
+        docs = _make_documents(5)
+        # empty embedding index → BM25 fallback path, still must carry snippet
+        results = retrieve_hybrid("markov chain", docs, {"doc_ids": [], "embeddings": []}, 0.8, 3)
+        for r in results:
+            self.assertIn("snippet", r)
+
+    def test_retrieve_injects_confidence(self) -> None:
+        # retrieve() (the entry point) annotates each result with the card's
+        # confidence so callers can weight trust without a second file read.
+        import json
+        import tempfile
+
+        docs = _make_documents(5)
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = Path(tmp) / "index.json"
+            idx.write_text(json.dumps({"documents": docs}))
+            payload = retrieve("markov chain", idx, 3)
+        for r in payload["results"]:
+            self.assertIn("confidence", r)
+            self.assertIsInstance(r["confidence"], str)
+
+
 if __name__ == "__main__":
     unittest.main()

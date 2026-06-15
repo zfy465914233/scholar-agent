@@ -76,6 +76,7 @@ def parse_card(path: Path, knowledge_root: Path | None = None) -> dict[str, obje
         "tags": metadata.get("tags", []),
         "source_refs": metadata.get("source_refs", []),
         "updated_at": metadata.get("updated_at"),
+        "confidence": str(metadata.get("confidence", metadata.get("review_status", "draft"))),
         "search_text": build_search_text(metadata, body),
         "links": links,
     }

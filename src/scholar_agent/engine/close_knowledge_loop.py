@@ -260,6 +260,18 @@ def validate_answer_schema(answer_data: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 QUALITY_THRESHOLD_SAVE_RESEARCH = 0.30
 QUALITY_THRESHOLD_CAPTURE_ANSWER = 0.20
+# Above this quality score, a freshly-saved card auto-promotes from draft to
+# reviewed (it cleared the gate AND is substantively rich). trusted remains a
+# manual / usage-driven step — so the knowledge base self-refines instead of
+# every card sitting at draft forever.
+REVIEWED_QUALITY_THRESHOLD = 0.6
+
+
+def confidence_from_quality(quality_result: dict) -> str:
+    """Map a quality_score_answer_data result to a confidence label."""
+    if quality_result.get("passed") and quality_result.get("score", 0.0) >= REVIEWED_QUALITY_THRESHOLD:
+        return "reviewed"
+    return "draft"
 MIN_ANSWER_LENGTH_SAVE = 200
 MIN_ANSWER_LENGTH_CAPTURE = 150
 MIN_CLAIMS_SAVE = 1
@@ -495,6 +507,7 @@ def _build_frontmatter(
     source_urls: list[str],
     now: str,
     answer_data: dict,
+    confidence: str = "draft",
 ) -> list[str]:
     """Build the YAML frontmatter and card header lines."""
     card_language = answer_data.get("language", "zh")
@@ -517,7 +530,7 @@ def _build_frontmatter(
     card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
     lines.extend(
         [
-            "confidence: draft",
+            f"confidence: {confidence}",
             f"updated_at: {now}",
             "origin: web_research_with_synthesis",
             "review_status: draft",
@@ -755,6 +768,7 @@ def build_knowledge_card(
     knowledge_root: Path,
     index_path: Path | None = None,
     domain_override: str | None = None,
+    confidence: str = "draft",
 ) -> Path:
     """Build a knowledge card from research evidence and structured answer."""
     # 1. Resolve metadata
@@ -801,6 +815,7 @@ def build_knowledge_card(
         source_urls,
         now,
         answer_data,
+        confidence=confidence,
     )
     lines.extend(
         _build_toc(

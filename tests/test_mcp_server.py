@@ -431,5 +431,24 @@ class ReindexEmbeddingTest(unittest.TestCase):
             self.assertFalse(kwargs["build_embedding_index"])
 
 
+class ConfidenceFromQualityTest(unittest.TestCase):
+    """confidence_from_quality maps the quality gate result to a label."""
+
+    def test_high_quality_is_reviewed(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import confidence_from_quality
+
+        self.assertEqual(confidence_from_quality({"passed": True, "score": 0.8}), "reviewed")
+
+    def test_low_quality_is_draft(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import confidence_from_quality
+
+        self.assertEqual(confidence_from_quality({"passed": True, "score": 0.4}), "draft")
+
+    def test_failed_gate_is_draft_even_if_score_high(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import confidence_from_quality
+
+        self.assertEqual(confidence_from_quality({"passed": False, "score": 0.9}), "draft")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -43,6 +43,7 @@ from scholar_agent.engine.close_knowledge_loop import (
     QUALITY_THRESHOLD_CAPTURE_ANSWER,
     QUALITY_THRESHOLD_SAVE_RESEARCH,
     build_knowledge_card,
+    confidence_from_quality,
     quality_score_answer_data,
     validate_answer_schema,
 )
@@ -343,6 +344,7 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
             None,
             get_knowledge_dir(),
             index_path=get_index_path(),
+            confidence=confidence_from_quality(quality),
             **domain_kw,
         )
     except Exception as e:
@@ -485,7 +487,14 @@ def capture_answer(query: str, answer: str, tags: str = "", language: str = "zh"
 
     # Build the card
     try:
-        card_path = build_knowledge_card(query, answer_data, None, get_knowledge_dir(), index_path=get_index_path())
+        card_path = build_knowledge_card(
+            query,
+            answer_data,
+            None,
+            get_knowledge_dir(),
+            index_path=get_index_path(),
+            confidence=confidence_from_quality(quality),
+        )
     except Exception as e:
         return json.dumps({"error": f"Failed to write card: {e}"})
 
