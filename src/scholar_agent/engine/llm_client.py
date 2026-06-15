@@ -369,11 +369,23 @@ def chat(
         logger.debug("LLM response: %d chars, usage=%s", len(resp.content), resp.usage)
         return resp
 
-    return retry_with_backoff(
-        _call,
-        max_retries=max_retries,
-        retry_on=(HTTPError, URLError, OSError, RuntimeError),
-    )
+    try:
+        response = retry_with_backoff(
+            _call,
+            max_retries=max_retries,
+            retry_on=(HTTPError, URLError, OSError, RuntimeError),
+        )
+    except Exception:
+        # All retries exhausted — record the failure for observability.
+        from scholar_agent.engine import metrics
+
+        metrics.record_llm_call(failed=True)
+        raise
+
+    from scholar_agent.engine import metrics
+
+    metrics.record_llm_call(response.usage)
+    return response
 
 
 def chat_with_fallback(

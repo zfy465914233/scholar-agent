@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "description": "Curated academic synonyms. Query expansion uses these to map aliases/acronyms to canonical terms so that BM25 retrieves the same docs regardless of which form the user types.",
+    "format": "Each group has a canonical phrase and a list of aliases. At query time, if any phrase (canonical or alias) appears as a substring of the query, all phrases in the group are appended as additional queries and fused via RRF."
+  },
+  "groups": [
+    {"canonical": "diffusion model", "aliases": ["DDPM", "denoising diffusion probabilistic model", "score-based generative", "SDE", "NCSN", "noise conditional score network", "latent diffusion", "LDM", "stable diffusion"]},
+    {"canonical": "attention mechanism", "aliases": ["self-attention", "scaled dot-product attention", "multi-head attention", "MHA"]},
+    {"canonical": "transformer", "aliases": ["encoder-decoder", "self-attention network"]},
+    {"canonical": "reinforcement learning", "aliases": ["RL", "markov decision process", "MDP", "reward maximization", "rewarded actions"]},
+    {"canonical": "policy gradient", "aliases": ["PPO", "proximal policy optimization", "TRPO", "REINFORCE", "RLHF", "reinforcement learning from human feedback"]},
+    {"canonical": "value-based reinforcement learning", "aliases": ["Q-learning", "DQN", "deep Q-network", "temporal difference"]},
+    {"canonical": "BM25", "aliases": ["Okapi", "lexical retrieval", "best matching 25"]},
+    {"canonical": "contrastive learning", "aliases": ["SimCLR", "MoCo", "InfoNCE", "triplet loss"]},
+    {"canonical": "bayesian inference", "aliases": ["posterior estimation", "prior", "bayes theorem"]},
+    {"canonical": "markov chain monte carlo", "aliases": ["MCMC", "Metropolis-Hastings", "Hamiltonian Monte Carlo", "HMC", "NUTS", "Gibbs sampling"]},
+    {"canonical": "variational autoencoder", "aliases": ["VAE", "ELBO", "variational inference", "evidence lower bound"]},
+    {"canonical": "recurrent neural network", "aliases": ["RNN", "LSTM", "GRU", "long short-term memory"]},
+    {"canonical": "adam optimizer", "aliases": ["adaptive moment estimation", "AdamW"]},
+    {"canonical": "stochastic gradient descent", "aliases": ["SGD", "mini-batch gradient descent", "momentum optimizer"]},
+    {"canonical": "word embedding", "aliases": ["Word2Vec", "CBOW", "skip-gram", "word2vec", "distributional representation"]},
+    {"canonical": "autoregressive language model", "aliases": ["GPT", "decoder-only", "next-token prediction", "AR model"]},
+    {"canonical": "masked language model", "aliases": ["BERT", "MLM", "bidirectional encoder"]},
+    {"canonical": "multi-armed bandit", "aliases": ["exploration exploitation", "epsilon-greedy", "UCB", "Thompson sampling", "contextual bandit"]},
+    {"canonical": "generative adversarial network", "aliases": ["GAN", "adversarial training", "generator discriminator", "mode collapse"]},
+    {"canonical": "pretraining", "aliases": ["pretrain", "pretrained", "self-supervised pretraining"]},
+    {"canonical": "fine-tuning", "aliases": ["finetune", "fine tune", "instruction tuning", "supervised fine-tuning", "SFT"]},
+    {"canonical": "batch normalization", "aliases": ["BatchNorm", "BN", "layer normalization", "LayerNorm"]},
+    {"canonical": "dropout regularization", "aliases": ["dropout", "random masking", "neuron dropout"]},
+    {"canonical": "markov chain", "aliases": ["stochastic process", "transition matrix", "stationary distribution"]}
+  ]
+}

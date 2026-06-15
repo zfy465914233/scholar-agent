@@ -1,0 +1,130 @@
+{
+  "_meta": {
+    "description": "Retrieval quality benchmark for scholar-agent. Each query lists manually-judged relevant doc_ids from tests/fixtures/benchmark_cards/. Metrics: nDCG@3 and Recall@5.",
+    "categories": {
+      "stemming": "query uses a different morphological form than the document (diffusing vs diffusion)",
+      "synonym": "query uses an alias/acronym the document mentions (DDPM, SDE, RLHF)",
+      "rerank": "multiple topically-relevant docs exist; correct one requires fine-grained ranking",
+      "baseline": "exact lexical match should succeed"
+    }
+  },
+  "queries": [
+    {
+      "query": "diffusing models for image generation",
+      "relevant_doc_ids": ["ddpm-diffusion", "latent-diffusion", "score-based-generative"],
+      "category": "stemming",
+      "comment": "query uses 'diffusing' (gerund), docs say 'diffusion' (noun)"
+    },
+    {
+      "query": "how does attention mechanism scale with sequence length",
+      "relevant_doc_ids": ["transformer-attention"],
+      "category": "stemming",
+      "comment": "'scale/scaling' and 'attending/attention' both require stem match"
+    },
+    {
+      "query": "rewarded actions in sequential decisions",
+      "relevant_doc_ids": ["reinforcement-learning-basics", "ppo-policy-gradient", "q-learning-dqn"],
+      "category": "stemming",
+      "comment": "'rewarded' vs 'reward'; 'decisions' vs 'decision'"
+    },
+    {
+      "query": "optimizing neural network training with momentum",
+      "relevant_doc_ids": ["stochastic-gradient-descent", "adam-optimizer"],
+      "category": "stemming",
+      "comment": "'optimizing' vs 'optimizer/optimization'"
+    },
+    {
+      "query": "regularizing with random neuron dropout",
+      "relevant_doc_ids": ["dropout-regularization"],
+      "category": "stemming",
+      "comment": "'regularizing' vs 'regularization'"
+    },
+    {
+      "query": "embeddings from contrastive learning",
+      "relevant_doc_ids": ["word2vec-embeddings", "simclr-contrastive"],
+      "category": "stemming",
+      "comment": "'embeddings' vs 'embedding'"
+    },
+    {
+      "query": "DDPM denoising sampling speedup",
+      "relevant_doc_ids": ["ddpm-diffusion"],
+      "category": "synonym",
+      "comment": "DDPM is the canonical acronym; doc_id is 'ddpm-diffusion'"
+    },
+    {
+      "query": "score-based generative model via SDE",
+      "relevant_doc_ids": ["score-based-generative"],
+      "category": "synonym",
+      "comment": "SDE alias; also overlaps with diffusion"
+    },
+    {
+      "query": "PPO proximal policy optimization RLHF",
+      "relevant_doc_ids": ["ppo-policy-gradient"],
+      "category": "synonym",
+      "comment": "PPO/RLHF are aliases"
+    },
+    {
+      "query": "DQN deep Q-network Atari",
+      "relevant_doc_ids": ["q-learning-dqn"],
+      "category": "synonym",
+      "comment": "DQN is alias; doc_id is 'q-learning-dqn'"
+    },
+    {
+      "query": "MCMC Metropolis Hastings sampling",
+      "relevant_doc_ids": ["mcmc-sampling"],
+      "category": "synonym",
+      "comment": "MCMC is canonical acronym"
+    },
+    {
+      "query": "Word2Vec CBOW skip-gram",
+      "relevant_doc_ids": ["word2vec-embeddings"],
+      "category": "synonym",
+      "comment": "CBOW and skip-gram are sub-components"
+    },
+    {
+      "query": "RLHF PPO for language model alignment",
+      "relevant_doc_ids": ["ppo-policy-gradient", "gpt-autoregressive"],
+      "category": "rerank",
+      "comment": "PPO is the precise match; GPT provides context"
+    },
+    {
+      "query": "Markov chain stationary distribution",
+      "relevant_doc_ids": ["markov-chain-stochastic", "mcmc-sampling"],
+      "category": "rerank",
+      "comment": "Both mention Markov chain; the dedicated card should rank first"
+    },
+    {
+      "query": "Bayesian posterior approximation",
+      "relevant_doc_ids": ["bayesian-inference", "mcmc-sampling"],
+      "category": "rerank",
+      "comment": "Bayesian-inference is primary; MCMC is method"
+    },
+    {
+      "query": "best optimizer for transformer training",
+      "relevant_doc_ids": ["adam-optimizer", "batch-normalization"],
+      "category": "rerank",
+      "comment": "Adam is the answer; BatchNorm is supporting"
+    },
+    {
+      "query": "BM25 lexical retrieval scoring formula",
+      "relevant_doc_ids": ["bm25-lexical-retrieval"],
+      "category": "baseline",
+      "comment": "exact lexical match"
+    },
+    {
+      "query": "BERT masked language model pretraining",
+      "relevant_doc_ids": ["bert-masked-lm"],
+      "category": "baseline"
+    },
+    {
+      "query": "GAN adversarial training mode collapse",
+      "relevant_doc_ids": ["gan-adversarial"],
+      "category": "baseline"
+    },
+    {
+      "query": "LSTM gating mechanism forget gate",
+      "relevant_doc_ids": ["lstm-sequence-modeling"],
+      "category": "baseline"
+    }
+  ]
+}

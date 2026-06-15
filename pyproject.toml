@@ -74,6 +74,9 @@ scholar_agent = ["schemas/**", "templates/**", "config_data/**", "skills/**", "v
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--tb=short -q"
+markers = [
+    "benchmark: retrieval-quality regression benchmark (nDCG@3 / Recall@5)",
+]
 
 [tool.ruff]
 target-version = "py310"

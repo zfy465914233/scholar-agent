@@ -866,11 +866,24 @@ def build_knowledge_card(
 
 
 def reindex(knowledge_root: Path, index_output: Path) -> bool:
-    """Rebuild the local index."""
+    """Rebuild the local index, refreshing the embedding index too if one exists.
+
+    Honors the build-once-auto-enable policy (decision D1): when an embedding
+    index sits next to the BM25 index (built via ``scholar-agent index
+    --build-embedding-index``), automatic reindex keeps it fresh so newly
+    added cards become semantically searchable. Absent the embedding index,
+    reindex stays BM25-only.
+    """
     try:
         from scholar_agent.engine.local_index import write_index
 
-        write_index(knowledge_root, index_output)
+        embedding_path = index_output.parent / "embeddings.json"
+        write_index(
+            knowledge_root,
+            index_output,
+            build_embedding_index=embedding_path.exists(),
+            embedding_output=embedding_path,
+        )
         return True
     except Exception:
         logger.exception("local index rebuild failed")

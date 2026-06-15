@@ -59,6 +59,17 @@ CODE_PATTERNS = (
 # Threshold: if top BM25 score is below this, consider web-led even without keyword match
 LOCAL_SCORE_THRESHOLD = 2.0
 
+# Intent-classification patterns, grouped for routing. These are multi-language
+# intent cues (freshness / definition / code), NOT retrieval synonyms — the
+# latter live in assets/synonyms.json and expand queries at the BM25 layer.
+# Override per-call by passing a ``patterns`` dict to :func:`classify_route`
+# (e.g. testing, or extending to a new language without editing this module).
+_DEFAULT_ROUTING_PATTERNS: dict[str, tuple[str, ...]] = {
+    "latest": LATEST_PATTERNS,
+    "definition": DEFINITION_PATTERNS,
+    "code": CODE_PATTERNS,
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Route a query and build a minimal evidence pack.")
@@ -94,14 +105,19 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.lower()).strip()
 
 
-def classify_route(query: str, index_path: Path | None = None) -> str:
+def classify_route(
+    query: str,
+    index_path: Path | None = None,
+    patterns: dict[str, tuple[str, ...]] | None = None,
+) -> str:
     normalized = normalize_text(query)
+    active = patterns if patterns is not None else _DEFAULT_ROUTING_PATTERNS
 
-    if any(pattern in normalized for pattern in LATEST_PATTERNS):
+    if any(pattern in normalized for pattern in active["latest"]):
         return "web-led"
-    if any(pattern in normalized for pattern in DEFINITION_PATTERNS):
+    if any(pattern in normalized for pattern in active["definition"]):
         return "local-led"
-    if any(pattern in normalized for pattern in CODE_PATTERNS):
+    if any(pattern in normalized for pattern in active["code"]):
         return "context-led"
 
     # Probe retrieval: if local knowledge has a strong match, prefer local-led

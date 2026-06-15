@@ -215,7 +215,7 @@ Scholar Agent 作为 MCP 服务器运行，直接接入你的工具：
 
 ## 本地检索
 
-知识通过 **BM25** 建立索引，支持快速关键词搜索——无需外部依赖。可选启用 **embedding** 语义检索层，通过 `scholar-agent index --build-embedding-index` 构建。
+知识通过 **BM25** 建立索引，支持快速关键词搜索——无需外部依赖。可选启用 **embedding** 语义检索层：用 `scholar-agent index --build-embedding-index` 构建一次后，`query_knowledge` 将自动采用混合检索（BM25 + 语义），并在新增卡片时保持索引同步。
 
 ---
 
@@ -227,6 +227,7 @@ Scholar Agent 作为 MCP 服务器运行，直接接入你的工具：
 | `scholar-agent serve-mcp` | 启动 MCP 服务器 |
 | `scholar-agent doctor` | 查看环境与配置诊断信息 |
 | `scholar-agent config show` | 显示解析后的配置 |
+| `scholar-agent index --build-embedding-index` | 构建/重建搜索索引；该标志启用混合检索 |
 | `scholar-agent install claude --write` | 注册 MCP 到 Claude Code |
 | `scholar-agent install vscode --write` | 注册 MCP 到 VS Code Copilot |
 | `scholar-agent install opencode --write` | 注册 MCP 到 OpenCode |

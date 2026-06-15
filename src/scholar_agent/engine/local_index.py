@@ -377,10 +377,22 @@ def write_index(
                 from scholar_agent.engine.embedding_retrieve import build_embedding_index as build_emb
 
                 docs = payload.get("documents", [])
-                emb_index = build_emb(cast("list[dict[Any, Any]]", docs)) if isinstance(docs, list) else build_emb([])
+                output_path = embedding_output or index_output.parent / "embeddings.json"
+                # Incremental: reuse embeddings for unchanged docs (matched by
+                # search_text hash) instead of re-embedding the whole corpus.
+                existing_emb: dict[str, Any] | None = None
+                if output_path.exists():
+                    try:
+                        existing_emb = json.loads(output_path.read_text(encoding="utf-8"))
+                    except (json.JSONDecodeError, OSError):
+                        existing_emb = None
+                emb_index = (
+                    build_emb(cast("list[dict[Any, Any]]", docs), existing_index=existing_emb)
+                    if isinstance(docs, list)
+                    else build_emb([], existing_index=existing_emb)
+                )
                 valid = sum(1 for e in emb_index["embeddings"] if e)
                 total = len(emb_index["doc_ids"])
-                output_path = embedding_output or index_output.parent / "embeddings.json"
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 atomic_write_text(output_path, json.dumps(emb_index, ensure_ascii=False) + "\n", encoding="utf-8")
                 logger.info("Embedding index: %d/%d docs embedded → %s", valid, total, output_path)

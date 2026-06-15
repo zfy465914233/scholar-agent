@@ -396,6 +396,64 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output format.",
     )
 
+    synonyms_parser = subparsers.add_parser(
+        "synonyms",
+        help="Manage the synonym dictionary used by query expansion during retrieval.",
+    )
+    synonyms_subparsers = synonyms_parser.add_subparsers(dest="synonyms_command", required=True)
+
+    synonyms_subparsers.add_parser("list", help="List all synonym groups (project + user).")
+
+    synonyms_search_parser = synonyms_subparsers.add_parser("search", help="Find groups containing a term.")
+    synonyms_search_parser.add_argument("term", help="Term to search for.")
+
+    synonyms_add_parser = synonyms_subparsers.add_parser(
+        "add", help="Add a synonym group to the user-level dictionary at ~/.scholar/synonyms.json."
+    )
+    synonyms_add_parser.add_argument("canonical", help="The canonical phrase.")
+    synonyms_add_parser.add_argument("aliases", nargs="+", help="One or more alias phrases.")
+
+    synonyms_remove_parser = synonyms_subparsers.add_parser(
+        "remove", help="Remove a synonym group from the user-level dictionary."
+    )
+    synonyms_remove_parser.add_argument("canonical", help="Canonical phrase to remove.")
+
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Print in-process metrics (LLM token usage, retrieve call counts, "
+        "rerank fallback events). For long-running processes (MCP server); "
+        "one-shot CLI invocations will show only this run's activity.",
+    )
+    status_parser.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="text",
+        help="Output format.",
+    )
+
+    index_parser = subparsers.add_parser(
+        "index",
+        help="Build or rebuild the local search index. Pass --build-embedding-index "
+        "to enable hybrid (BM25 + semantic) retrieval.",
+    )
+    index_parser.add_argument(
+        "--full-rebuild",
+        action="store_true",
+        help="Discard the existing index and rebuild from scratch (default: incremental).",
+    )
+    index_parser.add_argument(
+        "--build-embedding-index",
+        action="store_true",
+        help="Also build the embedding index. Once present, query_knowledge "
+        "automatically uses hybrid retrieval and keeps the embedding index fresh.",
+    )
+    index_parser.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="text",
+        help="Output format.",
+    )
+
     return parser
 
 
@@ -1105,6 +1163,140 @@ def _run_daily_process(date_str: str, dry_run: bool, output_format: str) -> int:
     return 0
 
 
+def _run_synonyms(sub: str, canonical: str, aliases: list[str], term: str) -> int:
+    """Dispatch for the `scholar-agent synonyms` subcommand family."""
+    from scholar_agent.engine import synonyms as syn
+
+    if sub == "list":
+        merged = syn.load_synonyms()
+        if not merged:
+            print("No synonym groups configured.")
+            return 0
+        print(f"{len(merged)} synonym group(s):")
+        for canon, alias_list in sorted(merged.items()):
+            print(f"  • {canon}")
+            if alias_list:
+                print(f"      aliases: {', '.join(alias_list)}")
+        return 0
+
+    if sub == "search":
+        merged = syn.load_synonyms()
+        needle = term.strip().lower()
+        hits = [
+            (canon, aliases)
+            for canon, aliases in merged.items()
+            if needle == canon or needle in aliases or any(needle in a for a in aliases)
+        ]
+        if not hits:
+            print(f"No synonym group matches '{term}'.")
+            return 1
+        for canon, alias_list in hits:
+            print(f"  • {canon}")
+            if alias_list:
+                print(f"      aliases: {', '.join(alias_list)}")
+        return 0
+
+    if sub == "add":
+        if not canonical or not aliases:
+            print("Usage: synonyms add <canonical> <alias1> [alias2 ...]")
+            return 2
+        path = syn.add_user_group(canonical, aliases)
+        print(f"Added '{canonical}' with {len(aliases)} alias(es) → {path}")
+        return 0
+
+    if sub == "remove":
+        if not canonical:
+            print("Usage: synonyms remove <canonical>")
+            return 2
+        if syn.remove_user_group(canonical):
+            print(f"Removed '{canonical}' from user-level synonyms.")
+            return 0
+        print(f"'{canonical}' not found in user-level synonyms.")
+        return 1
+
+    print(f"Unknown synonyms subcommand: {sub}")
+    return 2
+
+
+def _run_status(output_format: str) -> int:
+    """Print in-process metrics. For long-running processes (MCP server)."""
+    from scholar_agent.engine import metrics
+
+    snapshot = metrics.get_metrics()
+
+    if output_format == "json":
+        print(json.dumps(snapshot, ensure_ascii=False, indent=2))
+        return 0
+
+    llm = snapshot["llm"]
+    retrieve = snapshot["retrieve"]
+    print("Scholar Agent in-process metrics")
+    print("================================")
+    print()
+    print("LLM:")
+    print(f"  calls            : {llm['calls']}")
+    print(f"  failures         : {llm['failures']}")
+    print(f"  prompt_tokens    : {llm['prompt_tokens']:,}")
+    print(f"  completion_tokens: {llm['completion_tokens']:,}")
+    print(f"  total_tokens     : {llm['total_tokens']:,}")
+    print()
+    print("Retrieve:")
+    print(f"  calls            : {retrieve['calls']}")
+    print(f"  expansions_used  : {retrieve['expansions_used']}")
+    print(f"  rerank_calls     : {retrieve['rerank_calls']}")
+    print(f"  rerank_fallbacks : {retrieve['rerank_fallbacks']}")
+    return 0
+
+
+def _run_index(full_rebuild: bool, build_embedding_index: bool, output_format: str) -> int:
+    """Build or rebuild the local index (BM25, optionally embedding)."""
+    from scholar_agent.engine.local_index import write_index
+
+    knowledge_dir = scholar_config.get_knowledge_dir()
+    index_path = scholar_config.get_index_path()
+    embedding_path = index_path.parent / "embeddings.json"
+
+    try:
+        payload = write_index(
+            knowledge_dir,
+            index_path,
+            full_rebuild=full_rebuild,
+            build_embedding_index=build_embedding_index,
+            embedding_output=embedding_path,
+        )
+    except Exception as exc:
+        sys.stderr.write(f"Index build failed: {exc}\n")
+        return 1
+
+    docs = payload.get("documents", []) if isinstance(payload, dict) else []
+    result: dict[str, object] = {
+        "knowledge_dir": str(knowledge_dir),
+        "index_path": str(index_path),
+        "documents": len(docs) if isinstance(docs, list) else 0,
+        "full_rebuild": full_rebuild,
+        "embedding_index": str(embedding_path) if build_embedding_index else None,
+        "embedding_index_built": embedding_path.exists() if build_embedding_index else None,
+    }
+
+    if output_format == "json":
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    print(f"Indexed {result['documents']} document(s) → {index_path}")
+    if build_embedding_index:
+        if embedding_path.exists():
+            print(f"Embedding index built → {embedding_path}")
+            print("query_knowledge will now use hybrid (BM25 + semantic) retrieval.")
+        else:
+            print("Embedding index build was skipped (see logs); staying BM25-only.")
+    elif embedding_path.exists():
+        print(
+            "Note: an embedding index exists but was not refreshed. "
+            "Pass --build-embedding-index to update it."
+        )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -1143,6 +1335,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 force=args.force,
                 output_format=args.format,
             )
+    if command == "synonyms":
+        return _run_synonyms(
+            sub=args.synonyms_command,
+            canonical=getattr(args, "canonical", ""),
+            aliases=getattr(args, "aliases", []),
+            term=getattr(args, "term", ""),
+        )
+    if command == "status":
+        return _run_status(output_format=args.format)
+    if command == "index":
+        return _run_index(
+            full_rebuild=args.full_rebuild,
+            build_embedding_index=args.build_embedding_index,
+            output_format=args.format,
+        )
     if command == "install":
         return _run_install(
             host=args.host,

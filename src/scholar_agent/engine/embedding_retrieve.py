@@ -18,6 +18,7 @@ Configuration (environment variables):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -36,6 +37,15 @@ try:
     _LOCAL_MODEL_AVAILABLE = True
 except ImportError:
     pass
+
+# numpy ships with sentence-transformers; vectorise cosine scoring when present
+# and fall back to a pure-Python loop otherwise. Both paths are parity-tested.
+try:
+    import numpy as _np
+
+    _HAS_NUMPY = True
+except ImportError:  # pragma: no cover - numpy is a transitive dep
+    _HAS_NUMPY = False
 
 _DEFAULT_LOCAL_MODEL = "all-MiniLM-L6-v2"
 _DEFAULT_API_MODEL = "text-embedding-3-small"
@@ -67,6 +77,15 @@ def _get_local_model() -> Any:
     if _local_model is None and _LOCAL_MODEL_AVAILABLE:
         _local_model = SentenceTransformer(_get_model())
     return _local_model
+
+
+# ── Query embedding cache ──────────────────────────────────────────
+
+# Plain dict keyed on query text; insertion order gives us LRU eviction for
+# free. We avoid functools.lru_cache here because embed_query can return []
+# on backend failure and we want to retry rather than cache the miss.
+_query_cache: dict[str, list[float]] = {}
+_QUERY_CACHE_MAX = 128
 
 
 # ── Core embedding functions ───────────────────────────────────────
@@ -126,9 +145,29 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
 
 
 def embed_query(query: str) -> list[float]:
-    """Compute embedding for a single query string."""
+    """Compute embedding for a single query string.
+
+    Results are LRU-cached (size 128) keyed on the query text — repeated
+    identical queries skip the underlying ``embed_texts`` call. Clear with
+    :func:`clear_embed_cache` (e.g. when the embedding backend changes).
+    """
+    cached = _query_cache.get(query)
+    if cached is not None:
+        return cached
     result = embed_texts([query])
-    return result[0] if result else []
+    embedding = result[0] if result else []
+    # Only cache successful embeddings — failures should retry on next call.
+    if embedding:
+        if len(_query_cache) >= _QUERY_CACHE_MAX:
+            # Drop oldest entry (Python 3.7+ dict preserves insertion order)
+            _query_cache.pop(next(iter(_query_cache)))
+        _query_cache[query] = embedding
+    return embedding
+
+
+def clear_embed_cache() -> None:
+    """Invalidate the query embedding cache."""
+    _query_cache.clear()
 
 
 # ── Similarity ─────────────────────────────────────────────────────
@@ -146,40 +185,126 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 # ── Index building ─────────────────────────────────────────────────
 
 
-def build_embedding_index(documents: list[dict]) -> dict[str, Any]:
+def _text_hash(text: str) -> str:
+    """Short sha256 of a document's search_text for change detection."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def build_embedding_index(
+    documents: list[dict], existing_index: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Compute embeddings for all documents and return an embedding index.
 
-    Each document's ``search_text`` field is used as the embedding input.
+    Each document's ``search_text`` is the embedding input. When
+    *existing_index* (a prior index from this function) is supplied,
+    embeddings for documents whose ``search_text`` is unchanged (sha256 match)
+    are reused — only new or modified documents are re-embedded, so periodic
+    reindex stays cheap as the corpus grows. The index carries a
+    ``text_hashes`` map for the next call; the field is additive, so older
+    readers that only know ``doc_ids`` / ``embeddings`` are unaffected.
     """
+    doc_ids = [str(doc.get("doc_id", "")) for doc in documents]
     texts = [str(doc.get("search_text", "")) for doc in documents]
-    if not texts:
-        return {"model": _get_model(), "backend": _get_backend(), "embeddings": [], "doc_ids": []}
+    hashes = [_text_hash(t) for t in texts]
 
-    # Batch embed
-    batch_size = 32
-    all_embeddings: list[list[float]] = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        non_empty = [(j, t) for j, t in enumerate(batch) if t.strip()]
-        if not non_empty:
-            all_embeddings.extend([[] for _ in batch])
+    if not documents:
+        return {
+            "model": _get_model(),
+            "backend": _get_backend(),
+            "embeddings": [],
+            "doc_ids": [],
+            "text_hashes": {},
+        }
+
+    prev_emb: dict[str, list[float]] = {}
+    prev_hash: dict[str, str] = {}
+    if existing_index:
+        prev_hash = dict(existing_index.get("text_hashes") or {})
+        prev_ids = existing_index.get("doc_ids", [])
+        prev_embs = existing_index.get("embeddings", [])
+        prev_emb = {d: e for d, e in zip(prev_ids, prev_embs, strict=False) if e}
+
+    # Per document: reuse if unchanged, else queue for (re-)embedding.
+    embed_positions: list[int] = []
+    to_embed_texts: list[str] = []
+    for pos, (doc_id, text, h) in enumerate(zip(doc_ids, texts, hashes, strict=True)):
+        if doc_id in prev_emb and prev_hash.get(doc_id) == h:
             continue
-        indices, valid_texts = zip(*non_empty, strict=False)
-        batch_embeddings = embed_texts(list(valid_texts))
-        result: list[list[float]] = [[] for _ in batch]
-        for idx, emb in zip(indices, batch_embeddings, strict=False):
-            result[idx] = emb
-        all_embeddings.extend(result)
+        if text.strip():
+            embed_positions.append(pos)
+            to_embed_texts.append(text)
+
+    new_embeddings: dict[int, list[float]] = {}
+    batch_size = 32
+    for i in range(0, len(to_embed_texts), batch_size):
+        batch_embeddings = embed_texts(to_embed_texts[i : i + batch_size])
+        for j, emb in enumerate(batch_embeddings):
+            new_embeddings[embed_positions[i + j]] = emb
+
+    all_embeddings: list[list[float]] = []
+    for pos, (doc_id, _text, h) in enumerate(zip(doc_ids, texts, hashes, strict=True)):
+        emb = new_embeddings.get(pos)
+        if emb:
+            all_embeddings.append(emb)
+        elif doc_id in prev_emb and prev_hash.get(doc_id) == h:
+            all_embeddings.append(prev_emb[doc_id])
+        else:
+            all_embeddings.append([])
 
     return {
         "model": _get_model(),
         "backend": _get_backend(),
-        "doc_ids": [str(doc.get("doc_id", "")) for doc in documents],
+        "doc_ids": doc_ids,
         "embeddings": all_embeddings,
+        "text_hashes": dict(zip(doc_ids, hashes, strict=True)),
     }
 
 
 # ── Retrieval ──────────────────────────────────────────────────────
+
+
+def _cosine_topk(
+    query_vec: list[float],
+    doc_vecs: list[list[float]],
+    doc_ids: list[str],
+    k: int,
+) -> list[tuple[str, float]]:
+    """Top-k cosine similarities, descending, positive-only.
+
+    Vectorised with numpy when available — one matrix-vector product over the
+    whole document matrix instead of an $O(N \\cdot d)$ Python loop. Falls
+    back to a per-document loop otherwise. Both paths return identical
+    results (covered by the parity test).
+    """
+    if not doc_ids:
+        return []
+
+    if _HAS_NUMPY:
+        q = _np.asarray(query_vec, dtype=_np.float64)
+        D = _np.asarray(doc_vecs, dtype=_np.float64)
+        if D.ndim != 2 or D.shape[0] == 0:
+            return []
+        q_norm = _np.linalg.norm(q)
+        d_norms = _np.linalg.norm(D, axis=1)
+        denom = d_norms * q_norm
+        sims = _np.zeros(D.shape[0], dtype=_np.float64)
+        nonzero = denom > 0
+        if nonzero.any():
+            sims[nonzero] = (D[nonzero] @ q) / denom[nonzero]
+        positive = _np.where(sims > 0)[0]
+        if positive.size == 0:
+            return []
+        order = _np.argsort(sims[positive])[::-1][: min(k, positive.size)]
+        selected = positive[order]
+        return [(doc_ids[i], float(sims[i])) for i in selected]
+
+    scores: list[tuple[str, float]] = []
+    for doc_id, emb in zip(doc_ids, doc_vecs, strict=False):
+        sim = cosine_similarity(query_vec, emb)
+        if sim > 0:
+            scores.append((doc_id, sim))
+    scores.sort(key=lambda x: -x[1])
+    return scores[:k]
 
 
 def retrieve_by_embedding(
@@ -189,26 +314,23 @@ def retrieve_by_embedding(
 ) -> list[tuple[str, float]]:
     """Retrieve top-k documents by embedding similarity.
 
-    Returns list of (doc_id, similarity_score).
+    Returns list of (doc_id, similarity_score), descending, positive-only.
     """
-    # Prefer local embedding for query to match the index backend
     query_embedding = embed_query(query)
     if not query_embedding:
         return []
 
     doc_ids = embedding_index.get("doc_ids", [])
     embeddings = embedding_index.get("embeddings", [])
+    # Pair ids with embeddings, dropping docs that have no embedding (e.g.
+    # backend failure during index build) so the two lists stay aligned.
+    pairs = [(did, emb) for did, emb in zip(doc_ids, embeddings, strict=False) if emb]
+    if not pairs:
+        return []
 
-    scores: list[tuple[str, float]] = []
-    for doc_id, doc_emb in zip(doc_ids, embeddings, strict=False):
-        if not doc_emb:
-            continue
-        sim = cosine_similarity(query_embedding, doc_emb)
-        if sim > 0:
-            scores.append((doc_id, sim))
-
-    scores.sort(key=lambda x: -x[1])
-    return scores[:k]
+    valid_ids = [p[0] for p in pairs]
+    valid_vecs = [p[1] for p in pairs]
+    return _cosine_topk(query_embedding, valid_vecs, valid_ids, k)
 
 
 # ── CLI ────────────────────────────────────────────────────────────

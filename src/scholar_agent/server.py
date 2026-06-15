@@ -169,8 +169,20 @@ def _configured_index_path(config: dict[str, Any]) -> Path:
     return Path(configured) if configured else get_index_path()
 
 
+def _embedding_index_path(index_path: Path) -> Path | None:
+    """Return the embedding index path if one exists next to the BM25 index.
+
+    Governs the "build once, auto-enable" policy (decision D1): when a user
+    has built an embedding index via ``scholar-agent index
+    --build-embedding-index``, query_knowledge transparently switches to
+    hybrid retrieval. Absent the file, retrieval stays BM25-only.
+    """
+    emb = index_path.parent / "embeddings.json"
+    return emb if emb.exists() else None
+
+
 @tool
-def query_knowledge(query: str, limit: int = 5) -> str:
+def query_knowledge(query: str, limit: int = 5, rerank: bool = False) -> str:
     """Search the local knowledge base for relevant information.
 
     Returns top-k knowledge cards matching the query, with scores and content.
@@ -179,6 +191,10 @@ def query_knowledge(query: str, limit: int = 5) -> str:
     Args:
         query: The search query in natural language.
         limit: Maximum number of results to return (default 5).
+        rerank: When true, fetches limit*3 candidates and uses an LLM
+            cross-encoder to score each (query, candidate) pair on 0-10
+            relevance. Improves top-1 precision for ambiguous queries at
+            the cost of one LLM call per candidate (~2s each). Default false.
     """
     if not isinstance(limit, int) or limit < 1 or limit > 50:
         return json.dumps({"error": "limit must be an integer between 1 and 50", "results": []})
@@ -196,7 +212,13 @@ def query_knowledge(query: str, limit: int = 5) -> str:
             }
         )
 
-    result = retrieve(query, index_path, limit)
+    result = retrieve(
+        query,
+        index_path,
+        limit,
+        rerank=rerank,
+        embedding_index_path=_embedding_index_path(index_path),
+    )
     if refresh_error:
         result["warning"] = refresh_error
     if refreshed:

@@ -5,9 +5,11 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,7 +20,13 @@ from scholar_agent.engine.close_knowledge_loop import (
     QUALITY_THRESHOLD_SAVE_RESEARCH,
     quality_score_answer_data,
 )
-from scholar_agent.server import capture_answer, list_knowledge, query_knowledge, save_research
+from scholar_agent.server import (
+    _embedding_index_path,
+    capture_answer,
+    list_knowledge,
+    query_knowledge,
+    save_research,
+)
 
 # Force config to always resolve to scholar-agent's own directories
 # regardless of cwd, so tests don't leak files into parent projects.
@@ -375,6 +383,52 @@ class RunBlockingTest(unittest.TestCase):
 
         result = asyncio.run(_run_blocking(lambda: "ok", tool_name="unknown_tool"))
         self.assertEqual("ok", result)
+
+
+class EmbeddingIndexPathTest(unittest.TestCase):
+    """_embedding_index_path: the build-once-auto-enable probe (decision D1)."""
+
+    def test_returns_path_when_embedding_index_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = Path(tmp) / "index.json"
+            idx.write_text("{}", encoding="utf-8")
+            emb = Path(tmp) / "embeddings.json"
+            emb.write_text("{}", encoding="utf-8")
+            self.assertEqual(_embedding_index_path(idx), emb)
+
+    def test_returns_none_when_embedding_index_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = Path(tmp) / "index.json"
+            idx.write_text("{}", encoding="utf-8")
+            self.assertIsNone(_embedding_index_path(idx))
+
+
+class ReindexEmbeddingTest(unittest.TestCase):
+    """reindex refreshes the embedding index when one exists (decision D1)."""
+
+    def test_reindex_rebuilds_embedding_when_present(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import reindex
+
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = Path(tmp) / "index.json"
+            emb = Path(tmp) / "embeddings.json"
+            emb.write_text("{}", encoding="utf-8")
+            with patch("scholar_agent.engine.local_index.write_index") as mock_w:
+                self.assertTrue(reindex(Path(tmp), idx))
+            mock_w.assert_called_once()
+            kwargs = mock_w.call_args.kwargs
+            self.assertTrue(kwargs["build_embedding_index"])
+            self.assertEqual(kwargs["embedding_output"], emb)
+
+    def test_reindex_skips_embedding_when_absent(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import reindex
+
+        with tempfile.TemporaryDirectory() as tmp:
+            idx = Path(tmp) / "index.json"
+            with patch("scholar_agent.engine.local_index.write_index") as mock_w:
+                self.assertTrue(reindex(Path(tmp), idx))
+            kwargs = mock_w.call_args.kwargs
+            self.assertFalse(kwargs["build_embedding_index"])
 
 
 if __name__ == "__main__":

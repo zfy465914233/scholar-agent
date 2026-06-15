@@ -3,12 +3,18 @@
 Implements Okapi BM25 without external dependencies. Used by local_retrieve.py
 to replace the previous simple TF scoring with proper term-frequency weighting
 and document-length normalization.
+
+English tokens are Porter-stemmed (see ``stemmer.py``) so that morphological
+variants ("diffusion" / "diffusing" / "diffused") collapse to a single token.
+Chinese tokens use overlapping bigrams; Porter does not apply to CJK.
 """
 
 from __future__ import annotations
 
 import math
 import re
+
+from scholar_agent.engine.stemmer import stem
 
 TOKEN_RE = re.compile(r"[a-z0-9_-]+")
 CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]+")
@@ -82,7 +88,7 @@ CJK_STOPWORDS = {
 
 def tokenize(text: str) -> list[str]:
     lowered = text.lower()
-    tokens = [t for t in TOKEN_RE.findall(lowered) if t not in STOPWORDS]
+    tokens = [stem(t) for t in TOKEN_RE.findall(lowered) if t not in STOPWORDS]
 
     for chunk in CJK_RE.findall(lowered):
         if len(chunk) == 1:

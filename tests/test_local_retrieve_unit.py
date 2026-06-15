@@ -6,7 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from scholar_agent.engine.bm25 import BM25
 from scholar_agent.engine.local_retrieve import (
+    _bm25_ranked_with_expansion,
     _normalize_scores,
     retrieve,
     retrieve_bm25,
@@ -429,6 +431,48 @@ class TestEmbeddingExceptionFallback(unittest.TestCase):
         self.assertGreater(len(results), 0)
         for r in results:
             self.assertEqual(r["source"], "bm25")
+
+
+class TestExpansionBlend(unittest.TestCase):
+    """Synonym expansion blends original + expansion BM25 scores.
+
+    Contract: the original query's ranking is preserved (precision), while an
+    expansion-only card can still enter top-k (recall).
+    """
+
+    def test_no_expansion_matches_plain_bm25(self) -> None:
+        docs = _make_documents(5)
+        bm25 = BM25(docs)
+        with patch("scholar_agent.engine.local_retrieve.expand_query", return_value=["markov chain"]):
+            ranked = _bm25_ranked_with_expansion(bm25, "markov chain", 3)
+        plain = [idx for idx, _s, _m in bm25.score("markov chain")[:3]]
+        self.assertEqual([r[0] for r in ranked], plain)
+
+    def test_expansion_keeps_precise_hit_at_top(self) -> None:
+        docs = _make_documents(5)
+        bm25 = BM25(docs)
+        plain_top1 = bm25.score("markov chain")[0][0]
+        with patch(
+            "scholar_agent.engine.local_retrieve.expand_query",
+            return_value=["markov chain", "probability transition matrix"],
+        ):
+            ranked = _bm25_ranked_with_expansion(bm25, "markov chain", 3)
+        self.assertEqual(ranked[0][0], plain_top1)
+
+    def test_expansion_surfaces_missed_card(self) -> None:
+        # doc-A is invisible to the original query but an expansion maps to it.
+        docs = [
+            {"doc_id": "A", "search_text": "denoising score matching SDE generative"},
+            {"doc_id": "B", "search_text": "alpha beta gamma delta"},
+            {"doc_id": "C", "search_text": "epsilon zeta eta theta"},
+        ]
+        bm25 = BM25(docs)
+        with patch(
+            "scholar_agent.engine.local_retrieve.expand_query",
+            return_value=["image generation", "SDE"],
+        ):
+            ranked = _bm25_ranked_with_expansion(bm25, "image generation", 3)
+        self.assertEqual(ranked[0][0], 0)  # doc index 0 = A, surfaced by expansion
 
 
 if __name__ == "__main__":

@@ -218,7 +218,7 @@ Add this to your `claude_desktop_config.json`:
 
 ## Local Retrieval
 
-Knowledge is indexed with **BM25** for fast keyword search — no external dependencies required. An optional **embedding** layer can be enabled for semantic similarity with `scholar-agent index --build-embedding-index`.
+Knowledge is indexed with **BM25** for fast keyword search — no external dependencies required. An optional **embedding** layer adds semantic similarity: build it once with `scholar-agent index --build-embedding-index` and `query_knowledge` automatically switches to hybrid (BM25 + semantic) retrieval, keeping the index fresh as you add cards.
 
 ---
 
@@ -230,6 +230,7 @@ Knowledge is indexed with **BM25** for fast keyword search — no external depen
 | `scholar-agent serve-mcp` | Start the MCP server |
 | `scholar-agent doctor` | Show environment and config diagnostics |
 | `scholar-agent config show` | Show resolved configuration |
+| `scholar-agent index --build-embedding-index` | Build/rebuild the search index; the flag enables hybrid retrieval |
 | `scholar-agent install claude --write` | Register MCP with Claude Code |
 | `scholar-agent install vscode --write` | Register MCP with VS Code Copilot |
 | `scholar-agent install opencode --write` | Register MCP with OpenCode |
