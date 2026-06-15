@@ -79,8 +79,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--bm25-weight",
         type=float,
-        default=0.6,
-        help="Weight for BM25 scores in hybrid ranking (0-1). Default: 0.6",
+        default=0.8,
+        help="Weight for BM25 scores in hybrid ranking (0-1). Default: 0.8",
     )
     parser.add_argument("--limit", type=int, default=5, help="Maximum number of results to return.")
     return parser.parse_args()
@@ -297,7 +297,7 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
     if embedding_index_path and Path(embedding_index_path).exists():
         embedding_index = json.loads(Path(embedding_index_path).read_text(encoding="utf-8"))
 
-    bm25_weight = kwargs.get("bm25_weight", 0.6)
+    bm25_weight = kwargs.get("bm25_weight", 0.8)
 
     # When reranking, pull extra candidates so the reranker has material to prune.
     candidate_limit = limit * 3 if rerank else limit
