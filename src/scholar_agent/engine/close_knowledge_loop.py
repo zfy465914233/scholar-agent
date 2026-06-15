@@ -272,6 +272,8 @@ def confidence_from_quality(quality_result: dict) -> str:
     if quality_result.get("passed") and quality_result.get("score", 0.0) >= REVIEWED_QUALITY_THRESHOLD:
         return "reviewed"
     return "draft"
+
+
 MIN_ANSWER_LENGTH_SAVE = 200
 MIN_ANSWER_LENGTH_CAPTURE = 150
 MIN_CLAIMS_SAVE = 1

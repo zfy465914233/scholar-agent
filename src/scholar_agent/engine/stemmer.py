@@ -66,21 +66,57 @@ def _ends_cvc(stem: str) -> bool:
 
 
 _STEP2: list[tuple[str, str]] = [
-    ("ational", "ate"), ("tional", "tion"), ("enci", "ence"), ("anci", "ance"),
-    ("izer", "ize"), ("abli", "able"), ("alli", "al"), ("entli", "ent"),
-    ("eli", "e"), ("ousli", "ous"), ("ization", "ize"), ("ation", "ate"),
-    ("ator", "ate"), ("alism", "al"), ("iveness", "ive"), ("fulness", "ful"),
-    ("ousness", "ous"), ("aliti", "al"), ("iviti", "ive"), ("biliti", "ble"),
+    ("ational", "ate"),
+    ("tional", "tion"),
+    ("enci", "ence"),
+    ("anci", "ance"),
+    ("izer", "ize"),
+    ("abli", "able"),
+    ("alli", "al"),
+    ("entli", "ent"),
+    ("eli", "e"),
+    ("ousli", "ous"),
+    ("ization", "ize"),
+    ("ation", "ate"),
+    ("ator", "ate"),
+    ("alism", "al"),
+    ("iveness", "ive"),
+    ("fulness", "ful"),
+    ("ousness", "ous"),
+    ("aliti", "al"),
+    ("iviti", "ive"),
+    ("biliti", "ble"),
 ]
 
 _STEP3: list[tuple[str, str]] = [
-    ("icate", "ic"), ("ative", ""), ("alize", "al"), ("iciti", "ic"),
-    ("ical", "ic"), ("ful", ""), ("ness", ""),
+    ("icate", "ic"),
+    ("ative", ""),
+    ("alize", "al"),
+    ("iciti", "ic"),
+    ("ical", "ic"),
+    ("ful", ""),
+    ("ness", ""),
 ]
 
 _STEP4: tuple[str, ...] = (
-    "al", "ance", "ence", "er", "ic", "able", "ible", "ant", "ement",
-    "ment", "ent", "ou", "ism", "ate", "iti", "ous", "ive", "ize",
+    "al",
+    "ance",
+    "ence",
+    "er",
+    "ic",
+    "able",
+    "ible",
+    "ant",
+    "ement",
+    "ment",
+    "ent",
+    "ou",
+    "ism",
+    "ate",
+    "iti",
+    "ous",
+    "ive",
+    "ize",
 )
 
 

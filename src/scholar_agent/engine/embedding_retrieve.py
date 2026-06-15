@@ -190,9 +190,7 @@ def _text_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
-def build_embedding_index(
-    documents: list[dict], existing_index: dict[str, Any] | None = None
-) -> dict[str, Any]:
+def build_embedding_index(documents: list[dict], existing_index: dict[str, Any] | None = None) -> dict[str, Any]:
     """Compute embeddings for all documents and return an embedding index.
 
     Each document's ``search_text`` is the embedding input. When
@@ -243,9 +241,9 @@ def build_embedding_index(
 
     all_embeddings: list[list[float]] = []
     for pos, (doc_id, _text, h) in enumerate(zip(doc_ids, texts, hashes, strict=True)):
-        emb = new_embeddings.get(pos)
-        if emb:
-            all_embeddings.append(emb)
+        hit: list[float] | None = new_embeddings.get(pos)
+        if hit:
+            all_embeddings.append(hit)
         elif doc_id in prev_emb and prev_hash.get(doc_id) == h:
             all_embeddings.append(prev_emb[doc_id])
         else:

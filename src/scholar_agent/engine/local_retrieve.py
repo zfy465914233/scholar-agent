@@ -16,6 +16,7 @@ import json
 import logging
 import threading
 from pathlib import Path
+from typing import TypeVar
 
 from scholar_agent.engine.bm25 import BM25
 from scholar_agent.engine.synonyms import expand_query
@@ -86,7 +87,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _normalize_scores(scores: dict[str, float]) -> dict[str, float]:
+_K = TypeVar("_K")
+
+
+def _normalize_scores(scores: dict[_K, float]) -> dict[_K, float]:
     """Normalize scores to [0, 1] range."""
     if not scores:
         return {}
@@ -98,9 +102,7 @@ def _normalize_scores(scores: dict[str, float]) -> dict[str, float]:
     return {k: (v - min_s) / rng for k, v in scores.items()}
 
 
-def _bm25_ranked_with_expansion(
-    bm25: BM25, query: str, k: int
-) -> list[tuple[int, float, set[str]]]:
+def _bm25_ranked_with_expansion(bm25: BM25, query: str, k: int) -> list[tuple[int, float, set[str]]]:
     """Run BM25 over the original query, boosted by synonym-expansion scores.
 
     The original query's BM25 score is the authoritative signal — a precise
@@ -153,10 +155,7 @@ def _bm25_ranked_with_expansion(
         blended[idx] = _EXPANSION_ORIG_WEIGHT * norm_orig.get(idx, 0.0) + _EXPANSION_EXP_WEIGHT * exp_best.get(idx, 0.0)
 
     ranked = sorted(blended.items(), key=lambda x: -x[1])[:k]
-    return [
-        (idx, score, orig_matched.get(idx, set()) | exp_matched.get(idx, set()))
-        for idx, score in ranked
-    ]
+    return [(idx, score, orig_matched.get(idx, set()) | exp_matched.get(idx, set())) for idx, score in ranked]
 
 
 SNIPPET_MAX_CHARS = 300
@@ -297,8 +296,8 @@ AMBIGUOUS_RELATIVE_DIFF = 0.10
 def _is_ambiguous(results: list[dict]) -> bool:
     if len(results) < 2:
         return False
-    s1 = results[0].get("score", 0.0)
-    s2 = results[1].get("score", 0.0)
+    s1 = float(results[0].get("score", 0.0))
+    s2 = float(results[1].get("score", 0.0))
     if s1 <= 0:
         return False
     return (s1 - s2) / s1 < AMBIGUOUS_RELATIVE_DIFF
@@ -333,7 +332,9 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
     candidate_limit = limit * 3 if rerank else limit
 
     if embedding_index is not None:
-        results = retrieve_hybrid(query, documents, embedding_index, bm25_weight, candidate_limit, index_path=index_path)
+        results = retrieve_hybrid(
+            query, documents, embedding_index, bm25_weight, candidate_limit, index_path=index_path
+        )
     else:
         results = retrieve_bm25(query, documents, candidate_limit, index_path=index_path)
 

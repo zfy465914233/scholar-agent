@@ -136,6 +136,7 @@ def load_persisted() -> dict[str, Any] | None:
     """Read the persisted snapshot, or None if absent / unreadable."""
     path = _metrics_path()
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None

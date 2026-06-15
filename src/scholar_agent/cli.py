@@ -1292,10 +1292,7 @@ def _run_index(full_rebuild: bool, build_embedding_index: bool, output_format: s
         else:
             print("Embedding index build was skipped (see logs); staying BM25-only.")
     elif embedding_path.exists():
-        print(
-            "Note: an embedding index exists but was not refreshed. "
-            "Pass --build-embedding-index to update it."
-        )
+        print("Note: an embedding index exists but was not refreshed. Pass --build-embedding-index to update it.")
     return 0
 
 

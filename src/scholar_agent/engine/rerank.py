@@ -100,11 +100,7 @@ def _build_list_block(candidates: list[dict[str, Any]], max_chars: int) -> str:
     lines: list[str] = []
     for i, candidate in enumerate(candidates, start=1):
         title = str(candidate.get("title", ""))[:200]
-        excerpt = str(
-            candidate.get("search_text")
-            or candidate.get("summary")
-            or candidate.get("path", "")
-        )[:max_chars]
+        excerpt = str(candidate.get("search_text") or candidate.get("summary") or candidate.get("path", ""))[:max_chars]
         excerpt = excerpt.replace("\n", " ")[:max_chars]
         lines.append(f"{i}. {title} — {excerpt}")
     return "\n".join(lines)
@@ -152,11 +148,7 @@ def _rerank_per_candidate(
     scores: list[float] = []
     for orig_idx, candidate in enumerate(candidates):
         title = str(candidate.get("title", ""))[:200]
-        excerpt = str(
-            candidate.get("search_text")
-            or candidate.get("summary")
-            or candidate.get("path", "")
-        )[:max_chars]
+        excerpt = str(candidate.get("search_text") or candidate.get("summary") or candidate.get("path", ""))[:max_chars]
         prompt = _PER_CANDIDATE_PROMPT_TEMPLATE.format(query=query[:500], title=title, excerpt=excerpt)
 
         score = _NEUTRAL_SCORE
