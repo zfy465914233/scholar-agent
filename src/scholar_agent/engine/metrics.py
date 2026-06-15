@@ -11,8 +11,11 @@ report), or :func:`reset` between test cases.
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -102,3 +105,37 @@ def reset() -> None:
     with _lock:
         _metrics.llm = LLMStats()
         _metrics.retrieve = RetrieveStats()
+
+
+def _metrics_path() -> Path:
+    """Where the metrics snapshot is persisted for out-of-process readers."""
+    home = os.environ.get("SCHOLAR_HOME")
+    base = Path(home) if home else Path.home() / ".scholar"
+    return Path(base) / "metrics.json"
+
+
+def persist() -> bool:
+    """Atomically snapshot the counters to ``SCHOLAR_HOME/metrics.json``.
+
+    Lets an out-of-process caller (e.g. ``scholar-agent status`` run in another
+    shell) observe a long-running MCP server's accumulated metrics, which
+    otherwise live only in that server's memory. Returns True on success.
+    """
+    path = _metrics_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(get_metrics(), ensure_ascii=False) + "\n", encoding="utf-8")
+        tmp.replace(path)
+        return True
+    except OSError:
+        return False
+
+
+def load_persisted() -> dict[str, Any] | None:
+    """Read the persisted snapshot, or None if absent / unreadable."""
+    path = _metrics_path()
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None

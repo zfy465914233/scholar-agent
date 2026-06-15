@@ -16,6 +16,8 @@ knowledge/
 paper-notes/
 daily-notes/
 graph.html
+metrics.json
+usage.json
 
 # Project-local data directory
 scholar/

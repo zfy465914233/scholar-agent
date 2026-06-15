@@ -224,6 +224,23 @@ def query_knowledge(query: str, limit: int = 5, rerank: bool = False) -> str:
         result["warning"] = refresh_error
     if refreshed:
         result["index_refreshed"] = True
+    # Persist metrics so `scholar-agent status` (a separate process) can see
+    # this long-running server's accumulated counters.
+    try:
+        from scholar_agent.engine import metrics as _metrics
+
+        _metrics.persist()
+    except Exception:
+        pass
+    # Record which cards were surfaced — the popularity signal for light
+    # personalization in retrieve(). Best-effort: failure must not affect the
+    # query result.
+    try:
+        from scholar_agent.engine import usage as _usage
+
+        _usage.record_usage([r.get("doc_id", "") for r in result.get("results", []) if r.get("doc_id")])
+    except Exception:
+        pass
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 import threading
 import unittest
 
@@ -100,6 +103,33 @@ class TestMetricsConcurrency(unittest.TestCase):
         self.assertEqual(snapshot["llm"]["calls"], n_threads * n_per_thread)
         self.assertEqual(snapshot["retrieve"]["calls"], n_threads * n_per_thread)
         self.assertEqual(snapshot["llm"]["total_tokens"], n_threads * n_per_thread)
+
+
+class TestMetricsPersistence(unittest.TestCase):
+    """persist/load_persisted let a separate process read server metrics."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.mkdtemp()
+        os.environ["SCHOLAR_HOME"] = self._tmp
+        metrics.reset()
+
+    def tearDown(self) -> None:
+        os.environ.pop("SCHOLAR_HOME", None)
+        shutil.rmtree(self._tmp, ignore_errors=True)
+        metrics.reset()
+
+    def test_persist_then_load_roundtrip(self) -> None:
+        metrics.record_retrieve_call(expansions_used=True)
+        metrics.record_llm_call({"total_tokens": 100})
+        self.assertTrue(metrics.persist())
+        loaded = metrics.load_persisted()
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertEqual(loaded["retrieve"]["calls"], 1)
+        self.assertEqual(loaded["llm"]["total_tokens"], 100)
+
+    def test_load_returns_none_when_no_file(self) -> None:
+        self.assertIsNone(metrics.load_persisted())
 
 
 if __name__ == "__main__":

@@ -1219,10 +1219,12 @@ def _run_synonyms(sub: str, canonical: str, aliases: list[str], term: str) -> in
 
 
 def _run_status(output_format: str) -> int:
-    """Print in-process metrics. For long-running processes (MCP server)."""
+    """Print metrics — prefers the persisted snapshot so a separate `status`
+    invocation can observe a running MCP server, falling back to this
+    process's own in-memory counters."""
     from scholar_agent.engine import metrics
 
-    snapshot = metrics.get_metrics()
+    snapshot = metrics.load_persisted() or metrics.get_metrics()
 
     if output_format == "json":
         print(json.dumps(snapshot, ensure_ascii=False, indent=2))

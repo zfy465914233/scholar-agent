@@ -288,6 +288,21 @@ def retrieve_hybrid(
 
 from typing import Any
 
+# Top-1/Top-2 score gap below this fraction of Top-1 signals an ambiguous
+# query (several candidates nearly tied) — surfaced as `ambiguous` so a caller
+# can opt into LLM rerank only when it helps, not on every clear-cut query.
+AMBIGUOUS_RELATIVE_DIFF = 0.10
+
+
+def _is_ambiguous(results: list[dict]) -> bool:
+    if len(results) < 2:
+        return False
+    s1 = results[0].get("score", 0.0)
+    s2 = results[1].get("score", 0.0)
+    if s1 <= 0:
+        return False
+    return (s1 - s2) / s1 < AMBIGUOUS_RELATIVE_DIFF
+
 
 def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, **kwargs) -> dict[str, Any]:
     """Main retrieval entry point — backward compatible with existing callers.
@@ -326,6 +341,10 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
     expansions = expand_query(query)
     metrics.record_retrieve_call(expansions_used=len(expansions) > 1)
 
+    # Detect ambiguity from the pre-rerank ranking; rerank (if requested)
+    # resolves it, so the flag only fires for callers that did NOT rerank.
+    ambiguous = _is_ambiguous(results) and not rerank
+
     if rerank and len(results) > limit:
         try:
             from scholar_agent.engine.rerank import rerank as llm_rerank
@@ -339,7 +358,21 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
     doc_confidence = {d.get("doc_id"): d.get("confidence", "draft") for d in documents}
     for r in results:
         r["confidence"] = doc_confidence.get(r.get("doc_id"), "draft")
-    return {"query": query, "results": results}
+
+    # Apply a capped popularity boost. With no usage recorded every boost is
+    # 1.0 (no-op); with usage, frequently-surfaced cards edge up — but only on
+    # the non-rerank path, since rerank already produced a high-quality order.
+    try:
+        from scholar_agent.engine import usage as _usage
+
+        counts = _usage.load_usage()
+        for r in results:
+            r["usage_boost"] = round(_usage.usage_boost(r.get("doc_id", ""), counts), 3)
+        if not rerank and counts:
+            results.sort(key=lambda r: -(r.get("score", 0.0) * r.get("usage_boost", 1.0)))
+    except Exception:
+        pass
+    return {"query": query, "results": results, "ambiguous": ambiguous}
 
 
 def main() -> int:

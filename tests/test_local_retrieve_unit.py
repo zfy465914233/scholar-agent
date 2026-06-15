@@ -9,6 +9,7 @@ from unittest.mock import patch
 from scholar_agent.engine.bm25 import BM25
 from scholar_agent.engine.local_retrieve import (
     _bm25_ranked_with_expansion,
+    _is_ambiguous,
     _normalize_scores,
     retrieve,
     retrieve_bm25,
@@ -508,6 +509,19 @@ class TestResultSnippet(unittest.TestCase):
         for r in payload["results"]:
             self.assertIn("confidence", r)
             self.assertIsInstance(r["confidence"], str)
+
+
+class TestAmbiguityDetection(unittest.TestCase):
+    """_is_ambiguous flags nearly-tied top-2 for opt-in rerank."""
+
+    def test_tied_scores_are_ambiguous(self) -> None:
+        self.assertTrue(_is_ambiguous([{"score": 10.0}, {"score": 9.5}]))
+
+    def test_clear_gap_not_ambiguous(self) -> None:
+        self.assertFalse(_is_ambiguous([{"score": 10.0}, {"score": 5.0}]))
+
+    def test_single_result_not_ambiguous(self) -> None:
+        self.assertFalse(_is_ambiguous([{"score": 10.0}]))
 
 
 if __name__ == "__main__":
