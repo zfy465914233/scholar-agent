@@ -127,22 +127,22 @@
       "category": "baseline"
     },
     {
-      "query": "扩散模型图像生成",
-      "relevant_doc_ids": ["ddpm-diffusion", "latent-diffusion", "score-based-generative"],
-      "category": "synonym",
-      "comment": "中文 query → 英文 alias 扩展召回扩散家族卡片"
+      "query": "扩散模型的去噪生成过程",
+      "relevant_doc_ids": ["diffusion-model-zh"],
+      "category": "chinese",
+      "comment": "中文 query 匹配中文卡片（CJK bigram 同语言检索）"
     },
     {
-      "query": "生成对抗网络模式崩塌",
-      "relevant_doc_ids": ["gan-adversarial"],
-      "category": "synonym",
-      "comment": "中文 query → GAN alias 召回"
+      "query": "强化学习的奖励与策略",
+      "relevant_doc_ids": ["reinforcement-learning-zh"],
+      "category": "chinese",
+      "comment": "中文同语言检索"
     },
     {
-      "query": "循环神经网络长短期记忆",
-      "relevant_doc_ids": ["lstm-sequence-modeling"],
-      "category": "synonym",
-      "comment": "中文 query → RNN/LSTM alias 召回"
+      "query": "马尔可夫链的平稳分布",
+      "relevant_doc_ids": ["markov-chain-zh"],
+      "category": "chinese",
+      "comment": "中文同语言检索"
     }
   ]
 }

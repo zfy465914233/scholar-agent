@@ -206,20 +206,24 @@ class TestExpandQueryErrorPaths(unittest.TestCase):
 
 
 class TestChineseSynonymExpansion(unittest.TestCase):
-    """Chinese aliases in the shipped synonyms.json trigger expansion."""
+    """Shipped synonyms.json is domain-agnostic: only generic cross-language terms."""
 
     def setUp(self) -> None:
         syn_mod.clear_cache()
 
-    def test_chinese_diffusion_expands(self) -> None:
+    def test_generic_term_expands_cross_language(self) -> None:
         merged = syn_mod.load_synonyms()
-        out = expand_query("扩散模型原理", synonyms=merged)
-        self.assertIn("diffusion model", out)
+        out = expand_query("模型训练方法", synonyms=merged)
+        # 模型→model, 训练→training, 方法→method (generic, any technical field)
+        self.assertIn("model", out)
+        self.assertIn("training", out)
 
-    def test_chinese_reinforcement_learning_expands(self) -> None:
+    def test_no_domain_specific_synonyms_shipped(self) -> None:
+        # The shipped dictionary must NOT preset any domain's jargon (ML, finance,
+        # ...). Users add their own domain terms via ~/.scholar/synonyms.json.
         merged = syn_mod.load_synonyms()
-        out = expand_query("强化学习", synonyms=merged)
-        self.assertIn("reinforcement learning", out)
+        for domain_term in ["diffusion model", "reinforcement learning", "DDPM", "PPO"]:
+            self.assertNotIn(domain_term, merged, f"{domain_term} should not be preset (domain-specific)")
 
 
 if __name__ == "__main__":
