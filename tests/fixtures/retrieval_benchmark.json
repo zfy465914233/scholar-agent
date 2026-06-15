@@ -125,6 +125,24 @@
       "query": "LSTM gating mechanism forget gate",
       "relevant_doc_ids": ["lstm-sequence-modeling"],
       "category": "baseline"
+    },
+    {
+      "query": "扩散模型图像生成",
+      "relevant_doc_ids": ["ddpm-diffusion", "latent-diffusion", "score-based-generative"],
+      "category": "synonym",
+      "comment": "中文 query → 英文 alias 扩展召回扩散家族卡片"
+    },
+    {
+      "query": "生成对抗网络模式崩塌",
+      "relevant_doc_ids": ["gan-adversarial"],
+      "category": "synonym",
+      "comment": "中文 query → GAN alias 召回"
+    },
+    {
+      "query": "循环神经网络长短期记忆",
+      "relevant_doc_ids": ["lstm-sequence-modeling"],
+      "category": "synonym",
+      "comment": "中文 query → RNN/LSTM alias 召回"
     }
   ]
 }

@@ -205,5 +205,22 @@ class TestExpandQueryErrorPaths(unittest.TestCase):
         self.assertEqual(out, ["diffusion model"])
 
 
+class TestChineseSynonymExpansion(unittest.TestCase):
+    """Chinese aliases in the shipped synonyms.json trigger expansion."""
+
+    def setUp(self) -> None:
+        syn_mod.clear_cache()
+
+    def test_chinese_diffusion_expands(self) -> None:
+        merged = syn_mod.load_synonyms()
+        out = expand_query("扩散模型原理", synonyms=merged)
+        self.assertIn("diffusion model", out)
+
+    def test_chinese_reinforcement_learning_expands(self) -> None:
+        merged = syn_mod.load_synonyms()
+        out = expand_query("强化学习", synonyms=merged)
+        self.assertIn("reinforcement learning", out)
+
+
 if __name__ == "__main__":
     unittest.main()
