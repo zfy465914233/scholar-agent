@@ -379,10 +379,34 @@ def _append_visual_aids(lines: list[str], aids: list[dict]) -> None:
 def _infer_card_type(query: str, answer_data: dict) -> str:
     """Infer card type from query and answer content.
 
-    Returns 'method' if the content contains procedural steps,
-    otherwise 'knowledge'.
+    Returns 'engineering' for how-to/implementation content backed by structured
+    steps, 'method' for other procedural content, otherwise 'knowledge'.
+    An explicit answer_data['card_type'] overrides inference.
     """
+    explicit = str(answer_data.get("card_type", "")).strip().lower()
+    if explicit in ("engineering", "method", "knowledge"):
+        return explicit
+
     normalized = query.lower().strip()
+
+    # Engineering: concrete implementation/landing content with structured steps.
+    engineering_keywords = (
+        "how to ",
+        "implement",
+        "deploy",
+        "install",
+        "configure",
+        "setup",
+        "落地",
+        "实现",
+        "部署",
+        "安装",
+    )
+    has_engineering_kw = any(kw in normalized for kw in engineering_keywords)
+    has_steps = bool(answer_data.get("implementation_steps"))
+    if has_engineering_kw and has_steps:
+        return "engineering"
+
     procedural_keywords = (
         "how to ",
         "implement",
@@ -410,22 +434,27 @@ def _infer_card_type(query: str, answer_data: dict) -> str:
     return "knowledge"
 
 
+_CARD_TYPE_PREFIX = {"method": "method", "engineering": "engineering"}
+
+
 def _card_note_label(card_type: str) -> str:
     """Return the human-readable note label for a card type."""
     if card_type == "method":
         return "Method Note"
+    if card_type == "engineering":
+        return "Engineering Playbook"
     return "Knowledge Note"
 
 
 def _card_id(card_type: str, slug: str) -> str:
     """Return the canonical id for a generated card."""
-    prefix = "method" if card_type == "method" else "knowledge"
+    prefix = _CARD_TYPE_PREFIX.get(card_type, "knowledge")
     return f"{prefix}-{slug}"
 
 
 def _card_note_tag(card_type: str) -> str:
     """Return the canonical note tag for a card type."""
-    prefix = "method" if card_type == "method" else "knowledge"
+    prefix = _CARD_TYPE_PREFIX.get(card_type, "knowledge")
     return f"{prefix}-note"
 
 
@@ -568,6 +597,11 @@ def _build_toc(
     example: str,
     unplaced_aids: list[dict],
     source_images: list[dict],
+    prerequisites: list | None = None,
+    implementation_steps: list | None = None,
+    verification: str = "",
+    pitfalls: list | None = None,
+    rollback: str = "",
 ) -> list[str]:
     """Build the table-of-contents section."""
     entries = []
@@ -596,6 +630,22 @@ def _build_toc(
         if example:
             entries.append(f"{idx}. [具体示例](#具体示例)")
             idx += 1
+    if card_type == "engineering":
+        if prerequisites:
+            entries.append(f"{idx}. [前置条件](#前置条件)")
+            idx += 1
+        if implementation_steps:
+            entries.append(f"{idx}. [实现步骤](#实现步骤)")
+            idx += 1
+        if verification:
+            entries.append(f"{idx}. [验收标准](#验收标准)")
+            idx += 1
+        if pitfalls:
+            entries.append(f"{idx}. [陷阱与注意](#陷阱与注意)")
+            idx += 1
+        if rollback:
+            entries.append(f"{idx}. [回滚方案](#回滚方案)")
+            idx += 1
     if unplaced_aids:
         entries.append(f"{idx}. [可视化辅助](#可视化辅助)")
         idx += 1
@@ -620,6 +670,11 @@ def _build_body_sections(
     expected_output: str,
     example: str,
     va_by_section: dict[str | None, list[dict]],
+    prerequisites: list | None = None,
+    implementation_steps: list | None = None,
+    verification: str = "",
+    pitfalls: list | None = None,
+    rollback: str = "",
 ) -> list[str]:
     """Build the main body sections (answer, claims, inferences, etc.)."""
     lines: list[str] = []
@@ -676,6 +731,43 @@ def _build_body_sections(
             lines.extend(["## 预期输出", "", expected_output, ""])
         if example:
             lines.extend(["## 具体示例", "", example, ""])
+
+    if card_type == "engineering":
+        if prerequisites:
+            lines.extend(["## 前置条件", ""])
+            for p in prerequisites:
+                lines.append(f"- {p}")
+            lines.append("")
+        if implementation_steps:
+            lines.extend(["## 实现步骤", ""])
+            for i, st in enumerate(implementation_steps, 1):
+                if isinstance(st, dict):
+                    desc = st.get("step", f"步骤 {i}")
+                    lines.append(f"### 步骤 {i}：{desc}")
+                    lines.append("")
+                    files = st.get("files") or []
+                    if files:
+                        lines.append("**涉及文件**：" + ", ".join(f"`{f}`" for f in files))
+                        lines.append("")
+                    commands = st.get("commands") or []
+                    if commands:
+                        lines.extend(["```bash", *commands, "```", ""])
+                    code = st.get("code", "")
+                    if code:
+                        lines.extend(["```python", code, "```", ""])
+                else:
+                    lines.append(f"{i}. {st}")
+                    lines.append("")
+            _append_visual_aids(lines, va_by_section.get("implementation_steps", []))
+        if verification:
+            lines.extend(["## 验收标准", "", verification, ""])
+        if pitfalls:
+            lines.extend(["## 陷阱与注意", ""])
+            for pit in pitfalls:
+                lines.append(f"- {pit}")
+            lines.append("")
+        if rollback:
+            lines.extend(["## 回滚方案", "", rollback, ""])
 
     return lines
 
@@ -799,6 +891,11 @@ def build_knowledge_card(
     next_steps = answer_data.get("suggested_next_steps", [])
     expected_output = answer_data.get("expected_output", "")
     example = answer_data.get("example", "")
+    prerequisites = answer_data.get("prerequisites", [])
+    impl_steps = answer_data.get("implementation_steps", [])
+    verification = answer_data.get("verification", "")
+    pitfalls = answer_data.get("pitfalls", [])
+    rollback = answer_data.get("rollback", "")
 
     # 4. Tags and visual aids
     tags = _collect_tags(query, answer_data, major_domain, topic, card_type)
@@ -831,6 +928,11 @@ def build_knowledge_card(
             example,
             va_by_section.get(None, []),
             source_images,
+            prerequisites,
+            impl_steps,
+            verification,
+            pitfalls,
+            rollback,
         )
     )
     lines.extend(
@@ -846,11 +948,18 @@ def build_knowledge_card(
             expected_output,
             example,
             va_by_section,
+            prerequisites,
+            impl_steps,
+            verification,
+            pitfalls,
+            rollback,
         )
     )
 
     unplaced_aids = va_by_section.get(None, [])
-    card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
+    card_label = {"knowledge": "知识卡片", "method": "方法卡片", "engineering": "工程操作指南"}.get(
+        card_type, "知识卡片"
+    )
     full_text = "\n".join(lines)
     _idx = index_path if index_path is not None else DEFAULT_INDEX
     lines.extend(

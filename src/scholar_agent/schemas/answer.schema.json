@@ -72,6 +72,49 @@
       "default": "",
       "description": "For method-type cards: a minimal worked example (sample input → steps → expected output). Construct synthetically if sources lack one. Write '[insufficient data — needs supplementation]' if impossible to construct."
     },
+    "card_type": {
+      "type": "string",
+      "default": "",
+      "enum": ["", "engineering", "method", "knowledge"],
+      "description": "Optional explicit card type override. When set to 'engineering', the card is rendered as a step-by-step implementation playbook (prerequisites/implementation_steps/verification/pitfalls/rollback) instead of a research summary. If omitted, the type is inferred from query and content."
+    },
+    "prerequisites": {
+      "type": "array",
+      "default": [],
+      "description": "For engineering/playbook cards: prerequisites (environment, access, dependencies) needed before starting. Optional otherwise.",
+      "items": { "type": "string" }
+    },
+    "implementation_steps": {
+      "type": "array",
+      "default": [],
+      "description": "For engineering/playbook cards: ordered, concrete implementation steps. Each item may carry step (description), code (code block), files (paths touched), commands (shell commands). Optional otherwise.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "step": { "type": "string", "description": "What this step does and why." },
+          "code": { "type": "string", "description": "Code/config block for this step (rendered in a fenced block)." },
+          "files": { "type": "array", "items": { "type": "string" }, "description": "Files created or modified." },
+          "commands": { "type": "array", "items": { "type": "string" }, "description": "Shell commands to run." }
+        },
+        "additionalProperties": false
+      }
+    },
+    "verification": {
+      "type": "string",
+      "default": "",
+      "description": "For engineering/playbook cards: how to verify success — acceptance criteria, commands to check, expected output/signals. Optional otherwise."
+    },
+    "pitfalls": {
+      "type": "array",
+      "default": [],
+      "description": "For engineering/playbook cards: gotchas, common mistakes, and edge cases. Optional otherwise.",
+      "items": { "type": "string" }
+    },
+    "rollback": {
+      "type": "string",
+      "default": "",
+      "description": "For engineering/playbook cards: how to revert/rollback if it goes wrong. Optional otherwise."
+    },
     "visual_aids": {
       "type": "array",
       "default": [],
