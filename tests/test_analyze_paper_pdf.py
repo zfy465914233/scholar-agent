@@ -38,8 +38,11 @@ class ResolveAnalysisPdfTest(unittest.TestCase):
 
     def test_explicit_path_returned_directly(self):
         paper = {"title": "Explicit"}
-        with patch("scholar_agent.server._validate_path_within", return_value=Path("/scholar/x.pdf")):
-            self.assertEqual(_resolve_analysis_pdf(paper, "/scholar/x.pdf"), "/scholar/x.pdf")
+        expected = Path("/scholar/x.pdf")
+        with patch("scholar_agent.server._validate_path_within", return_value=expected):
+            # _resolve_analysis_pdf returns str(Path); compare platform-natively
+            # so the assertion holds on both POSIX (/) and Windows (\).
+            self.assertEqual(_resolve_analysis_pdf(paper, "/scholar/x.pdf"), str(expected))
 
     def test_local_detection_skips_download(self):
         paper = {"title": "Local", "arxiv_id": "1234.5678"}
