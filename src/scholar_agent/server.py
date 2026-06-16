@@ -698,6 +698,40 @@ def _find_local_pdf(arxiv_id: str, title: str = "") -> str | None:
     return None
 
 
+def _resolve_analysis_pdf(paper: dict, pdf_path: str) -> str | None:
+    """Resolve a PDF for analysis: explicit path > local detection > arXiv auto-download.
+
+    Returns the resolved PDF path, or None if no PDF can be found/downloaded.
+    Raises ValueError if pdf_path is outside the scholar knowledge directory tree.
+    """
+    arxiv_id = paper.get("arxiv_id", "") or ""
+    paper_title = paper.get("title", "")
+
+    if pdf_path and pdf_path.strip():
+        validated = _validate_path_within(pdf_path.strip(), get_knowledge_dir().parent)
+        if validated is None:
+            raise ValueError("pdf_path must be within the scholar knowledge directory tree")
+        return str(validated)
+
+    detected = _find_local_pdf(arxiv_id, title=paper_title)
+
+    # Auto-download from arXiv when no local PDF exists
+    if not detected and arxiv_id:
+        try:
+            from scholar_agent.engine.academic.image_extractor import download_arxiv_pdf
+
+            dl_dir = get_paper_notes_dir() / arxiv_id
+            dl_dir.mkdir(parents=True, exist_ok=True)
+            downloaded = download_arxiv_pdf(arxiv_id, str(dl_dir))
+            if downloaded and os.path.isfile(downloaded):
+                logger.info("Auto-downloaded PDF for %s -> %s", arxiv_id, downloaded)
+                return downloaded
+        except Exception as exc:
+            logger.warning("Auto-download failed for %s: %s", arxiv_id, exc)
+
+    return detected
+
+
 if SCHOLAR_ACADEMIC:
 
     @tool
@@ -914,8 +948,12 @@ if SCHOLAR_ACADEMIC:
                 finding related papers via wiki-links.
             images_json: Optional JSON array of image dicts (from extract_paper_images)
                 with 'filename', 'section' keys. Section values: 'framework', 'results'.
-            pdf_path: Optional local PDF file path. If omitted and paper_json contains
-                an arxiv_id, auto-detects the local PDF in paper-notes/.
+            pdf_path: Optional local PDF file path. If omitted, a PDF is resolved by
+                (1) detecting an existing local PDF under paper-notes/, then
+                (2) auto-downloading from arXiv when paper_json.arxiv_id is set.
+                If no PDF can be resolved, returns status="error" rather than an
+                empty skeleton. Result status is "ok" (fully filled) or "incomplete"
+                (some <!-- LLM: --> placeholders remain).
         """
 
         def _impl() -> str:
@@ -930,17 +968,18 @@ if SCHOLAR_ACADEMIC:
             if not paper.get("title"):
                 return json.dumps({"error": "paper_json must contain at least a 'title' field"})
 
-            # Auto-detect local PDF if pdf_path not provided
-            detected_pdf = None
-            if not pdf_path or not pdf_path.strip():
-                arxiv_id = paper.get("arxiv_id", "")
-                paper_title = paper.get("title", "")
-                detected_pdf = _find_local_pdf(arxiv_id, title=paper_title)
-            else:
-                validated_pdf = _validate_path_within(pdf_path.strip(), get_knowledge_dir().parent)
-                if validated_pdf is None:
-                    return json.dumps({"error": "pdf_path must be within the scholar knowledge directory tree"})
-                detected_pdf = str(validated_pdf)
+            # Resolve a PDF: explicit path > local detection > arXiv auto-download.
+            # Fail loud (no empty skeleton) if none can be resolved.
+            try:
+                detected_pdf = _resolve_analysis_pdf(paper, pdf_path)
+            except ValueError as exc:
+                return json.dumps({"error": str(exc)})
+            if not detected_pdf:
+                return json.dumps({
+                    "status": "error",
+                    "error": "No PDF available for analysis — a PDF is required to fill the note.",
+                    "hint": "Provide pdf_path, set paper_json.arxiv_id for auto-download, or call download_paper first.",
+                })
 
             # Resolve output directory
             out_dir = output_dir
@@ -1049,14 +1088,12 @@ if SCHOLAR_ACADEMIC:
             instructions = None
             if placeholder_count > 0 and pdf_text:
                 instructions = (
-                    "MUST fill all <!-- LLM: --> placeholders using pdf_text before showing to user. "
-                    f"Note has {placeholder_count} placeholders. "
-                    "Use Write tool to replace the skeleton note with fully filled content. "
-                    "See SKILL.md '内容填充规则' section for detailed rules."
+                    f"Note still has {placeholder_count} unfilled <!-- LLM: --> placeholders "
+                    "(status=incomplete). Review and supplement any gaps, or re-run analyze_paper to retry."
                 )
 
             result_payload: dict[str, object] = {
-                "status": "ok",
+                "status": "incomplete" if placeholder_count > 0 else "ok",
                 "note_path": note_path,
                 "title": paper.get("title", ""),
                 "language": lang,

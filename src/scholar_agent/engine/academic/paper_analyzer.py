@@ -647,92 +647,147 @@ def check_note_quality(note_path: str) -> dict:
 # LLM-powered auto-fill
 # ---------------------------------------------------------------------------
 
-_FILL_SYSTEM_PROMPT = """\
-You are a research paper analysis assistant. Your task is to fill in ALL
-<!-- LLM: ... --> placeholders in a structured markdown note, using the
-provided PDF full text as source material.
+_FILL_SECTION_SYSTEM_PROMPT = """\
+You are a research paper analysis assistant. You are given ONE section of a
+structured markdown note plus the paper's PDF full text. Fill in ALL
+<!-- LLM: ... --> placeholders found in THAT SECTION ONLY.
 
 Rules:
-1. Replace each <!-- LLM: ... --> comment with substantive content that
-   fulfills the instruction inside the comment.
-2. Preserve the surrounding markdown structure — headings, tables, block
-   quotes, callouts. Only replace the placeholder comments themselves.
-3. Write in the same language as the template (Chinese for zh, English for en).
-4. Use LaTeX for mathematical formulas ($...$ inline, $$...$$ block).
-5. Be specific — cite numbers, dataset names, method details from the PDF.
-6. If the PDF text is insufficient for a section, write what you can and
-   append <!-- INCOMPLETE --> after your text.
-7. Output the COMPLETE note with all placeholders filled. Do NOT truncate."""
+1. Replace each <!-- LLM: ... --> comment with substantive content fulfilling
+   the instruction inside the comment; remove the comment markers.
+2. Output the COMPLETE section verbatim — keep every heading, table scaffold,
+   blockquote and surrounding text unchanged. Only placeholder comments get
+   replaced by their content.
+3. Do NOT add preamble, summaries, or any section beyond what is given. Do NOT
+   wrap the output in code fences.
+4. Write in the section's language (Chinese for zh, English for en).
+5. Use LaTeX for math ($...$ inline, $$...$$ block).
+6. Be specific — cite numbers, dataset names, method details from the PDF.
+7. If the PDF text is insufficient for a placeholder, write what you can and
+   leave a brief honest note rather than inventing facts.
+"""
+
+_SECTION_HEADING_RE = re.compile(r"(?m)^(## .*)$")
+
+
+def _split_into_sections(content: str) -> list[str]:
+    """Split a note into chunks by top-level (##) headings.
+
+    The preamble (frontmatter + title, before the first ## ) is the first
+    chunk; each subsequent chunk is one ## section (heading + body). This lets
+    us fill each section in its own LLM call so no single call's output is
+    large enough to hit the model's token limit.
+    """
+    parts = _SECTION_HEADING_RE.split(content)
+    chunks: list[str] = []
+    if parts[0].strip():
+        chunks.append(parts[0])
+    i = 1
+    while i < len(parts):
+        heading = parts[i]
+        body = parts[i + 1] if i + 1 < len(parts) else ""
+        chunks.append(heading + body)
+        i += 2
+    return chunks
+
+
+def _strip_code_fences(text: str) -> str:
+    if text.startswith("```markdown\n"):
+        text = text[len("```markdown\n") :]
+    if text.startswith("```\n"):
+        text = text[len("```\n") :]
+    if text.endswith("\n```"):
+        text = text[:-4]
+    return text
 
 
 def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
-    """Fill <!-- LLM: --> placeholders in a note using PDF text via LLM.
+    """Fill <!-- LLM: --> placeholders section-by-section using PDF text via LLM.
 
-    Uses the unified LLM client with automatic provider fallback.
+    Splits the note into ## sections and fills each in its own LLM call. The
+    previous single-call version capped output at 8192 tokens, so a full
+    15-30k-token note was truncated mid-fill and most sections stayed empty.
+    Per-section calls keep each response small enough to complete.
 
     Args:
         note_path: Path to the generated markdown note.
         pdf_text: Full text extracted from the PDF.
 
     Returns:
-        Dict with 'status', 'placeholders_filled', 'model_used'.
+        Dict with 'status' (ok/partial/error/skipped), 'placeholders_filled',
+        'placeholders_remaining', 'sections_filled', 'sections_failed',
+        'model_used', 'api_format'.
     """
     content = Path(note_path).read_text(encoding="utf-8")
-    placeholder_count = len(re.findall(r"<!--\s*LLM:", content))
-    if placeholder_count == 0:
+    total = len(re.findall(r"<!--\s*LLM:", content))
+    if total == 0:
         return {"status": "skipped", "reason": "No placeholders to fill", "placeholders_filled": 0}
 
     providers = resolve_providers()
     if not providers:
         return {"status": "skipped", "reason": "No API key configured", "placeholders_filled": 0}
 
-    # Truncate PDF text to avoid token limit
+    # Truncate PDF text to stay within token budget (shared across all sections)
     max_pdf_chars = 60000
     truncated = pdf_text[:max_pdf_chars]
     if len(pdf_text) > max_pdf_chars:
         truncated += "\n\n[... PDF text truncated ...]"
 
-    user_prompt = (
-        f"Here is the PDF full text:\n\n---\n{truncated}\n---\n\n"
-        f"Now fill ALL <!-- LLM: --> placeholders in this note:\n\n{content}"
-    )
+    filled_chunks: list[str] = []
+    sections_filled = 0
+    sections_failed = 0
+    last_model: str | None = None
+    last_format: str | None = None
 
-    messages = [
-        {"role": "system", "content": _FILL_SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
+    for chunk in _split_into_sections(content):
+        if not re.search(r"<!--\s*LLM:", chunk):
+            # No placeholders in this section — keep verbatim.
+            filled_chunks.append(chunk)
+            continue
+        try:
+            messages = [
+                {"role": "system", "content": _FILL_SECTION_SYSTEM_PROMPT},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Here is the paper's PDF full text:\n\n---\n{truncated}\n---\n\n"
+                        "Fill EVERY <!-- LLM: --> placeholder in the section below. "
+                        "Output the COMPLETE section, unchanged except for filled placeholders:\n\n"
+                        f"{chunk}"
+                    ),
+                },
+            ]
+            resp = chat_with_fallback(messages, providers=providers, max_tokens=4096, temperature=0.3)
+            filled = _strip_code_fences(resp.content)
+            last_model = resp.model
+            last_format = resp.provider_format
+            sections_filled += 1
+            filled_chunks.append(filled if filled.strip() else chunk)
+        except Exception:
+            sections_failed += 1
+            filled_chunks.append(chunk)  # keep original section on failure
+
+    new_content = "".join(filled_chunks)
+    remaining = len(re.findall(r"<!--\s*LLM:", new_content))
+    new_content = new_content.replace("status: skeleton", "status: filled", 1)
 
     try:
-        resp = chat_with_fallback(messages, providers=providers, max_tokens=8192, temperature=0.3)
-        filled_content = resp.content
-        used_model = resp.model
-        used_format = resp.provider_format
-    except Exception as exc:
-        return {"status": "error", "reason": str(exc), "placeholders_filled": 0}
-
-    # Remove markdown code fences if the LLM wrapped its output
-    if filled_content.startswith("```markdown\n"):
-        filled_content = filled_content[len("```markdown\n") :]
-    if filled_content.startswith("```\n"):
-        filled_content = filled_content[len("```\n") :]
-    if filled_content.endswith("\n```"):
-        filled_content = filled_content[:-4]
-
-    remaining = len(re.findall(r"<!--\s*LLM:", filled_content))
-    filled_count = placeholder_count - remaining
-
-    # Update frontmatter status
-    filled_content = filled_content.replace("status: skeleton", "status: filled", 1)
-
-    try:
-        atomic_write_text(Path(note_path), filled_content)
+        atomic_write_text(Path(note_path), new_content)
     except OSError as exc:
         return {"status": "error", "reason": f"Write failed: {exc}", "placeholders_filled": 0}
 
+    if remaining == 0:
+        status = "ok"
+    elif total - remaining > 0:
+        status = "partial"
+    else:
+        status = "error"
     return {
-        "status": "ok",
-        "placeholders_filled": filled_count,
+        "status": status,
+        "placeholders_filled": total - remaining,
         "placeholders_remaining": remaining,
-        "model_used": used_model,
-        "api_format": used_format,
+        "sections_filled": sections_filled,
+        "sections_failed": sections_failed,
+        "model_used": last_model,
+        "api_format": last_format,
     }

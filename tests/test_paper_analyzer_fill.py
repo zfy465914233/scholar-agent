@@ -339,6 +339,109 @@ class TestFillNoteFromPdf(unittest.TestCase):
 
 
 # ============================================================================
+# 4b. fill_note_from_pdf — per-section filling (改动 B)
+# ============================================================================
+class TestFillPerSection(unittest.TestCase):
+    """Per-section filling: each ## section is its own LLM call so no single
+    call's output is truncated. Regression for the 8192-token truncation bug."""
+
+    def setUp(self):
+        _clean_env()
+
+    def _setup_single_provider(self):
+        os.environ["SCHOLAR_FILLER_API_KEY"] = "test-key"
+        os.environ["SCHOLAR_FILLER_API_FORMAT"] = "openai"
+        os.environ["SCHOLAR_FILLER_API_URL"] = "https://example.com/v1"
+        os.environ["SCHOLAR_FILLER_MODEL"] = "test-model"
+
+    def _mock_openai(self, content="## Section\n\nFilled content."):
+        def _urlopen(req, timeout=120):
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps(
+                {"choices": [{"message": {"content": content}}], "model": "test-model"}
+            ).encode()
+            mock_resp.__enter__ = lambda s: s
+            mock_resp.__exit__ = lambda s, *a: None
+            return mock_resp
+
+        return _urlopen
+
+    def test_each_section_filled_in_own_call(self):
+        """A two-section note triggers >=2 LLM calls and fills all placeholders."""
+        self._setup_single_provider()
+
+        note = (
+            "---\nstatus: skeleton\n---\n\n# Title\n\n"
+            "## Section One\n\n<!-- LLM: fill A -->\n\n"
+            "## Section Two\n\n<!-- LLM: fill B -->\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(note)
+            tmp_name = f.name
+
+        call_count = {"n": 0}
+        _orig = self._mock_openai()
+
+        def _count(req, timeout=120):
+            call_count["n"] += 1
+            return _orig(req, timeout)
+
+        with patch("scholar_agent.engine.llm_client.urlopen", side_effect=_count):
+            pa2 = _reload_paper_analyzer()
+            result = pa2.fill_note_from_pdf(tmp_name, "pdf text")
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["placeholders_remaining"], 0)
+        self.assertEqual(result["placeholders_filled"], 2)
+        self.assertGreaterEqual(result["sections_filled"], 2)
+        self.assertGreater(call_count["n"], 1)  # one call per section, not a single call
+        os.unlink(tmp_name)
+
+    def test_section_failure_does_not_block_others(self):
+        """If one section's LLM call fails, other sections still get filled."""
+        self._setup_single_provider()
+
+        note = (
+            "---\nstatus: skeleton\n---\n\n# Title\n\n"
+            "## Section One\n\n<!-- LLM: fill A -->\n\n"
+            "## Section Two\n\n<!-- LLM: fill B -->\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(note)
+            tmp_name = f.name
+
+        _ok = self._mock_openai()
+        state = {"n": 0}
+
+        def _flaky(req, timeout=120):
+            state["n"] += 1
+            if state["n"] == 1:
+                raise RuntimeError("boom on first section")
+            return _ok(req, timeout)
+
+        with patch("scholar_agent.engine.llm_client.urlopen", side_effect=_flaky):
+            pa2 = _reload_paper_analyzer()
+            result = pa2.fill_note_from_pdf(tmp_name, "pdf text")
+
+        # At least one section failed but the run completed (did not raise).
+        self.assertGreaterEqual(result["sections_failed"], 1)
+        self.assertIn(result["status"], ("partial", "ok"))
+        os.unlink(tmp_name)
+
+    def test_split_into_sections_keeps_headings(self):
+        """Helper splits by ## headings and keeps the preamble."""
+        pa = _reload_paper_analyzer()
+        content = "---\nfm: 1\n---\n\n# Title\n\n## A\n\nbody-a\n\n## B\n\nbody-b\n"
+        chunks = pa._split_into_sections(content)
+        # preamble + 2 sections
+        self.assertEqual(len(chunks), 3)
+        self.assertIn("fm: 1", chunks[0])
+        self.assertTrue(chunks[1].startswith("## A"))
+        self.assertIn("body-a", chunks[1])
+        self.assertTrue(chunks[2].startswith("## B"))
+
+
+# ============================================================================
 # 5. generate_note — path consistency with download_paper
 # ============================================================================
 class TestGenerateNotePath(unittest.TestCase):
