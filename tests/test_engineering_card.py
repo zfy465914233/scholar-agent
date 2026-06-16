@@ -60,9 +60,14 @@ class BuildBodyEngineeringTest(unittest.TestCase):
         lines = _build_body_sections(
             "how to implement X",
             "Step-by-step landing guide.",
-            [], [], [], [], [],
+            [],
+            [],
+            [],
+            [],
+            [],
             "engineering",
-            "", "",
+            "",
+            "",
             {},
             prerequisites=e["prerequisites"],
             implementation_steps=e["implementation_steps"],
@@ -92,8 +97,22 @@ class BuildBodyEngineeringTest(unittest.TestCase):
     def test_engineering_without_steps_skips_steps_section(self):
         # No implementation_steps -> no 实现步骤 heading, but other fields still render
         lines = _build_body_sections(
-            "how to implement X", "guide", [], [], [], [], [], "engineering", "", "", {},
-            prerequisites=["a"], implementation_steps=[], verification="ok", pitfalls=[], rollback="r",
+            "how to implement X",
+            "guide",
+            [],
+            [],
+            [],
+            [],
+            [],
+            "engineering",
+            "",
+            "",
+            {},
+            prerequisites=["a"],
+            implementation_steps=[],
+            verification="ok",
+            pitfalls=[],
+            rollback="r",
         )
         text = "\n".join(lines)
         self.assertNotIn("## 实现步骤", text)

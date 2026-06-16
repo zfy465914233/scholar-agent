@@ -16,20 +16,25 @@ _ROOT = Path(__file__).resolve().parents[1]
 from scholar_agent.engine import scholar_config
 from scholar_agent.server import _resolve_analysis_pdf
 
-# Pin config to scholar-agent's own dirs so tests never leak into parent projects.
-scholar_config._config_cache = {
-    "knowledge_dir": str(_ROOT / "tests" / "fixtures"),
-    "index_path": str(_ROOT / "indexes" / "local" / "index.json"),
-    "scholar_dir": str(_ROOT),
-}
-
-
-def tearDownModule() -> None:
-    scholar_config.clear_cache()
-
 
 class ResolveAnalysisPdfTest(unittest.TestCase):
     """_resolve_analysis_pdf precedence: explicit path > local detect > download > None."""
+
+    def setUp(self) -> None:
+        # Pin config to scholar-agent's own dirs PER-TEST so PDF resolution
+        # never leaks into parent projects. Done in setUp (not at module import)
+        # so we don't mutate the global scholar_config cache during collection —
+        # that module-level side effect previously polluted other suites
+        # (e.g. test_incremental_index, whose iter_cards reads this cache).
+        self._orig_cache = scholar_config._config_cache
+        scholar_config._config_cache = {
+            "knowledge_dir": str(_ROOT / "tests" / "fixtures"),
+            "index_path": str(_ROOT / "indexes" / "local" / "index.json"),
+            "scholar_dir": str(_ROOT),
+        }
+
+    def tearDown(self) -> None:
+        scholar_config._config_cache = self._orig_cache
 
     def test_explicit_path_returned_directly(self):
         paper = {"title": "Explicit"}

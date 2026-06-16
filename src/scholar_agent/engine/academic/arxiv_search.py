@@ -534,9 +534,7 @@ def collect_hot_papers(
     seen_ids: set[str] = set()
 
     def _query_phrase(phrase: str) -> list[dict[str, Any]]:
-        return query_semantic_scholar(
-            phrase, from_dt, to_dt, per_cat, apply_date_filter=not time_agnostic
-        )
+        return query_semantic_scholar(phrase, from_dt, to_dt, per_cat, apply_date_filter=not time_agnostic)
 
     with ThreadPoolExecutor(max_workers=min(len(unique), 4)) as pool:
         futures = {pool.submit(_query_phrase, q): q for q in unique}

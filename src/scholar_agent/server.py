@@ -988,11 +988,13 @@ if SCHOLAR_ACADEMIC:
             except ValueError as exc:
                 return json.dumps({"error": str(exc)})
             if not detected_pdf:
-                return json.dumps({
-                    "status": "error",
-                    "error": "No PDF available for analysis — a PDF is required to fill the note.",
-                    "hint": "Provide pdf_path, set paper_json.arxiv_id for auto-download, or call download_paper first.",
-                })
+                return json.dumps(
+                    {
+                        "status": "error",
+                        "error": "No PDF available for analysis — a PDF is required to fill the note.",
+                        "hint": "Provide pdf_path, set paper_json.arxiv_id for auto-download, or call download_paper first.",
+                    }
+                )
 
             # Resolve output directory
             out_dir = output_dir

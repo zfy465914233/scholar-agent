@@ -45,26 +45,26 @@ class IncrementalIndexTest(unittest.TestCase):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_full_build_creates_index(self) -> None:
-        payload = build_index(self.tmpdir)
+        payload = build_index(self.tmpdir, extra_dirs=[])
         self.assertEqual(1, len(payload["documents"]))
         self.assertEqual("test-1", payload["documents"][0]["doc_id"])
 
     def test_incremental_reuses_unchanged(self) -> None:
         # First build
-        payload = build_index(self.tmpdir)
+        payload = build_index(self.tmpdir, extra_dirs=[])
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
         self.index_path.write_text(json.dumps(payload), encoding="utf-8")
         manifest = _build_manifest(payload, self.tmpdir)
         _save_manifest(manifest, self.index_path)
 
         # Incremental rebuild — should reuse existing
-        payload2 = build_index_incremental(self.tmpdir, self.index_path)
+        payload2 = build_index_incremental(self.tmpdir, self.index_path, extra_dirs=[])
         self.assertEqual(1, len(payload2["documents"]))
         self.assertEqual("test-1", payload2["documents"][0]["doc_id"])
 
     def test_incremental_detects_new_card(self) -> None:
         # First build
-        payload = build_index(self.tmpdir)
+        payload = build_index(self.tmpdir, extra_dirs=[])
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
         self.index_path.write_text(json.dumps(payload), encoding="utf-8")
         manifest = _build_manifest(payload, self.tmpdir)
@@ -79,7 +79,7 @@ class IncrementalIndexTest(unittest.TestCase):
         # Touch with different mtime
         time.sleep(0.05)
 
-        payload2 = build_index_incremental(self.tmpdir, self.index_path)
+        payload2 = build_index_incremental(self.tmpdir, self.index_path, extra_dirs=[])
         self.assertEqual(2, len(payload2["documents"]))
         doc_ids = {d["doc_id"] for d in payload2["documents"]}
         self.assertIn("test-1", doc_ids)
@@ -87,7 +87,7 @@ class IncrementalIndexTest(unittest.TestCase):
 
     def test_incremental_falls_back_on_missing_manifest(self) -> None:
         # No manifest → full rebuild
-        payload = build_index_incremental(self.tmpdir, self.index_path)
+        payload = build_index_incremental(self.tmpdir, self.index_path, extra_dirs=[])
         self.assertEqual(1, len(payload["documents"]))
 
     def test_incremental_falls_back_on_corrupt_index(self) -> None:
@@ -96,12 +96,12 @@ class IncrementalIndexTest(unittest.TestCase):
         self.index_path.write_text("NOT JSON", encoding="utf-8")
         _save_manifest({"x": 1.0}, self.index_path)
 
-        payload = build_index_incremental(self.tmpdir, self.index_path)
+        payload = build_index_incremental(self.tmpdir, self.index_path, extra_dirs=[])
         self.assertEqual(1, len(payload["documents"]))
 
     def test_incremental_detects_modified_card(self) -> None:
         # First build
-        payload = build_index(self.tmpdir)
+        payload = build_index(self.tmpdir, extra_dirs=[])
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
         self.index_path.write_text(json.dumps(payload), encoding="utf-8")
         manifest = _build_manifest(payload, self.tmpdir)
@@ -121,7 +121,7 @@ class IncrementalIndexTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-        payload2 = build_index_incremental(self.tmpdir, self.index_path)
+        payload2 = build_index_incremental(self.tmpdir, self.index_path, extra_dirs=[])
         self.assertEqual(1, len(payload2["documents"]))
         self.assertEqual("Modified Title", payload2["documents"][0]["title"])
         self.assertIn("Updated body.", payload2["documents"][0]["search_text"])
@@ -135,7 +135,7 @@ class IncrementalIndexTest(unittest.TestCase):
         )
 
         # First build
-        payload = build_index(self.tmpdir)
+        payload = build_index(self.tmpdir, extra_dirs=[])
         self.assertEqual(2, len(payload["documents"]))
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
         self.index_path.write_text(json.dumps(payload), encoding="utf-8")
@@ -145,7 +145,7 @@ class IncrementalIndexTest(unittest.TestCase):
         # Delete one card
         card2.unlink()
 
-        payload2 = build_index_incremental(self.tmpdir, self.index_path)
+        payload2 = build_index_incremental(self.tmpdir, self.index_path, extra_dirs=[])
         doc_ids = [d["doc_id"] for d in payload2["documents"]]
         self.assertEqual(1, len(doc_ids))
         self.assertIn("test-1", doc_ids)
