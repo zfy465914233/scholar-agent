@@ -446,3 +446,71 @@ class TestUnifiedDailyNote:
 
         content = Path(note_path).read_text(encoding="utf-8")
         assert "今日没有论文通过质量筛选" in content
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: soft recency preference + full-history S2 (no hard age cutoff)
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentFetchS2FullHistory:
+    """The daily feed must search the full S2 corpus, not a 365-day window."""
+
+    def test_s2_uses_time_agnostic(self):
+        from scholar_agent.engine.academic.unified_pipeline import concurrent_fetch
+
+        with (
+            patch("scholar_agent.engine.academic.arxiv_search.query_arxiv", return_value=[]),
+            patch("scholar_agent.engine.academic.arxiv_search.collect_hot_papers", return_value=[]) as mock_s2,
+        ):
+            concurrent_fetch(arxiv_categories=["cs.AI"], config=_config())
+
+        _, kwargs = mock_s2.call_args
+        assert kwargs.get("time_agnostic") is True
+
+
+class TestHeuristicSoftRecency:
+    """heuristic_pre_filter applies a soft recency preference that favors new
+    work but never hard-excludes classic papers by age."""
+
+    def test_new_paper_preferred_over_identical_old(self):
+        from datetime import datetime, timedelta
+
+        now = datetime.now()
+        shared = dict(
+            title="Deep Reinforcement Learning Method",
+            abstract=(
+                "We propose a novel deep learning method for reinforcement learning "
+                "using neural networks. State-of-the-art results on benchmarks with "
+                "convergence proofs and ablation studies."
+            ),
+        )
+        new = _paper(arxiv_id="2501.00001", published_date=now - timedelta(days=1), **shared)
+        old = _paper(arxiv_id="2501.00002", published_date=now - timedelta(days=365 * 4), **shared)
+
+        result = heuristic_pre_filter([new, old], _config())
+        ids = [p["arxiv_id"] for p in result]
+        # both survive — the old paper is NOT excluded by age
+        assert "2501.00001" in ids
+        assert "2501.00002" in ids
+        # identical quality => newer ranks higher (soft recency preference)
+        assert ids.index("2501.00001") < ids.index("2501.00002")
+        scores = {p["arxiv_id"]: p["_heuristic_score"] for p in result}
+        assert scores["2501.00001"] > scores["2501.00002"]
+
+    def test_old_classic_still_surfaces_when_strong(self):
+        """A 4-year-old highly-fit paper must not be hard-excluded by age."""
+        from datetime import datetime, timedelta
+
+        old_classic = _paper(
+            arxiv_id="1706.03762",
+            title="Attention Is All You Need: deep learning transformer",
+            abstract=(
+                "We propose a novel deep learning architecture based on attention for "
+                "reinforcement learning. State-of-the-art results on benchmarks with "
+                "strong convergence analysis and ablation studies."
+            ),
+            published_date=datetime.now() - timedelta(days=365 * 4),
+        )
+        result = heuristic_pre_filter([old_classic], _config())
+        assert len(result) == 1  # not excluded despite being 4 years old

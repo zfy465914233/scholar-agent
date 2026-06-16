@@ -142,6 +142,10 @@ def concurrent_fetch(
                 to_dt=s2_end,
                 per_cat=s2_top_k,
                 config=config,
+                # Daily feed prefers recent work, but must NOT hard-exclude classic
+                # papers. Search the full S2 corpus (time_agnostic) and let the
+                # heuristic pre-filter apply a *soft* recency preference instead.
+                time_agnostic=True,
             )
         except Exception as exc:
             logger.warning("S2 fetch failed: %s", exc)
@@ -256,6 +260,16 @@ def heuristic_pre_filter(
         # 4. Rigor bonus
         rigor = PaperScorer._rigor(abstract)
         score += rigor * 0.5
+
+        # 5. Soft recency preference — the daily feed leans toward newer work, but
+        # unlike the old hard 365-day cutoff this never *excludes* a paper. A
+        # high-quality classic can still surface; it just yields to an equally
+        # good recent one. Bonus decays linearly to 0 at one year.
+        pub_dt = PaperScorer._parse_date(p)
+        if pub_dt is not None:
+            ref = datetime.now(pub_dt.tzinfo) if pub_dt.tzinfo else datetime.now()
+            age_days = max((ref - pub_dt).days, 0)
+            score += max(1.5 * (1.0 - age_days / 365.0), 0.0)
 
         p["_heuristic_score"] = round(score, 2)
         p["relevance_score"] = fit_score
