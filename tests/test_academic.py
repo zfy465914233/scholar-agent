@@ -112,6 +112,56 @@ class TestScoring(unittest.TestCase):
         scores = [p["scores"]["recommendation"] for p in scored]
         self.assertEqual(scores, sorted(scores, reverse=True))
 
+    def test_time_agnostic_old_highly_cited_paper_scores_well(self):
+        """A 3-year-old, highly-cited classic must score well when time_agnostic.
+
+        This is the regression that motivated the fix: previously such a paper
+        was either unreachable (S2 date filter) or collapsed to a near-zero
+        score (freshness=0, impact floor). Under time_agnostic it surfaces on
+        the strength of its citation impact.
+        """
+        papers = [
+            {
+                "title": "Attention Is All You Need: a transformer model",
+                "summary": "We propose the transformer architecture based on attention.",
+                "categories": ["cs.CL"],
+                "published_date": datetime.now() - timedelta(days=365 * 3),
+                "influentialCitationCount": 400,
+                "citationCount": 5000,
+                "source": "s2_graph",
+            }
+        ]
+        scored = self.score_papers(papers, self.config, time_agnostic=True)
+        self.assertEqual(len(scored), 1)
+        s = scored[0]["scores"]
+        # freshness dimension is inert under time_agnostic (not weighted)
+        self.assertEqual(s["freshness"], 0.0)
+        # impact driven by citations, not age
+        self.assertGreater(s["impact"], 4.0)
+        # overall recommendation should be strong despite being 3 years old...
+        self.assertGreater(s["recommendation"], 5.0)
+        # ...in stark contrast to the default recency-aware mode, which buries it
+        default_scored = self.score_papers(papers, self.config)
+        self.assertLess(default_scored[0]["scores"]["recommendation"], s["recommendation"])
+
+    def test_time_agnostic_treats_old_and_new_equally(self):
+        """Under time_agnostic, age alone must not change the recommendation."""
+        base = {
+            "title": "transformer language model",
+            "summary": "We propose a transformer architecture for language modeling.",
+            "categories": ["cs.CL"],
+            "influentialCitationCount": 200,
+            "citationCount": 1000,
+            "source": "s2_graph",
+        }
+        old = dict(base, published_date=datetime.now() - timedelta(days=365 * 5))
+        new = dict(base, published_date=datetime.now() - timedelta(days=1))
+        scored = self.score_papers([old, new], self.config, time_agnostic=True)
+        self.assertEqual(len(scored), 2)
+        recs = [p["scores"]["recommendation"] for p in scored]
+        # identical fit/impact/rigor => identical recommendation regardless of age
+        self.assertAlmostEqual(recs[0], recs[1], places=1)
+
 
 # ---------------------------------------------------------------------------
 # Test: Paper Analyzer

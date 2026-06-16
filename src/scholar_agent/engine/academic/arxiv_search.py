@@ -442,20 +442,31 @@ def query_semantic_scholar(
     to_dt: datetime,
     top_k: int = 20,
     retries: int = 3,
+    apply_date_filter: bool = True,
 ) -> list[dict[str, Any]]:
-    """Search S2 graph for papers matching *phrase* in the date window."""
-    date_range = f"{from_dt:%Y-%m-%d}:{to_dt:%Y-%m-%d}"
-    params = {
+    """Search S2 graph for papers matching *phrase*.
+
+    When *apply_date_filter* is False the ``publicationDateOrYear`` bound is
+    omitted so the full historical corpus is searched. This is what lets
+    ``search_papers`` reach classic, highly-cited papers instead of only the
+    last year's results.
+    """
+    params: dict[str, Any] = {
         "query": phrase,
-        "publicationDateOrYear": date_range,
         "limit": 100,
         "fields": _S2_FIELDS,
     }
+    if apply_date_filter:
+        params["publicationDateOrYear"] = f"{from_dt:%Y-%m-%d}:{to_dt:%Y-%m-%d}"
+
     hdrs = {"User-Agent": "ScholarAgent/1.0"}
     if _S2_KEY:
         hdrs["x-api-key"] = _S2_KEY
 
-    logger.info("s2 query '%s' range=%s..%s", phrase, from_dt.date(), to_dt.date())
+    if apply_date_filter:
+        logger.info("s2 query '%s' range=%s..%s", phrase, from_dt.date(), to_dt.date())
+    else:
+        logger.info("s2 query '%s' full-history (no date filter)", phrase)
 
     payload = _with_retry(
         _fetch_s2_json,
@@ -485,10 +496,13 @@ def collect_hot_papers(
     to_dt: datetime,
     per_cat: int = 5,
     config: dict[str, Any] | None = None,
+    time_agnostic: bool = False,
 ) -> list[dict[str, Any]]:
     """Run S2 queries concurrently across research domains.
 
     Uses ThreadPoolExecutor for parallel queries instead of sequential loops.
+    When *time_agnostic* is True, the S2 date filter is dropped so classic,
+    highly-cited papers are reachable instead of only the last year's work.
     """
     phrases: list[str] = []
     if config:
@@ -520,7 +534,9 @@ def collect_hot_papers(
     seen_ids: set[str] = set()
 
     def _query_phrase(phrase: str) -> list[dict[str, Any]]:
-        return query_semantic_scholar(phrase, from_dt, to_dt, per_cat)
+        return query_semantic_scholar(
+            phrase, from_dt, to_dt, per_cat, apply_date_filter=not time_agnostic
+        )
 
     with ThreadPoolExecutor(max_workers=min(len(unique), 4)) as pool:
         futures = {pool.submit(_query_phrase, q): q for q in unique}
@@ -568,10 +584,17 @@ def search_and_score(
     top_n: int = 10,
     skip_hot: bool = False,
     query: str = "",
+    time_agnostic: bool = False,
 ) -> dict[str, Any]:
     """Full search → score → dedup pipeline.
 
     Uses a pluggable step-based architecture instead of hardcoded stages.
+
+    When *time_agnostic* is True, Semantic Scholar is searched across its full
+    history (no publication-date filter) and papers are scored without a
+    recency penalty, so classic foundational papers surface alongside recent
+    work. This is the mode ``search_papers`` uses. The legacy default
+    (``False``) keeps the recent-only behavior used by the daily pipeline.
     """
     if categories is None:
         categories = ["cs.AI", "cs.LG", "cs.CL", "cs.CV"]
@@ -593,7 +616,14 @@ def search_and_score(
         steps.append(
             _PipelineStep(
                 name="hot_papers",
-                execute=lambda: collect_hot_papers(categories, dw.year_start, dw.year_end, per_cat=5, config=config),
+                execute=lambda: collect_hot_papers(
+                    categories,
+                    dw.year_start,
+                    dw.year_end,
+                    per_cat=5,
+                    config=config,
+                    time_agnostic=time_agnostic,
+                ),
                 is_hot=True,
             )
         )
@@ -602,7 +632,13 @@ def search_and_score(
         steps.append(
             _PipelineStep(
                 name="user_query",
-                execute=lambda: query_semantic_scholar(query.strip(), dw.year_start, dw.year_end, top_k=10),
+                execute=lambda: query_semantic_scholar(
+                    query.strip(),
+                    dw.year_start,
+                    dw.year_end,
+                    top_k=10,
+                    apply_date_filter=not time_agnostic,
+                ),
                 is_hot=True,
             )
         )
@@ -613,7 +649,7 @@ def search_and_score(
         try:
             raw = step.execute()
             if raw:
-                batch = score_papers(raw, config, is_hot_batch=step.is_hot)
+                batch = score_papers(raw, config, is_hot_batch=step.is_hot, time_agnostic=time_agnostic)
                 logger.info("Step '%s': scored %d papers", step.name, len(batch))
                 scored.extend(batch)
         except Exception as exc:
@@ -630,17 +666,26 @@ def search_and_score(
             seen_keys.add(key)
             unique.append(p)
 
+    date_windows: dict[str, Any] = {
+        "recent_30d": {
+            "start": dw.recent_start.isoformat(),
+            "end": dw.recent_end.isoformat(),
+        },
+    }
+    if time_agnostic:
+        # Full-history S2 corpus: the year_start/year_end bounds are NOT used
+        # to filter, so label the scope rather than report a misleading window.
+        date_windows["semantic_scholar"] = "full-history"
+        date_windows["scope"] = "time_agnostic"
+    else:
+        date_windows["past_year"] = {
+            "start": dw.year_start.isoformat(),
+            "end": dw.year_end.isoformat(),
+        }
+        date_windows["scope"] = "recent"
+
     return {
         "papers": unique[:top_n],
-        "date_windows": {
-            "recent_30d": {
-                "start": dw.recent_start.isoformat(),
-                "end": dw.recent_end.isoformat(),
-            },
-            "past_year": {
-                "start": dw.year_start.isoformat(),
-                "end": dw.year_end.isoformat(),
-            },
-        },
+        "date_windows": date_windows,
         "total_found": len(unique),
     }

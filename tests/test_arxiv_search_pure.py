@@ -3,6 +3,7 @@
 import unittest
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from scholar_agent.engine.academic.arxiv_search import (
     DateWindow,
@@ -431,6 +432,75 @@ class TestNormalizeS2Results(unittest.TestCase):
         result = _normalize_s2_results(payload, 10)
         self.assertEqual(result[0]["source"], "s2_graph")
         self.assertEqual(result[0]["arxiv_id"], "2501.12345")
+
+
+class TestTimeAgnosticSearch(unittest.TestCase):
+    """search_and_score time_agnostic mode: full-history S2, no date filter.
+
+    These guard the core fix — that search_papers must be able to reach
+    classic papers by dropping the S2 publicationDateOrYear bound — without
+    touching the network.
+    """
+
+    def _config(self):
+        return {
+            "research_domains": {
+                "LLM": {"keywords": ["transformer"], "arxiv_categories": ["cs.CL"]},
+            },
+            "excluded_keywords": [],
+        }
+
+    @patch("scholar_agent.engine.academic.arxiv_search.query_arxiv", return_value=[])
+    @patch("scholar_agent.engine.academic.arxiv_search.query_semantic_scholar")
+    def test_time_agnostic_user_query_drops_date_filter(self, mock_s2, _arxiv):
+        mock_s2.return_value = []
+        from scholar_agent.engine.academic.arxiv_search import search_and_score
+
+        search_and_score(
+            config=self._config(),
+            query="attention is all you need",
+            skip_hot=True,
+            time_agnostic=True,
+        )
+        _, kwargs = mock_s2.call_args
+        self.assertFalse(kwargs.get("apply_date_filter", True))
+
+    @patch("scholar_agent.engine.academic.arxiv_search.query_arxiv", return_value=[])
+    @patch("scholar_agent.engine.academic.arxiv_search.query_semantic_scholar")
+    def test_default_user_query_keeps_date_filter(self, mock_s2, _arxiv):
+        """Legacy path (daily single-track) must keep the date filter."""
+        mock_s2.return_value = []
+        from scholar_agent.engine.academic.arxiv_search import search_and_score
+
+        search_and_score(
+            config=self._config(),
+            query="transformer",
+            skip_hot=True,
+        )
+        _, kwargs = mock_s2.call_args
+        self.assertTrue(kwargs.get("apply_date_filter", True))
+
+    @patch("scholar_agent.engine.academic.arxiv_search.query_arxiv", return_value=[])
+    @patch("scholar_agent.engine.academic.arxiv_search.collect_hot_papers")
+    def test_time_agnostic_hot_papers_and_scope(self, mock_hot, _arxiv):
+        mock_hot.return_value = []
+        from scholar_agent.engine.academic.arxiv_search import search_and_score
+
+        result = search_and_score(config=self._config(), time_agnostic=True)
+        _, kwargs = mock_hot.call_args
+        self.assertTrue(kwargs.get("time_agnostic", False))
+        self.assertEqual(result["date_windows"]["scope"], "time_agnostic")
+        self.assertEqual(result["date_windows"]["semantic_scholar"], "full-history")
+
+    @patch("scholar_agent.engine.academic.arxiv_search.query_arxiv", return_value=[])
+    @patch("scholar_agent.engine.academic.arxiv_search.collect_hot_papers")
+    def test_default_scope_is_recent(self, mock_hot, _arxiv):
+        mock_hot.return_value = []
+        from scholar_agent.engine.academic.arxiv_search import search_and_score
+
+        result = search_and_score(config=self._config())
+        self.assertEqual(result["date_windows"]["scope"], "recent")
+        self.assertIn("past_year", result["date_windows"])
 
 
 if __name__ == "__main__":

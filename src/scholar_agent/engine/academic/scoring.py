@@ -41,6 +41,15 @@ WEIGHTS_CONF: dict[str, float] = {
     "impact": 0.38,
     "rigor": 0.28,
 }
+# Time-agnostic profile: full-history knowledge retrieval where classic and
+# recent papers matter equally. Drops the freshness dimension entirely and
+# redistributes its weight to fit/impact so old, highly-cited work is never
+# penalized simply for its age.
+_WEIGHTS_TIME_AGNOSTIC: dict[str, float] = {
+    "fit": 0.40,
+    "impact": 0.40,
+    "rigor": 0.20,
+}
 
 # Relevance: precompiled pattern weights
 _TITLE_PTS = 1.0
@@ -182,11 +191,17 @@ class PaperScorer:
         *,
         trending: bool = False,
         conference: bool = False,
+        time_agnostic: bool = False,
     ) -> list[dict[str, Any]]:
         """Filter, score, and sort papers.  Returns a new list."""
         results: list[dict[str, Any]] = []
         for p in papers:
-            dims = self._evaluate(p, trending=trending, conference=conference)
+            dims = self._evaluate(
+                p,
+                trending=trending,
+                conference=conference,
+                time_agnostic=time_agnostic,
+            )
             if dims is None:
                 continue
             p["scores"] = dims
@@ -202,6 +217,7 @@ class PaperScorer:
         *,
         trending: bool,
         conference: bool,
+        time_agnostic: bool = False,
     ) -> dict[str, Any] | None:
         fit_score, domain, kw = self._fit(paper)
         if fit_score <= 0:
@@ -211,14 +227,21 @@ class PaperScorer:
         fresh = self._freshness(pub_dt)
 
         citations = paper.get("influentialCitationCount") or 0
-        impact = self._impact(citations, pub_dt, trending=trending)
+        impact = self._impact(citations, pub_dt, trending=trending, time_agnostic=time_agnostic)
 
         abstract = paper.get("summary", "") or paper.get("abstract", "")
         rigor = self._rigor(abstract)
 
-        weights = WEIGHTS_CONF if conference else (_WEIGHTS_TRENDING if trending else _WEIGHTS_DEFAULT)
+        if time_agnostic:
+            weights = _WEIGHTS_TIME_AGNOSTIC
+            rec_val = 0.0
+        elif conference:
+            weights = WEIGHTS_CONF
+            rec_val = 0.0
+        else:
+            weights = _WEIGHTS_TRENDING if trending else _WEIGHTS_DEFAULT
+            rec_val = fresh
 
-        rec_val = 0.0 if conference else fresh
         dims_raw = {"fit": fit_score, "freshness": rec_val, "impact": impact, "rigor": rigor}
 
         # Linear normalization: simple, transparent, creates natural score spread.
@@ -307,8 +330,18 @@ class PaperScorer:
         return round(max(3.0 * (1.0 - age_days / 365.0), 0.0), 2)
 
     @staticmethod
-    def _impact(citations: int, pub_dt: datetime | None, *, trending: bool) -> float:
-        if trending:
+    def _impact(
+        citations: int,
+        pub_dt: datetime | None,
+        *,
+        trending: bool,
+        time_agnostic: bool = False,
+    ) -> float:
+        # time_agnostic (full-history search) and trending both rank impact
+        # purely by citation influence — no recency curve. This is what lets
+        # classic, highly-cited papers surface alongside recent work instead
+        # of being collapsed to a flat 0.4 floor.
+        if trending or time_agnostic:
             return min(citations / 80.0, _CEILING)
         if pub_dt is not None:
             ref = datetime.now(pub_dt.tzinfo) if pub_dt.tzinfo else datetime.now()
@@ -370,6 +403,7 @@ def score_papers(
     is_hot_batch: bool = False,
     is_conf_batch: bool = False,
     is_conf: bool = False,
+    time_agnostic: bool = False,
 ) -> list[dict[str, Any]]:
     """Filter and score a batch of papers."""
     conference = is_conf_batch or is_conf
@@ -377,4 +411,9 @@ def score_papers(
         domains=config.get("research_domains", {}),
         excluded=config.get("excluded_keywords", []),
     )
-    return scorer.rank(papers, trending=is_hot_batch, conference=conference)
+    return scorer.rank(
+        papers,
+        trending=is_hot_batch,
+        conference=conference,
+        time_agnostic=time_agnostic,
+    )

@@ -245,7 +245,7 @@ def query_knowledge(query: str, limit: int = 5, rerank: bool = False) -> str:
 
 
 @tool
-def save_research(query: str, answer_json: str, domain: str = "", language: str = "zh") -> str:
+def save_research(query: str, answer_json: str, domain: str = "", language: str = "zh", card_type: str = "") -> str:
     """Save structured research results as a knowledge card in the local knowledge base.
 
     The answer_json must conform to schemas/answer.schema.json:
@@ -308,6 +308,11 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
             and all auto-routing (AI, folder matching, heuristic) is skipped.
         language: Language for the card content — "zh" (Chinese, default) or "en" (English).
             When "zh", the answer, claims, inferences, and all other text fields MUST be in Chinese.
+        card_type: Optional explicit card type — "engineering" (a step-by-step implementation
+            playbook with prerequisites/implementation_steps/verification/pitfalls/rollback),
+            "method", or "knowledge". If omitted, inferred from query + content. Use
+            "engineering" for how-to / landing / deployment knowledge so it renders as
+            actionable steps instead of an abstract research summary.
     """
     # Validate query — reject path traversal sequences only
     if not query or not query.strip():
@@ -317,6 +322,10 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
         answer_data = json.loads(answer_json)
     except json.JSONDecodeError as e:
         return json.dumps({"error": f"Invalid JSON: {e}"})
+
+    # Explicit card_type override (engineering/method/knowledge); otherwise inferred.
+    if card_type and card_type.strip().lower() in ("engineering", "method", "knowledge"):
+        answer_data["card_type"] = card_type.strip().lower()
 
     # Validate against schema
     warnings = validate_answer_schema(answer_data)
@@ -743,15 +752,18 @@ if SCHOLAR_ACADEMIC:
         skip_hot: bool = False,
         config_path: str = "",
     ) -> str:
-        """Search academic papers via arXiv + Semantic Scholar with scoring.
+        """Search academic papers across the full historical corpus.
 
-        Performs a combined search across arXiv (recent 30 days) and
-        Semantic Scholar (high-influence papers from the past year), scores
-        and deduplicates results using a four-dimensional scoring engine
-        (relevance, recency, popularity, quality).
+        Performs a combined search across arXiv (recent submissions) and
+        Semantic Scholar (full history, no publication-date filter), and scores
+        results time-agnostically — by topic fit, citation impact, and rigor
+        rather than recency — so classic foundational papers surface on equal
+        footing with recent work. Use this for systematic, domain-level
+        knowledge retrieval where a paper's age does not matter. For a
+        recency-weighted daily feed, use ``daily_recommend`` instead.
 
         Args:
-            query: Natural language search query for Semantic Scholar hot-papers.
+            query: Natural language search query for Semantic Scholar.
                 If empty, uses default category-based keywords.
             categories: Comma-separated arXiv categories (default: cs.AI,cs.LG,cs.CL,cs.CV).
             max_results: Maximum arXiv results to fetch (default 200).
@@ -805,6 +817,7 @@ if SCHOLAR_ACADEMIC:
                 top_n=top_n,
                 skip_hot=skip_hot,
                 query=query,
+                time_agnostic=True,
             )
         except Exception as e:
             logger.exception("search_papers failed")
