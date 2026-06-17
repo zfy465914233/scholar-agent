@@ -785,6 +785,20 @@ class TestDownloadArxivPdf(unittest.TestCase):
             # We can't actually download without network, but the dir creation
             # is tested implicitly via os.makedirs in the function
 
+    def test_download_404_raises_without_retrying(self) -> None:
+        """A 404 (paper not found) raises immediately — not retried across mirrors."""
+        from unittest.mock import patch
+
+        from scholar_agent.engine.academic import image_extractor
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(image_extractor, "_fetch_bytes", return_value=(404, b"")) as mock_fetch:
+                with self.assertRaises(RuntimeError) as ctx:
+                    image_extractor.download_arxiv_pdf("9999.99999", tmp)
+                self.assertIn("404", str(ctx.exception))
+            # 404 must not be retried and must not try the second mirror.
+            self.assertEqual(mock_fetch.call_count, 1)
+
 
 class TestExtractPdfText(unittest.TestCase):
     def test_returns_empty_when_no_fitz(self) -> None:

@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 from urllib import request as _url_lib
 
+from scholar_agent.engine.retry import retry_with_backoff
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -179,9 +181,33 @@ def _pull_source_tarball(paper_id: str, dest: str) -> bool:
 # PDF download
 # ---------------------------------------------------------------------------
 
+_ARXIV_PDF_MIRRORS = (
+    "https://arxiv.org/pdf/{arxiv_id}.pdf",
+    "https://export.arxiv.org/pdf/{arxiv_id}.pdf",
+)
+
+
+class _ArxivNotFoundError(Exception):
+    """Raised on HTTP 404 — the paper doesn't exist, so retries/mirrors are pointless."""
+
+
+def _fetch_pdf_once(url: str, *, timeout: int = 120) -> bytes:
+    """Single PDF fetch. Raises _ArxivNotFoundError on 404 (not retried)."""
+    status, blob = _fetch_bytes(url, timeout=timeout)
+    if status == 404:
+        raise _ArxivNotFoundError(f"arXiv HTTP 404: {url}")
+    if status != 200 or not blob:
+        raise RuntimeError(f"arXiv HTTP {status}: {url}")
+    return blob
+
 
 def download_arxiv_pdf(arxiv_id: str, output_dir: str) -> str:
-    """Download arXiv PDF to *output_dir*/*arxiv_id*.pdf (with caching)."""
+    """Download arXiv PDF to *output_dir*/*arxiv_id*.pdf.
+
+    Caches locally. Retries transient errors (SSL/connection/5xx) with
+    exponential backoff and falls back across mirrors (arxiv.org →
+    export.arxiv.org). A 404 (paper doesn't exist) is not retried.
+    """
     os.makedirs(output_dir, exist_ok=True)
     target = os.path.join(output_dir, f"{arxiv_id}.pdf")
 
@@ -189,19 +215,34 @@ def download_arxiv_pdf(arxiv_id: str, output_dir: str) -> str:
         logger.info("PDF cache hit: %s", target)
         return os.path.abspath(target)
 
-    url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-    logger.info("Downloading PDF: %s", url)
-    try:
-        status, blob = _fetch_bytes(url, timeout=120)
-        if status != 200:
-            raise RuntimeError(f"arXiv returned HTTP {status}")
-        with open(target, "wb") as fh:
-            fh.write(blob)
-        return os.path.abspath(target)
-    except Exception as exc:
-        if os.path.exists(target):
-            os.remove(target)
-        raise RuntimeError(f"PDF download failed for {arxiv_id}: {exc}") from exc
+    last_exc: Exception | None = None
+    for url_template in _ARXIV_PDF_MIRRORS:
+        url = url_template.format(arxiv_id=arxiv_id)
+        logger.info("Downloading PDF: %s", url)
+        try:
+            blob = retry_with_backoff(
+                _fetch_pdf_once,
+                url,
+                max_retries=3,
+                base_delay=2.0,
+                retry_on=(OSError, RuntimeError),
+            )
+            with open(target, "wb") as fh:
+                fh.write(blob)
+            return os.path.abspath(target)
+        except _ArxivNotFoundError:
+            # Paper doesn't exist — no point trying other mirrors.
+            if os.path.exists(target):
+                os.remove(target)
+            raise RuntimeError(f"PDF download failed for {arxiv_id}: arXiv 404 (not found)") from None
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("PDF download from %s failed: %s", url, exc)
+            if os.path.exists(target):
+                os.remove(target)
+            # transient (SSL/connection/5xx) → try the next mirror
+
+    raise RuntimeError(f"PDF download failed for {arxiv_id}: {last_exc}") from last_exc
 
 
 # ---------------------------------------------------------------------------
