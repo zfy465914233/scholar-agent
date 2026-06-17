@@ -774,5 +774,88 @@ class TestDetectPaperType(unittest.TestCase):
         self.assertEqual(detect_paper_type("Some general discussion of ideas", "Gen"), "generic")
 
 
+class TestVerifyNoteNumbers(unittest.TestCase):
+    """A1.3: flag note numbers absent from the PDF (anti-hallucination)."""
+
+    def _write_note(self, dir_: str, body: str, frontmatter: str = "") -> str:
+        path = os.path.join(dir_, "note.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(frontmatter + body if frontmatter else body)
+        return path
+
+    def test_numbers_present_in_pdf_are_verified(self) -> None:
+        from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            note = self._write_note(tmp, "Accuracy reached 89.3% with F1 0.847.\n")
+            result = verify_note_numbers(note, "The model scores 89.3% and F1 of 0.847.")
+            self.assertEqual(result["unverified"], [])
+            self.assertGreaterEqual(result["checked"], 2)
+
+    def test_fabricated_number_flagged(self) -> None:
+        from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            note = self._write_note(tmp, "An Avg column of 18.2 was reported.\n")
+            result = verify_note_numbers(note, "No such number appears here.")
+            self.assertIn("18.2", result["unverified"])
+
+    def test_no_numbers(self) -> None:
+        from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            note = self._write_note(tmp, "Just prose with no figures.\n")
+            result = verify_note_numbers(note, "some pdf text")
+            self.assertEqual(result["checked"], 0)
+            self.assertEqual(result["unverified"], [])
+
+    def test_arxiv_id_fragment_not_checked(self) -> None:
+        from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            note = self._write_note(tmp, "See arxiv 2303.11366 for details.\n")
+            result = verify_note_numbers(note, "pdf without the id")
+            self.assertNotIn("2303.11366", result["unverified"])
+            for num in result["unverified"]:
+                self.assertNotIn("11366", num)
+
+    def test_frontmatter_metadata_not_checked(self) -> None:
+        from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+        fm = "---\ntitle: X\nscore: 8.52\n---\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            note = self._write_note(tmp, "Body has no numbers.\n", frontmatter=fm)
+            result = verify_note_numbers(note, "pdf text")
+            self.assertEqual(result["checked"], 0)
+
+    def test_single_decimal_noise_not_checked(self) -> None:
+        from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # glm-4.7 / v1.0 are single-decimal — not metrics, must be ignored.
+            note = self._write_note(tmp, "Uses glm-4.7 and version v1.0.\n")
+            result = verify_note_numbers(note, "pdf text")
+            self.assertEqual(result["checked"], 0)
+
+    def test_cjk_glued_number_is_checked(self) -> None:
+        from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # CJK glued to a number (no ASCII space) must still be detected.
+            note = self._write_note(tmp, "准确率达到89.3%。\n")
+            result = verify_note_numbers(note, "结果是 89.3%")
+            self.assertEqual(result["unverified"], [])
+            self.assertGreaterEqual(result["checked"], 1)
+
+    def test_prefix_digit_does_not_false_match(self) -> None:
+        from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # note says 0.847, pdf only has 10.847 — different number, must be unverified.
+            note = self._write_note(tmp, "F1 was 0.847 here.\n")
+            result = verify_note_numbers(note, "the value 10.847 was logged")
+            self.assertIn("0.847", result["unverified"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

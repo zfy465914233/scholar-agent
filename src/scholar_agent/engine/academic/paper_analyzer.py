@@ -694,6 +694,56 @@ def check_note_quality(note_path: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# A1.3: number verification — flag note numbers absent from the PDF (anti-hallucination)
+# ---------------------------------------------------------------------------
+
+# Percentages (89.3%, 18%) and decimal metrics (0.847, 18.2). The leading
+# boundary is ASCII-only on purpose: CJK glued to a digit (准确率89.3%) must
+# still match, while an ASCII alnum/"-"/"." prefix (v1.0, glm-4.7, python3.10)
+# must not — those are version identifiers, not metric values.
+_NOTE_PERCENT_RE = re.compile(r"(?<![0-9A-Za-z.-])(\d{1,3}(?:\.\d+)?)\s?%")
+_NOTE_METRIC_RE = re.compile(r"(?<![0-9A-Za-z.-])(\d+\.\d+)(?![\d])")
+_ARXIV_ID_FRAG_RE = re.compile(r"\b\d{4}\.\d{4,5}\b")
+
+
+def verify_note_numbers(note_path: str, pdf_text: str) -> dict:
+    """Cross-check numbers in the note against the PDF text (A1.3).
+
+    ``fill_note_from_pdf`` can manufacture figures (e.g. invented metric
+    columns). This extracts percentages and multi-decimal metrics from the
+    note body and reports any that do not appear in the extracted PDF text,
+    so the caller can flag them for manual review. Frontmatter metadata and
+    arxiv-id fragments are excluded.
+
+    Returns a dict with ``checked``, ``verified`` and ``unverified`` (list of
+    number strings). The result is advisory — it never blocks the note.
+    """
+    note_text = Path(note_path).read_text(encoding="utf-8")
+    # Strip frontmatter (metadata numbers aren't claims) and arxiv ids
+    # (their numeric form would masquerade as a metric).
+    body = re.sub(r"\A---\n.*?\n---\n", "", note_text, count=1, flags=re.DOTALL)
+    body = _ARXIV_ID_FRAG_RE.sub(" ", body)
+
+    candidates: set[str] = set()
+    for m in _NOTE_PERCENT_RE.finditer(body):
+        candidates.add(m.group(1))
+    for m in _NOTE_METRIC_RE.finditer(body):
+        candidates.add(m.group(1))
+
+    verified: list[str] = []
+    unverified: list[str] = []
+    for num in sorted(candidates):
+        pat = re.compile(r"(?<!\d)" + re.escape(num) + r"(?!\d)")
+        (verified if pat.search(pdf_text) else unverified).append(num)
+
+    return {
+        "checked": len(candidates),
+        "verified": len(verified),
+        "unverified": unverified,
+    }
+
+
+# ---------------------------------------------------------------------------
 # LLM-powered auto-fill
 # ---------------------------------------------------------------------------
 

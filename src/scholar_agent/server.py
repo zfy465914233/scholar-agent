@@ -1158,12 +1158,23 @@ if SCHOLAR_ACADEMIC:
             except Exception:
                 logger.warning("Auto wiki-linking failed", exc_info=True)
 
+            # A1.3: cross-check note numbers against the PDF text to catch
+            # LLM-fabricated figures. Advisory only; needs usable full text.
+            number_verification: dict[str, Any] = {}
+            if pdf_text:
+                try:
+                    from scholar_agent.engine.academic.paper_analyzer import verify_note_numbers
+
+                    number_verification = verify_note_numbers(note_path, pdf_text)
+                except Exception:
+                    logger.warning("Number verification failed", exc_info=True)
+
             # Build instructions for the caller about remaining issues
             placeholder_count = quality_check.get("placeholder_count", 0)
             unresolved_errors = validation.get("errors", [])
-            instructions = None
+            instruction_parts: list[str] = []
             if pdf_text and (placeholder_count > 0 or not validation.get("ok")):
-                instructions = (
+                instruction_parts.append(
                     f"Note still has {placeholder_count} unfilled <!-- LLM: --> placeholders "
                     f"and/or {len(unresolved_errors)} validation issue(s): {unresolved_errors}. "
                     "(status=incomplete). Review and supplement any gaps, or re-run analyze_paper."
@@ -1171,12 +1182,20 @@ if SCHOLAR_ACADEMIC:
             elif detected_pdf and not pdf_text:
                 # A5: PDF present but no usable text (scanned/image-only).
                 reason = pdf_text_quality.get("reason", "unknown")
-                instructions = (
+                instruction_parts.append(
                     "PDF full text was unusable "
                     f"(reason={reason}); placeholders were not auto-filled and validation was skipped. "
                     "If this is a scanned PDF, convert it to a text-based PDF (or run OCR) and re-run "
                     "analyze_paper so the closed loop can fill and verify the note."
                 )
+            unverified_nums = number_verification.get("unverified", [])
+            if unverified_nums:
+                shown = unverified_nums[:10]
+                instruction_parts.append(
+                    f"{len(unverified_nums)} number(s) in the note were not found in the PDF text "
+                    f"and may be fabricated: {shown}. Verify them against the source before trusting."
+                )
+            instructions = " ".join(instruction_parts) if instruction_parts else None
 
             result_payload: dict[str, object] = {
                 "status": "ok" if (placeholder_count == 0 and validation.get("ok")) else "incomplete",
@@ -1188,6 +1207,7 @@ if SCHOLAR_ACADEMIC:
                 "has_full_text": bool(pdf_text),
                 "pdf_text_chars": len(pdf_text),
                 "pdf_text_quality": pdf_text_quality,
+                "number_verification": number_verification,
                 "quality_check": quality_check,
                 "validation": validation,
                 "repair_rounds": repair_rounds,
