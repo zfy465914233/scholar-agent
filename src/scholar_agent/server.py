@@ -50,7 +50,6 @@ from scholar_agent.engine.close_knowledge_loop import (
 from scholar_agent.engine.common import sanitize_title
 from scholar_agent.engine.index_lifecycle import async_reindex as _async_reindex
 from scholar_agent.engine.index_lifecycle import ensure_ready as _ensure_index_ready
-from scholar_agent.engine.index_lifecycle import mark_stale as _mark_index_stale
 from scholar_agent.engine.local_retrieve import retrieve
 from scholar_agent.engine.scholar_config import (
     get_daily_notes_dir,
@@ -377,7 +376,7 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
         return json.dumps({"error": f"Failed to write card: {e}"})
 
     index_path = get_index_path()
-    _mark_index_stale(index_path)
+    _async_reindex(index_path)
 
     return json.dumps(
         {
@@ -525,7 +524,7 @@ def capture_answer(query: str, answer: str, tags: str = "", language: str = "zh"
         return json.dumps({"error": f"Failed to write card: {e}"})
 
     index_path = get_index_path()
-    _mark_index_stale(index_path)
+    _async_reindex(index_path)
 
     return json.dumps(
         {
@@ -605,7 +604,7 @@ def ingest_source(source: str, title: str = "", tags: str = "", language: str = 
         return json.dumps({"error": f"Failed to write card: {e}"})
 
     index_path = get_index_path()
-    _mark_index_stale(index_path)
+    _async_reindex(index_path)
 
     return json.dumps(
         {
@@ -1115,6 +1114,21 @@ if SCHOLAR_ACADEMIC:
                     repair_rounds += 1
                     validation = validate_note(note_path, paper_type="generic")
 
+            # E2: auto wiki-link the new note into the paper-notes graph so it is
+            # not an island. Reuses the daily_recommend linking pattern.
+            wiki_linked = False
+            try:
+                from scholar_agent.engine.academic.note_linker import apply_wiki_links, build_keyword_index
+
+                pn_path = get_paper_notes_dir()
+                if pn_path.exists():
+                    keyword_index = build_keyword_index(str(pn_path))
+                    if keyword_index:
+                        apply_wiki_links(note_path, keyword_index)
+                        wiki_linked = True
+            except Exception:
+                logger.warning("Auto wiki-linking failed", exc_info=True)
+
             # Build instructions for the caller about remaining issues
             placeholder_count = quality_check.get("placeholder_count", 0)
             unresolved_errors = validation.get("errors", [])
@@ -1138,6 +1152,7 @@ if SCHOLAR_ACADEMIC:
                 "quality_check": quality_check,
                 "validation": validation,
                 "repair_rounds": repair_rounds,
+                "wiki_linked": wiki_linked,
                 "instructions": instructions,
                 "images": [
                     {"filename": img.get("filename", ""), "section": img.get("section", "")} for img in (images or [])
@@ -1424,7 +1439,7 @@ if SCHOLAR_ACADEMIC:
         except Exception as e:
             return json.dumps({"error": f"Failed to write card: {e}"})
 
-        _mark_index_stale(get_index_path())
+        _async_reindex(get_index_path())
 
         return json.dumps(
             {
