@@ -48,7 +48,7 @@ VALID_TRANSITIONS: dict[LifecycleState, set[LifecycleState]] = {
 
 # ── Schema definition ─────────────────────────────────────────────
 
-CARD_TYPES = {"knowledge", "method"}
+CARD_TYPES = {"knowledge", "method", "engineering"}
 CONFIDENCE_LEVELS = {"draft", "confirmed", "likely", "unknown"}
 ORIGINS = {"local_seed", "manual_web_research", "web_research_with_synthesis", "distilled", "promoted", "imported"}
 
@@ -136,6 +136,30 @@ def validate_card(metadata: dict[str, Any]) -> list[CardIssue]:
         issues.append(CardIssue("warning", "review_status", "Promoted/distilled cards should have review_status."))
 
     return issues
+
+
+def validate_card_quality(card_path: str) -> dict[str, Any]:
+    """F2: validate a persisted card's frontmatter schema + body density.
+
+    Wraps :func:`validate_card` (frontmatter schema) and adds a body-density
+    check so save_research can self-check the card it just wrote. Returns
+    ``{"errors": [...], "warnings": [...]}`` with ``{field, message}`` items.
+    Advisory — never raises; a failed read yields a single error entry.
+    """
+    from pathlib import Path
+
+    try:
+        raw = Path(card_path).read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return {"errors": [{"field": "file", "message": f"cannot read card: {exc}"}], "warnings": []}
+    meta, body = _parse_frontmatter(raw)
+    issues = validate_card(meta)
+    errors = [{"field": i.field, "message": i.message} for i in issues if i.severity == "error"]
+    warnings = [{"field": i.field, "message": i.message} for i in issues if i.severity == "warning"]
+    body_text = body.strip() if isinstance(body, str) else ""
+    if len(body_text) < 300:
+        warnings.append({"field": "body", "message": f"card body is thin ({len(body_text)} chars < 300)"})
+    return {"errors": errors, "warnings": warnings}
 
 
 def transition_card(

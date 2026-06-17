@@ -378,6 +378,15 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
     index_path = get_index_path()
     _async_reindex(index_path)
 
+    # F2: self-check the card we just wrote (frontmatter schema + body density).
+    card_quality: dict[str, Any] = {"errors": [], "warnings": []}
+    try:
+        from scholar_agent.engine.knowledge_lifecycle import validate_card_quality
+
+        card_quality = validate_card_quality(str(card_path))
+    except Exception:
+        logger.warning("card quality check failed", exc_info=True)
+
     return json.dumps(
         {
             "status": "ok",
@@ -385,6 +394,7 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
             "reindexed": False,
             "index_pending_refresh": True,
             "schema_warnings": warnings,
+            "card_quality": card_quality,
         },
         ensure_ascii=False,
         indent=2,
