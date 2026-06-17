@@ -20,7 +20,18 @@ SECTION_ALIASES = {
     "motivation": ["研究动机", "动机", "motivation", "background", "problem setting"],
     "method": ["方法论", "方法", "method", "approach"],
     "dataset": ["数据区间", "数据集", "dataset", "data", "实验设置", "experimental setup"],
-    "findings": ["核心结论", "关键发现", "主要结论", "results", "findings", "实验结果"],
+    "findings": [
+        "核心结论",
+        "关键发现",
+        "主要结论",
+        "主要结果",
+        "实验结果",
+        "实验与评估",
+        "results",
+        "findings",
+        "实验",
+        "评估",
+    ],
     "limitations": ["局限性", "局限", "limitations", "caveats", "discussion"],
 }
 
@@ -44,6 +55,9 @@ DATASET_FALLBACK_ALIASES = [
 ]
 
 UNKNOWN_VALUES = {"unknown", "tbd", "n/a", "na", "none", "null", "[unknown]"}
+# Legitimate math_depth values (shared semantics with paper_analyzer.detect_math_depth).
+# "none" means the paper has NO math requirement — it is a valid value, not "unknown".
+LEGAL_MATH_DEPTH = {"heavy", "light", "none"}
 MIN_SECTION_CHARS = 24
 
 # Regex to detect LaTeX math in markdown
@@ -130,8 +144,17 @@ def split_frontmatter(text: str) -> tuple[dict[str, str], str, list[str]]:
 
 
 def extract_sections(body: str) -> dict[str, str]:
-    matches = list(re.finditer(r"(?m)^(#{1,6})\s+(.+?)\s*$", body))
+    """Extract top-level sections, folding deeper headings into their parent.
+
+    Level-1/2 headings (``#``/``##``) define section boundaries; ``###``/``####``
+    content folds into the nearest parent section so a section's content isn't
+    truncated at its first sub-heading (which previously made method/findings
+    look empty). If the note has only level-3+ headings, treat ``###`` as top.
+    """
     sections: dict[str, str] = {}
+    matches = list(re.finditer(r"(?m)^(#{1,2})\s+(.+?)\s*$", body))
+    if not matches:
+        matches = list(re.finditer(r"(?m)^(###)\s+(.+?)\s*$", body))
     if not matches:
         return sections
 
@@ -139,18 +162,36 @@ def extract_sections(body: str) -> dict[str, str]:
         title = match.group(2).strip()
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(body)
-        content = body[start:end].strip()
-        sections[title] = content
+        sections[title] = body[start:end].strip()
     return sections
 
 
 def find_section(sections: dict[str, str], aliases: list[str]) -> tuple[str | None, str | None]:
+    """Find the best-matching section for a key.
+
+    Prefers an exact title==alias, then a title starting with the alias, then a
+    plain substring — so ``方法`` matches ``方法概述`` (starts-with) over
+    ``基线方法`` (substring only), letting the main section win over incidental
+    look-alikes. Ties broken by shorter title.
+    """
+    best: tuple[int, str, str] | None = None
+    lowered_aliases = [a.lower() for a in aliases]
     for title, content in sections.items():
         lowered = title.lower()
-        for alias in aliases:
-            if alias.lower() in lowered:
-                return title, content
-    return None, None
+        for alias in lowered_aliases:
+            if alias not in lowered:
+                continue
+            if lowered == alias:
+                priority = 0
+            elif lowered.startswith(alias):
+                priority = 1
+            else:
+                priority = 2
+            if best is None or (priority, len(title)) < (best[0], len(best[1])):
+                best = (priority, title, content)
+    if best is None:
+        return None, None
+    return best[1], best[2]
 
 
 def has_substantive_text(text: str) -> bool:
@@ -174,6 +215,10 @@ def collect_unknown_metadata_errors(metadata: dict[str, str]) -> list[str]:
     for key, value in metadata.items():
         normalized = value.strip().lower()
         if normalized in UNKNOWN_VALUES:
+            # math_depth has legitimate non-unknown values (heavy/light/none);
+            # "none" must not trip the generic blacklist.
+            if key == "math_depth" and normalized in LEGAL_MATH_DEPTH:
+                continue
             errors.append(f"metadata_unknown:{key}")
     return errors
 
@@ -238,7 +283,7 @@ def validate_core_sections(
 
 def count_quantitative_results(text: str) -> int:
     pattern = re.compile(
-        r"(?:\b\d+(?:\.\d+)?\s*(?:%|x|times|pts?|points?)\b|"
+        r"(?:\b\d+(?:\.\d+)?\s*(?:%|x|times|pts?|points?)(?![\d.])|"
         r"\b\d+(?:\.\d+)?\b[^\n]{0,12}?\b(?:accuracy|acc|auc|f1|ap|map|precision|recall|sharpe)\b|"
         r"\b(?:AUC|F1|AP|mAP|accuracy|acc|precision|recall|Sharpe)\b[^\n]{0,24}?\d+(?:\.\d+)?)",
         flags=re.IGNORECASE,
@@ -299,8 +344,10 @@ def math_depth_checks(metadata: dict[str, str], body: str, sections: dict[str, s
     errors: list[str] = []
     math_depth = metadata.get("math_depth", "").strip().lower()
 
-    if math_depth not in ("heavy", "light"):
+    if math_depth not in LEGAL_MATH_DEPTH:
         return errors
+    if math_depth == "none":
+        return errors  # paper has no math requirement; skip LaTeX/symbol checks
 
     has_inline = bool(_LATEX_INLINE.search(body))
     has_block = bool(_LATEX_BLOCK.search(body))
@@ -343,38 +390,40 @@ def image_checks(metadata: dict[str, str], body: str) -> list[str]:
     return warnings
 
 
+def _has_prose_paragraph(content: str) -> bool:
+    """True if content has >=1 prose paragraph (>50 chars, not table/heading/list/comment)."""
+    for para in content.split("\n\n"):
+        p = para.strip()
+        if (
+            p
+            and not p.startswith("|")  # table
+            and not p.startswith("#")  # heading
+            and not p.startswith("-")  # list
+            and not p.startswith("<!")  # comment
+            and len(p) > 50
+        ):
+            return True
+    return False
+
+
 def content_density_checks(sections: dict[str, str], paper_type: str) -> list[str]:
-    """Check that core sections have substantive content, not just bullet points."""
+    """Check that the MAIN method/findings sections have prose, not just bullets.
+
+    Only the section resolved by ``find_section`` is checked — not every heading
+    containing "方法"/"method" (e.g. "基线方法", "方法对比"), which are often
+    table/list sections and would falsely trigger lacks_prose.
+    """
     errors: list[str] = []
 
-    for key in ("method", "findings"):
-        for title, content in sections.items():
-            lowered = title.lower()
-            if key == "method" and any(kw in lowered for kw in ["method", "方法"]):
-                # Method section should have at least one paragraph of prose
-                paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
-                prose_paragraphs = [
-                    p
-                    for p in paragraphs
-                    if not p.startswith("|")  # not a table
-                    and not p.startswith("#")  # not a heading
-                    and not p.startswith("-")  # not a list
-                    and not p.startswith("<!")  # not a comment
-                    and len(p) > 50
-                ]
-                if len(prose_paragraphs) < 1:
-                    errors.append("method_section_lacks_prose")
-            elif key == "findings" and any(kw in lowered for kw in ["result", "结果", "finding", "发现", "conclusion"]):
-                # Results section should have quantitative data or substantive analysis
-                has_table = bool(re.search(r"\|.+\|.+\|", content))
-                paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
-                prose_paragraphs = [
-                    p
-                    for p in paragraphs
-                    if not p.startswith("|") and not p.startswith("#") and not p.startswith("<!") and len(p) > 50
-                ]
-                if not has_table and len(prose_paragraphs) < 1:
-                    errors.append("findings_section_lacks_substance")
+    _method_title, method_content = find_section(sections, SECTION_ALIASES["method"])
+    if method_content and not _has_prose_paragraph(method_content):
+        errors.append("method_section_lacks_prose")
+
+    _findings_title, findings_content = find_section(sections, SECTION_ALIASES["findings"])
+    if findings_content:
+        has_table = bool(re.search(r"\|.+\|.+\|", findings_content))
+        if not has_table and not _has_prose_paragraph(findings_content):
+            errors.append("findings_section_lacks_substance")
 
     return errors
 

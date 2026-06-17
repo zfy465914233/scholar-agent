@@ -558,5 +558,94 @@ class TestBugFixes(unittest.TestCase):
             self.assertTrue(request_obj.full_url.endswith("/messages"))
 
 
+# ============================================================================
+# 8. fill_note_from_pdf — continuation loop (A1b) + orphan marker cleanup (A2b)
+# ============================================================================
+class TestFillContinuation(unittest.TestCase):
+    """A1b: re-fill sections that still have placeholders after round 1;
+    stop on completion or no-progress."""
+
+    def setUp(self):
+        _clean_env()
+
+    def _setup_single_provider(self):
+        os.environ["SCHOLAR_FILLER_API_KEY"] = "test-key"
+        os.environ["SCHOLAR_FILLER_API_FORMAT"] = "openai"
+        os.environ["SCHOLAR_FILLER_API_URL"] = "https://example.com/v1"
+        os.environ["SCHOLAR_FILLER_MODEL"] = "test-model"
+
+    def test_continuation_fills_leftover_placeholder(self):
+        """Round 1 leaves the placeholder; round 2 fills it -> status ok."""
+        self._setup_single_provider()
+        note = "---\nstatus: skeleton\n---\n\n# T\n\n## S\n\n<!-- LLM: fill -->\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(note)
+            tmp = f.name
+
+        state = {"n": 0}
+
+        def _urlopen(req, timeout=120):
+            state["n"] += 1
+            mock = MagicMock()
+            content = "## S\n\n<!-- LLM: fill -->\n" if state["n"] == 1 else "## S\n\nFilled now.\n"
+            mock.read.return_value = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+            mock.__enter__ = lambda s: s
+            mock.__exit__ = lambda s, *a: None
+            return mock
+
+        with patch("scholar_agent.engine.llm_client.urlopen", side_effect=_urlopen):
+            pa = _reload_paper_analyzer()
+            result = pa.fill_note_from_pdf(tmp, "pdf text")
+
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["placeholders_remaining"], 0)
+        self.assertGreaterEqual(result["rounds_used"], 2)
+        os.unlink(tmp)
+
+    def test_no_progress_stops_loop(self):
+        """A round that makes no progress stops the loop (capped, no spin)."""
+        self._setup_single_provider()
+        note = "---\nstatus: skeleton\n---\n\n# T\n\n## S\n\n<!-- LLM: fill -->\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(note)
+            tmp = f.name
+
+        def _urlopen(req, timeout=120):
+            mock = MagicMock()
+            # Always echo the placeholder back — never fills.
+            mock.read.return_value = json.dumps(
+                {"choices": [{"message": {"content": "## S\n\n<!-- LLM: fill -->\n"}}]}
+            ).encode()
+            mock.__enter__ = lambda s: s
+            mock.__exit__ = lambda s, *a: None
+            return mock
+
+        with patch("scholar_agent.engine.llm_client.urlopen", side_effect=_urlopen):
+            pa = _reload_paper_analyzer()
+            result = pa.fill_note_from_pdf(tmp, "pdf text")
+
+        self.assertIn(result["status"], ("partial", "error"))
+        self.assertLessEqual(result["rounds_used"], 3)  # capped at max_rounds
+        os.unlink(tmp)
+
+
+class TestOrphanedCommentMarkers(unittest.TestCase):
+    """A2b: orphaned --> (filled content but kept closing marker) is stripped."""
+
+    def test_orphaned_marker_dropped_placeholder_kept(self):
+        from scholar_agent.engine.academic.paper_analyzer import _strip_orphaned_comment_markers
+
+        text = "## S\n\nSome content. -->\n\n## T\n\n<!-- LLM: keep -->\n"
+        cleaned = _strip_orphaned_comment_markers(text)
+        self.assertNotIn("content. -->", cleaned)  # orphaned --> removed
+        self.assertIn("<!-- LLM: keep -->", cleaned)  # balanced placeholder kept
+
+    def test_balanced_comment_preserved(self):
+        from scholar_agent.engine.academic.paper_analyzer import _strip_orphaned_comment_markers
+
+        text = "<!-- ordinary comment --> and text"
+        self.assertEqual(_strip_orphaned_comment_markers(text), text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -701,22 +701,47 @@ def _strip_code_fences(text: str) -> str:
     return text
 
 
+def _strip_orphaned_comment_markers(text: str) -> str:
+    """Drop orphaned ``-->`` left when the LLM fills content but keeps the
+    placeholder's closing marker. Balanced ``<!-- ... -->`` blocks (including
+    unfilled ``<!-- LLM: ... -->`` placeholders) are preserved.
+    """
+    out: list[str] = []
+    i = 0
+    open_count = 0
+    n = len(text)
+    while i < n:
+        if text.startswith("<!--", i):
+            open_count += 1
+            out.append("<!--")
+            i += 4
+        elif text.startswith("-->", i):
+            if open_count > 0:
+                open_count -= 1
+                out.append("-->")
+            # else: orphaned --> — drop it
+            i += 3
+        else:
+            out.append(text[i])
+            i += 1
+    return "".join(out)
+
+
 def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
     """Fill <!-- LLM: --> placeholders section-by-section using PDF text via LLM.
 
-    Splits the note into ## sections and fills each in its own LLM call. The
-    previous single-call version capped output at 8192 tokens, so a full
-    15-30k-token note was truncated mid-fill and most sections stayed empty.
-    Per-section calls keep each response small enough to complete.
+    Splits the note into ## sections and fills each in its own LLM call, then
+    *re-fills* any section that still has placeholders — a continuation loop —
+    because a single pass often leaves a few sections partly filled (truncated
+    LLM output or a skipped section). The loop stops when no placeholders remain
+    or a round makes no progress, capped at ``max_rounds``.
 
-    Args:
-        note_path: Path to the generated markdown note.
-        pdf_text: Full text extracted from the PDF.
+    Before writing, orphaned ``-->`` markers are stripped (A2b).
 
     Returns:
         Dict with 'status' (ok/partial/error/skipped), 'placeholders_filled',
         'placeholders_remaining', 'sections_filled', 'sections_failed',
-        'model_used', 'api_format'.
+        'rounds_used', 'model_used', 'api_format'.
     """
     content = Path(note_path).read_text(encoding="utf-8")
     total = len(re.findall(r"<!--\s*LLM:", content))
@@ -733,49 +758,74 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
     if len(pdf_text) > max_pdf_chars:
         truncated += "\n\n[... PDF text truncated ...]"
 
-    filled_chunks: list[str] = []
-    sections_filled = 0
-    sections_failed = 0
+    def _fill_round(text: str) -> tuple[str, int, int, str | None, str | None]:
+        """One pass over sections still containing placeholders."""
+        filled_chunks: list[str] = []
+        sections_filled = 0
+        sections_failed = 0
+        last_model: str | None = None
+        last_format: str | None = None
+        for chunk in _split_into_sections(text):
+            if not re.search(r"<!--\s*LLM:", chunk):
+                # No placeholders in this section — keep verbatim.
+                filled_chunks.append(chunk)
+                continue
+            try:
+                messages = [
+                    {"role": "system", "content": _FILL_SECTION_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Here is the paper's PDF full text:\n\n---\n{truncated}\n---\n\n"
+                            "Fill EVERY <!-- LLM: --> placeholder in the section below. "
+                            "Output the COMPLETE section, unchanged except for filled placeholders:\n\n"
+                            f"{chunk}"
+                        ),
+                    },
+                ]
+                resp = chat_with_fallback(messages, providers=providers, max_tokens=4096, temperature=0.3)
+                filled = _strip_code_fences(resp.content)
+                last_model = resp.model
+                last_format = resp.provider_format
+                sections_filled += 1
+                filled_chunks.append(filled if filled.strip() else chunk)
+            except Exception:
+                sections_failed += 1
+                filled_chunks.append(chunk)  # keep original section on failure
+        return "".join(filled_chunks), sections_filled, sections_failed, last_model, last_format
+
+    # Continuation loop: re-fill remaining placeholders each round; stop on
+    # completion or no-progress (avoids spinning on a section the LLM won't fill).
+    max_rounds = 3
+    prev_remaining: int | None = None
+    rounds_used = 0
+    total_filled = 0
+    total_failed = 0
     last_model: str | None = None
     last_format: str | None = None
+    text = content
+    for _ in range(max_rounds):
+        rounds_used += 1
+        text, filled, failed, model, fmt = _fill_round(text)
+        total_filled += filled
+        total_failed += failed
+        if model:
+            last_model = model
+        if fmt:
+            last_format = fmt
+        remaining = len(re.findall(r"<!--\s*LLM:", text))
+        if remaining == 0 or remaining == prev_remaining:
+            break
+        prev_remaining = remaining
 
-    for chunk in _split_into_sections(content):
-        if not re.search(r"<!--\s*LLM:", chunk):
-            # No placeholders in this section — keep verbatim.
-            filled_chunks.append(chunk)
-            continue
-        try:
-            messages = [
-                {"role": "system", "content": _FILL_SECTION_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Here is the paper's PDF full text:\n\n---\n{truncated}\n---\n\n"
-                        "Fill EVERY <!-- LLM: --> placeholder in the section below. "
-                        "Output the COMPLETE section, unchanged except for filled placeholders:\n\n"
-                        f"{chunk}"
-                    ),
-                },
-            ]
-            resp = chat_with_fallback(messages, providers=providers, max_tokens=4096, temperature=0.3)
-            filled = _strip_code_fences(resp.content)
-            last_model = resp.model
-            last_format = resp.provider_format
-            sections_filled += 1
-            filled_chunks.append(filled if filled.strip() else chunk)
-        except Exception:
-            sections_failed += 1
-            filled_chunks.append(chunk)  # keep original section on failure
-
-    new_content = "".join(filled_chunks)
-    remaining = len(re.findall(r"<!--\s*LLM:", new_content))
-    new_content = new_content.replace("status: skeleton", "status: filled", 1)
-
+    final = _strip_orphaned_comment_markers(text)
+    final = final.replace("status: skeleton", "status: filled", 1)
     try:
-        atomic_write_text(Path(note_path), new_content)
+        atomic_write_text(Path(note_path), final)
     except OSError as exc:
         return {"status": "error", "reason": f"Write failed: {exc}", "placeholders_filled": 0}
 
+    remaining = len(re.findall(r"<!--\s*LLM:", final))
     if remaining == 0:
         status = "ok"
     elif total - remaining > 0:
@@ -786,8 +836,9 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
         "status": status,
         "placeholders_filled": total - remaining,
         "placeholders_remaining": remaining,
-        "sections_filled": sections_filled,
-        "sections_failed": sections_failed,
+        "sections_filled": total_filled,
+        "sections_failed": total_failed,
+        "rounds_used": rounds_used,
         "model_used": last_model,
         "api_format": last_format,
     }

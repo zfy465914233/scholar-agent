@@ -9,6 +9,7 @@ math_depth_checks, and content_density_checks using direct imports.
 import unittest
 
 from scholar_agent.validation.validate_note import (
+    SECTION_ALIASES,
     collect_forbidden_errors,
     collect_unknown_metadata_errors,
     content_density_checks,
@@ -108,11 +109,14 @@ class TestExtractSections(unittest.TestCase):
         self.assertIn("Results", sections)
 
     def test_nested_headings(self):
+        # B1: level-3+ headings fold into their parent level-1/2 section.
+        # Previously ### was a standalone section, truncating the parent's content.
         body = "## Method\n\n### Subsection\n\nSub text.\n\n## Results\n\nResults."
         sections = extract_sections(body)
         self.assertIn("Method", sections)
-        self.assertIn("Subsection", sections)
         self.assertIn("Results", sections)
+        self.assertNotIn("Subsection", sections)  # folded into Method
+        self.assertIn("Sub text", sections["Method"])  # child content lives in parent
 
     def test_no_headings(self):
         body = "Just plain text without any headings."
@@ -175,6 +179,18 @@ class TestFindSection(unittest.TestCase):
         sections = {"MY METHOD": "content"}
         title, _content = find_section(sections, ["method"])
         self.assertEqual(title, "MY METHOD")
+
+    def test_prefers_main_section_over_lookalike(self):
+        # B5: "方法" should match "方法概述" (starts-with) over "基线方法" (substring).
+        sections = {"基线方法": "baseline", "方法概述": "main method"}
+        title, _content = find_section(sections, SECTION_ALIASES["method"])
+        self.assertEqual(title, "方法概述")
+
+    def test_findings_alias_includes_zh_result(self):
+        # B5: "主要结果" is now a findings alias (previously only 主要结论).
+        sections = {"主要结果": "results here"}
+        title, _content = find_section(sections, SECTION_ALIASES["findings"])
+        self.assertEqual(title, "主要结果")
 
 
 # ── has_substantive_text ──────────────────────────────────────────
@@ -298,6 +314,16 @@ class TestCollectUnknownMetadataErrors(unittest.TestCase):
         errors = collect_unknown_metadata_errors(metadata)
         self.assertIn("metadata_unknown:field", errors)
 
+    def test_math_depth_none_not_unknown(self):
+        # B4: math_depth=none is legitimate (paper has no math), not "unknown".
+        errors = collect_unknown_metadata_errors({"math_depth": "none"})
+        self.assertNotIn("metadata_unknown:math_depth", errors)
+
+    def test_other_field_none_still_flagged(self):
+        # Only math_depth is exempted; "none" elsewhere stays unknown.
+        errors = collect_unknown_metadata_errors({"author": "none"})
+        self.assertIn("metadata_unknown:author", errors)
+
 
 # ── validate_core_sections ────────────────────────────────────────
 
@@ -416,6 +442,12 @@ class TestCountQuantitativeResults(unittest.TestCase):
 
     def test_empty_text(self):
         self.assertEqual(count_quantitative_results(""), 0)
+
+    def test_percentage_followed_by_space_or_eol(self):
+        # B2: the old trailing \b dropped "% SR" (% + space) and end-of-line "%"
+        # because there's no word boundary after %. (?![\d.]) now counts them.
+        self.assertGreaterEqual(count_quantitative_results("achieved 40.0% SR"), 1)
+        self.assertGreaterEqual(count_quantitative_results("accuracy 95%"), 1)
 
 
 # ── type_specific_checks ─────────────────────────────────────────
@@ -626,6 +658,11 @@ class TestMathDepthChecks(unittest.TestCase):
         errors = math_depth_checks(metadata, "No LaTeX", {})
         self.assertEqual(len(errors), 0)
 
+    def test_none_math_depth_skips_checks(self):
+        # B4: math_depth=none means no math requirement; LaTeX/symbol checks skipped.
+        errors = math_depth_checks({"math_depth": "none"}, "No LaTeX here at all.", {})
+        self.assertEqual(len(errors), 0)
+
 
 # ── content_density_checks ────────────────────────────────────────
 
@@ -703,6 +740,16 @@ class TestContentDensityChecks(unittest.TestCase):
                 }
                 errors = content_density_checks(sections, "generic")
                 self.assertNotIn("findings_section_lacks_substance", errors)
+
+    def test_baseline_method_table_not_flagged(self):
+        # B3: only the MAIN method section is checked. A table-only "基线方法"
+        # subsection must NOT trigger method_section_lacks_prose.
+        sections = {
+            "方法": "这是主方法 section，我们用自然语言 prose 详细描述了方法的核心思想、整体架构、关键模块设计以及具体实现步骤，内容超过五十个字符阈值。",
+            "基线方法": "| Model | Acc |\n| --- | --- |\n| Base | 80% |",
+        }
+        errors = content_density_checks(sections, "generic")
+        self.assertNotIn("method_section_lacks_prose", errors)
 
 
 if __name__ == "__main__":
