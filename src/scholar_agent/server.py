@@ -1122,7 +1122,7 @@ if SCHOLAR_ACADEMIC:
 
                 pn_path = get_paper_notes_dir()
                 if pn_path.exists():
-                    keyword_index = build_keyword_index(str(pn_path))
+                    keyword_index = build_keyword_index(str(pn_path), str(get_knowledge_dir()))
                     if keyword_index:
                         apply_wiki_links(note_path, keyword_index)
                         wiki_linked = True
@@ -1567,7 +1567,7 @@ if SCHOLAR_ACADEMIC:
 
                 pn_path = get_paper_notes_dir()
                 if pn_path.exists():
-                    keyword_index = build_keyword_index(str(pn_path))
+                    keyword_index = build_keyword_index(str(pn_path), str(get_knowledge_dir()))
                     if keyword_index:
                         for md_file in pn_path.rglob("*.md"):
                             apply_wiki_links(str(md_file), keyword_index)
@@ -1667,7 +1667,7 @@ if SCHOLAR_ACADEMIC:
 
         # Build keyword index
         try:
-            keyword_index = build_keyword_index(str(notes_path))
+            keyword_index = build_keyword_index(str(notes_path), str(get_knowledge_dir()))
         except Exception as e:
             return json.dumps({"error": f"Failed to scan keywords: {e}"})
 
@@ -1706,6 +1706,17 @@ if SCHOLAR_ACADEMIC:
             daily_notes_path = get_daily_notes_dir()
             if daily_notes_path.exists():
                 for md_file in daily_notes_path.rglob("*.md"):
+                    modified, links = apply_wiki_links(str(md_file), keyword_index)
+                    if modified:
+                        total_processed += 1
+                        total_links += links
+
+            # E3: also linkify knowledge cards so they link to/from paper-notes
+            # (previously only paper-notes/daily-notes were linkified, leaving
+            # knowledge cards unable to reach paper-notes via wiki-links).
+            knowledge_path = get_knowledge_dir()
+            if knowledge_path.exists() and knowledge_path != notes_path:
+                for md_file in knowledge_path.rglob("*.md"):
                     modified, links = apply_wiki_links(str(md_file), keyword_index)
                     if modified:
                         total_processed += 1

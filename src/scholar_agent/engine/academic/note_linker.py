@@ -126,6 +126,7 @@ def _pull_title_terms(title: str) -> list[str]:
     1. Pre-colon segment (acronym or short name, ≤30 chars)
     2. Capitalised hyphenated spans (e.g. Vision-Language)
     3. All-caps acronyms ≥2 chars (excluding tiny generics)
+    4. CJK term runs ≥2 chars (中文术语, e.g. 反思机制/工具调用) — E5
     """
     hits: list[str] = []
     if ":" in title:
@@ -139,6 +140,11 @@ def _pull_title_terms(title: str) -> list[str]:
         token = m.group(1)
         if token not in {"AI", "ML", "NLP", "CV", "II", "III", "IV"}:
             hits.append(token)
+    # E5: CJK term runs — Chinese/Japanese/Korean terms were never indexed, so
+    # 中文 notes stayed islands. Whole runs >=2 chars become candidates; the
+    # frequency filter keeps only unambiguous ones.
+    for m in re.finditer(r"[一-鿿]{2,}", title):
+        hits.append(m.group())
     return hits
 
 
@@ -195,37 +201,39 @@ class KeywordIndex:
     def _build(self, notes_dir: str, knowledge_dir: str) -> None:
         """Build inverted index with frequency-based filtering.
 
-        Two-pass approach:
-        1. First pass: scan all notes, collect (keyword, stem) pairs into
-           an inverted index mapping keyword → set of stems.
-        2. Second pass: filter — keep only keywords mapped to exactly 1 stem.
+        Scans notes_dir AND knowledge_dir (E3: knowledge cards previously never
+        entered the index, so they could neither link to nor be linked from
+        paper-notes). Two-pass: (1) keyword → set of stems; (2) keep unambiguous
+        (freq == 1).
         """
-        root = Path(notes_dir)
-        if not root.exists():
-            return
-
         # Pass 1: Build inverted index — keyword → set of note stems
         inverted: dict[str, set[str]] = {}
-        for md in root.rglob("*.md"):
-            stem = md.stem
-            try:
-                raw = md.read_text(encoding="utf-8", errors="replace")
-            except OSError:
+        for directory in (notes_dir, knowledge_dir):
+            if not directory:
                 continue
+            root = Path(directory)
+            if not root.exists():
+                continue
+            for md in root.rglob("*.md"):
+                stem = md.stem
+                try:
+                    raw = md.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
 
-            meta, _ = parse_frontmatter(raw)
-            title = meta.get("title", stem.replace("_", " "))
-            terms = _pull_title_terms(str(title))
+                meta, _ = parse_frontmatter(raw)
+                title = meta.get("title", stem.replace("_", " "))
+                terms = _pull_title_terms(str(title))
 
-            for tag in meta.get("tags", []):
-                t = str(tag).strip()
-                if t and t.lower() not in self.STOP_WORDS and len(t) >= 3:
-                    terms.append(t)
+                for tag in meta.get("tags", []):
+                    t = str(tag).strip()
+                    if t and t.lower() not in self.STOP_WORDS and len(t) >= 3:
+                        terms.append(t)
 
-            for t in terms:
-                low = t.lower().strip()
-                if low and low not in self.STOP_WORDS and len(low) >= 2:
-                    inverted.setdefault(low, set()).add(stem)
+                for t in terms:
+                    low = t.lower().strip()
+                    if low and low not in self.STOP_WORDS and len(low) >= 2:
+                        inverted.setdefault(low, set()).add(stem)
 
         # Pass 2: Frequency filter — keep only unambiguous (freq == 1)
         self._mapping = {kw: next(iter(stems)) for kw, stems in inverted.items() if len(stems) == 1}

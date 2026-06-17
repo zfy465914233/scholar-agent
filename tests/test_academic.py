@@ -887,5 +887,41 @@ class TestCheckNoteQuality(unittest.TestCase):
             self.assertEqual(result["placeholder_count"], 0)
 
 
+class TestNoteLinkerCJK(unittest.TestCase):
+    """E5: CJK term extraction; E3: KeywordIndex scans knowledge_dir."""
+
+    def test_pull_title_terms_extracts_cjk(self):
+        from scholar_agent.engine.academic.note_linker import _pull_title_terms
+
+        terms = _pull_title_terms("反思机制：强化学习的工具调用范式")
+        cjk = [t for t in terms if any("一" <= c <= "鿿" for c in t)]
+        self.assertIn("反思机制", cjk)  # E5: Chinese terms now indexed
+
+    def test_pull_title_terms_still_extracts_english(self):
+        from scholar_agent.engine.academic.note_linker import _pull_title_terms
+
+        terms = _pull_title_terms("ReAct: Synergizing Reasoning and Acting")
+        self.assertIn("ReAct", terms)  # pre-colon segment regression guard
+
+    def test_keyword_index_scans_knowledge_dir(self):
+        """E3: knowledge_dir cards enter the index (link to/from paper-notes)."""
+        import tempfile
+        from pathlib import Path
+
+        from scholar_agent.engine.academic.note_linker import KeywordIndex
+
+        with tempfile.TemporaryDirectory() as tmp:
+            notes = Path(tmp) / "paper-notes"
+            knowledge = Path(tmp) / "knowledge"
+            notes.mkdir()
+            knowledge.mkdir()
+            (notes / "ReAct_Paper.md").write_text("---\ntitle: ReAct: Synergizing\n---\n\nbody\n", encoding="utf-8")
+            (knowledge / "survey.md").write_text("---\ntitle: 综述\n---\n\nbody\n", encoding="utf-8")
+            idx = KeywordIndex(str(notes), str(knowledge))
+            mapping = idx.as_dict()
+            self.assertIn("react", mapping)  # from paper-notes
+            self.assertIn("综述", mapping)  # from knowledge dir (E3)
+
+
 if __name__ == "__main__":
     unittest.main()
