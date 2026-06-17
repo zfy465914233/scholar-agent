@@ -122,7 +122,7 @@ def _classify_image_section(filename: str, index: int, total: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _fetch_bytes(url: str, *, timeout: int = 60, ua: str = "scholar-agent/1.0 (research)"):
+def _fetch_bytes(url: str, *, timeout: int = 60, ua: str = "scholar-agent/1.0 (research)") -> tuple[int, bytes]:
     """Return (status, bytes) using requests or urllib fallback."""
     headers = {"User-Agent": ua}
     if _REQUESTS_OK:
@@ -267,6 +267,57 @@ def extract_pdf_text(pdf_path: str, max_chars: int = 80000) -> str:
     except Exception as exc:
         logger.error("Text extraction error: %s", exc)
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Text-quality gating (A5): reject scanned/garbled text before it pollutes notes
+# ---------------------------------------------------------------------------
+
+# Minimum viable body — anything shorter is a cover fragment or sparse OCR,
+# not a paper we can fill/validate against.
+_PDF_MIN_CHARS = 500
+# Letters/digits/whitespace must dominate; below this the extraction is
+# encoding-garbled (typical of scanned-page text layers).
+_PDF_MIN_EFFECTIVE_RATIO = 0.55
+
+
+def assess_pdf_text_quality(text: str) -> tuple[bool, dict[str, Any]]:
+    """Judge whether extracted PDF text is usable to fill/validate a note.
+
+    Scanned or image-only PDFs yield empty or garbled text layers. Feeding
+    garbled text to the LLM fill/repair loop manufactures nonsense, so this
+    gates on two signals:
+
+      - character count (real body, not a cover/OCR fragment), and
+      - effective-character ratio (alphanumeric + whitespace), which rejects
+        encoding-garbage extraction from scanned pages.
+
+    CJK characters are alphabetic under ``str.isalnum`` and so count as
+    effective — Chinese-language papers are not penalised.
+
+    Returns ``(is_usable, info)`` where ``info`` always carries ``chars``,
+    ``effective_chars``, ``effective_ratio`` and ``reason``.
+    """
+    total = len(text)
+    if total == 0:
+        return False, {
+            "chars": 0,
+            "effective_chars": 0,
+            "effective_ratio": 0.0,
+            "reason": "empty",
+        }
+    effective = sum(1 for ch in text if ch.isalnum() or ch.isspace())
+    ratio = effective / total
+    info: dict[str, Any] = {
+        "chars": total,
+        "effective_chars": effective,
+        "effective_ratio": round(ratio, 4),
+    }
+    if total < _PDF_MIN_CHARS:
+        return False, {**info, "reason": "too_short"}
+    if ratio < _PDF_MIN_EFFECTIVE_RATIO:
+        return False, {**info, "reason": "low_effective_ratio"}
+    return True, {**info, "reason": "ok"}
 
 
 # ---------------------------------------------------------------------------

@@ -1066,15 +1066,25 @@ if SCHOLAR_ACADEMIC:
                 logger.exception("analyze_paper failed")
                 return json.dumps({"error": f"Failed to generate note: {e}"})
 
-            # Extract full text from local PDF if available
+            # Extract full text from local PDF and gate on quality (A5):
+            # scanned/image-only PDFs yield empty or garbled text layers, and
+            # feeding garbled text to the LLM fill/repair loop manufactures
+            # nonsense. Low-quality extraction is treated as "no usable text".
             pdf_text = ""
+            pdf_text_quality: dict[str, Any] = {}
             if detected_pdf and os.path.isfile(detected_pdf):
                 try:
-                    from scholar_agent.engine.academic.image_extractor import extract_pdf_text
+                    from scholar_agent.engine.academic.image_extractor import (
+                        assess_pdf_text_quality,
+                        extract_pdf_text,
+                    )
 
-                    pdf_text = extract_pdf_text(detected_pdf)
+                    raw_text = extract_pdf_text(detected_pdf)
+                    usable, pdf_text_quality = assess_pdf_text_quality(raw_text)
+                    pdf_text = raw_text if usable else ""
                 except Exception:
                     pdf_text = ""
+                    pdf_text_quality = {"reason": "extraction_error"}
 
             # Auto-fill placeholders from PDF text via LLM
             fill_result = None
@@ -1152,11 +1162,20 @@ if SCHOLAR_ACADEMIC:
             placeholder_count = quality_check.get("placeholder_count", 0)
             unresolved_errors = validation.get("errors", [])
             instructions = None
-            if (placeholder_count > 0 or not validation.get("ok")) and pdf_text:
+            if pdf_text and (placeholder_count > 0 or not validation.get("ok")):
                 instructions = (
                     f"Note still has {placeholder_count} unfilled <!-- LLM: --> placeholders "
                     f"and/or {len(unresolved_errors)} validation issue(s): {unresolved_errors}. "
                     "(status=incomplete). Review and supplement any gaps, or re-run analyze_paper."
+                )
+            elif detected_pdf and not pdf_text:
+                # A5: PDF present but no usable text (scanned/image-only).
+                reason = pdf_text_quality.get("reason", "unknown")
+                instructions = (
+                    "PDF full text was unusable "
+                    f"(reason={reason}); placeholders were not auto-filled and validation was skipped. "
+                    "If this is a scanned PDF, convert it to a text-based PDF (or run OCR) and re-run "
+                    "analyze_paper so the closed loop can fill and verify the note."
                 )
 
             result_payload: dict[str, object] = {
@@ -1168,6 +1187,7 @@ if SCHOLAR_ACADEMIC:
                 "pdf_path": detected_pdf,
                 "has_full_text": bool(pdf_text),
                 "pdf_text_chars": len(pdf_text),
+                "pdf_text_quality": pdf_text_quality,
                 "quality_check": quality_check,
                 "validation": validation,
                 "repair_rounds": repair_rounds,

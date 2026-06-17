@@ -345,6 +345,69 @@ class TestImageExtractor(unittest.TestCase):
             image_extractor._REQUESTS_OK = original_requests_ok
 
 
+class TestPdfTextQuality(unittest.TestCase):
+    """A5: extract_pdf_text quality gating — scanned/garbled PDFs must not
+    feed the LLM fill loop."""
+
+    def _paragraph(self, n_chars: int) -> str:
+        """Repeat a clean sentence to reach ~n_chars of normal text."""
+        sentence = "This paper proposes a method for learning representations. "
+        text = sentence * (n_chars // len(sentence) + 1)
+        return text[:n_chars]
+
+    def test_clean_english_text_is_usable(self) -> None:
+        from scholar_agent.engine.academic.image_extractor import assess_pdf_text_quality
+
+        usable, info = assess_pdf_text_quality(self._paragraph(5000))
+        self.assertTrue(usable)
+        self.assertEqual(info["reason"], "ok")
+        self.assertGreaterEqual(info["chars"], 5000)
+
+    def test_chinese_text_is_usable(self) -> None:
+        from scholar_agent.engine.academic.image_extractor import assess_pdf_text_quality
+
+        # CJK chars are alphabetic under isalnum — must not be rejected.
+        text = "本文提出了一种新的方法用于学习表示。" * 50
+        usable, info = assess_pdf_text_quality(text)
+        self.assertTrue(usable)
+        self.assertEqual(info["reason"], "ok")
+
+    def test_empty_text_rejected(self) -> None:
+        from scholar_agent.engine.academic.image_extractor import assess_pdf_text_quality
+
+        usable, info = assess_pdf_text_quality("")
+        self.assertFalse(usable)
+        self.assertEqual(info["reason"], "empty")
+        self.assertEqual(info["chars"], 0)
+
+    def test_too_short_fragment_rejected(self) -> None:
+        from scholar_agent.engine.academic.image_extractor import assess_pdf_text_quality
+
+        usable, info = assess_pdf_text_quality(self._paragraph(200))
+        self.assertFalse(usable)
+        self.assertEqual(info["reason"], "too_short")
+
+    def test_garbled_scanned_text_rejected(self) -> None:
+        from scholar_agent.engine.academic.image_extractor import assess_pdf_text_quality
+
+        # Scanned-page text layer: long run of control/symbol junk, few real
+        # alphanumerics, but plenty of raw bytes (>= min_chars).
+        garbled = "•\x00\x01\x02☺☻†‡§¶\x7f" * 200
+        usable, info = assess_pdf_text_quality(garbled)
+        self.assertFalse(usable)
+        self.assertEqual(info["reason"], "low_effective_ratio")
+        self.assertGreaterEqual(info["chars"], 500)
+
+    def test_boundary_at_min_chars_is_usable(self) -> None:
+        from scholar_agent.engine.academic.image_extractor import (
+            _PDF_MIN_CHARS,
+            assess_pdf_text_quality,
+        )
+
+        usable, _info = assess_pdf_text_quality(self._paragraph(_PDF_MIN_CHARS))
+        self.assertTrue(usable)
+
+
 # ---------------------------------------------------------------------------
 # Test: Note Linker
 # ---------------------------------------------------------------------------
