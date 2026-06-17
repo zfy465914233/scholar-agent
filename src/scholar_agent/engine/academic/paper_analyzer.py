@@ -622,6 +622,10 @@ def generate_note(
     )
 
     filename = title_to_filename(title)
+    # A3: disambiguate the slug with arxiv_id so same-titled papers (or titles
+    # that collide after sanitization/truncation) don't overwrite each other.
+    if arxiv_id:
+        filename = f"{filename}_{arxiv_id}"
     # Sanitize domain for directory name
     safe_domain = domain.strip("/\\").replace("..", "") or "Other"
     # Create subfolder matching download_paper structure: domain/title/title.md

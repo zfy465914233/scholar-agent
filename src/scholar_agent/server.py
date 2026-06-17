@@ -1167,7 +1167,7 @@ if SCHOLAR_ACADEMIC:
                 "has_related_links": bool(paper.get("related_papers")),
                 "pdf_path": detected_pdf,
                 "has_full_text": bool(pdf_text),
-                "pdf_text": pdf_text,
+                "pdf_text_chars": len(pdf_text),
                 "quality_check": quality_check,
                 "validation": validation,
                 "repair_rounds": repair_rounds,
