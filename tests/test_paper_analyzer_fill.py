@@ -742,5 +742,37 @@ class TestAutoRepairNote(unittest.TestCase):
         os.unlink(tmp)
 
 
+class TestDetectPaperType(unittest.TestCase):
+    """detect_paper_type pure-rule inference (batch 3)."""
+
+    def test_survey(self):
+        from scholar_agent.engine.academic.paper_analyzer import detect_paper_type
+
+        self.assertEqual(detect_paper_type("A survey of recent methods", "Survey of RL"), "survey")
+
+    def test_benchmark(self):
+        from scholar_agent.engine.academic.paper_analyzer import detect_paper_type
+
+        self.assertEqual(detect_paper_type("We build a benchmark leaderboard", "Bench"), "benchmark")
+
+    def test_theory(self):
+        from scholar_agent.engine.academic.paper_analyzer import detect_paper_type
+
+        self.assertEqual(
+            detect_paper_type("We prove a theorem and lemma with a convergence proof", "Theory"),
+            "theory",
+        )
+
+    def test_empirical(self):
+        from scholar_agent.engine.academic.paper_analyzer import detect_paper_type
+
+        self.assertEqual(detect_paper_type("We train on a dataset with ablation study", "Emp"), "empirical")
+
+    def test_generic_fallback(self):
+        from scholar_agent.engine.academic.paper_analyzer import detect_paper_type
+
+        self.assertEqual(detect_paper_type("Some general discussion of ideas", "Gen"), "generic")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

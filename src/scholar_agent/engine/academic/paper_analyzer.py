@@ -105,6 +105,40 @@ def detect_math_depth(abstract: str, domain: str, pdf_text: str = "") -> str:
     return "none"
 
 
+# Paper-type signals for detect_paper_type (pure rules, no LLM).
+_PAPER_TYPE_SURVEY_KEYWORDS = re.compile(
+    r"(?:survey|综述|taxonomy|分类|a survey of|文献综述|进展与展望)",
+    re.IGNORECASE,
+)
+_PAPER_TYPE_BENCHMARK_KEYWORDS = re.compile(
+    r"(?:benchmark|leaderboard|基准|评测基准|evaluation suite)",
+    re.IGNORECASE,
+)
+_PAPER_TYPE_EMPIRICAL_KEYWORDS = re.compile(
+    r"(?:dataset|experiment|ablation|baseline|数据集|实验|消融|基线|accuracy|准确率)",
+    re.IGNORECASE,
+)
+
+
+def detect_paper_type(abstract: str, title: str, domain: str = "", pdf_text: str = "") -> str:
+    """Infer paper type for type_specific validation. Pure rules (no LLM).
+
+    Returns one of: "survey", "benchmark", "theory", "empirical", "generic".
+    Priority: survey/benchmark (distinctive keywords) > theory (math-heavy) >
+    empirical (dataset/experiments) > generic fallback.
+    """
+    text = f"{title} {abstract} {pdf_text[:2000]}"
+    if _PAPER_TYPE_SURVEY_KEYWORDS.search(text):
+        return "survey"
+    if _PAPER_TYPE_BENCHMARK_KEYWORDS.search(text):
+        return "benchmark"
+    if len(_MATH_HEAVY_KEYWORDS.findall(text)) >= 3 or len(_LATEX_MARKERS.findall(text)) >= 2:
+        return "theory"
+    if _PAPER_TYPE_EMPIRICAL_KEYWORDS.search(text):
+        return "empirical"
+    return "generic"
+
+
 def _yaml_escape(s: str) -> str:
     """Escape a string for safe embedding in YAML double-quoted values."""
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
@@ -390,6 +424,10 @@ def _generate_note_body(
     framework_imgs = _format_image_refs(images, "framework")
     results_imgs = _format_image_refs(images, "results")
 
+    # --- Paper type (written to frontmatter; validate_note reads it to enable
+    # type_specific checks). Inferred by pure rules, no LLM cost. ---
+    paper_type = detect_paper_type(abstract or "", title, domain)
+
     # --- Math instructions ---
     math_instruction_core = s[f"math_{math_depth}_core"]
     math_instruction_details = s[f"math_{math_depth}_details"]
@@ -406,6 +444,7 @@ domain: "{domain}"
 date: "{date}"
 status: skeleton
 math_depth: "{math_depth}"
+paper_type: "{paper_type}"
 tags:
 {tags_yaml}
 related_papers:{related_yaml}
@@ -967,6 +1006,32 @@ def _backfill_metadata(note_path: str, key: str, paper_json: dict) -> bool:
     return True
 
 
+_TYPE_SPECIFIC_ERRORS = frozenset(
+    {
+        "empirical_requires_two_quantitative_results",
+        "theory_requires_problem_definition_or_mechanism",
+        "survey_requires_taxonomy",
+        "survey_requires_consensus_or_disagreement",
+        "benchmark_requires_protocol_baseline_and_risk",
+    }
+)
+
+
+def _resolve_type_specific_section(note_path: str, err: str) -> str | None:
+    """Map a type_specific error to the section whose prose should carry the marker.
+
+    Most type_specific markers (quantitative results, taxonomy, problem
+    definition, baseline/protocol) belong in findings or method.
+    """
+    content = Path(note_path).read_text(encoding="utf-8")
+    sections = extract_sections(content)
+    for key in ("findings", "method"):
+        title, _body = find_section(sections, SECTION_ALIASES[key])
+        if title:
+            return title
+    return None
+
+
 def auto_repair_note(note_path: str, errors: list[str], pdf_text: str, paper_json: dict) -> dict:
     """Auto-repair validate_note errors in place. Returns {repaired, unresolved}.
 
@@ -991,6 +1056,14 @@ def auto_repair_note(note_path: str, errors: list[str], pdf_text: str, paper_jso
         elif err.startswith("metadata_unknown:"):
             key = err.split(":", 1)[1]
             if _backfill_metadata(note_path, key, paper_json):
+                repaired = True
+            else:
+                unresolved.append(err)
+        elif err in _TYPE_SPECIFIC_ERRORS:
+            # type_specific marker/quantitative gaps → expand the relevant section
+            # so the LLM injects the expected markers/numbers.
+            title = _resolve_type_specific_section(note_path, err)
+            if title and expand_section(note_path, title, pdf_text):
                 repaired = True
             else:
                 unresolved.append(err)

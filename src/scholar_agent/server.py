@@ -1106,13 +1106,20 @@ if SCHOLAR_ACADEMIC:
                 from scholar_agent.engine.academic.paper_analyzer import auto_repair_note
                 from scholar_agent.validation import validate_note
 
-                validation = validate_note(note_path, paper_type="generic")
+                # Read inferred paper_type from the note frontmatter (paper_analyzer
+                # writes it during generation) so type_specific checks engage.
+                from scholar_agent.validation.validate_note import split_frontmatter as _split_fm
+
+                _meta, _body, _ = _split_fm(Path(note_path).read_text(encoding="utf-8"))
+                note_paper_type = (_meta.get("paper_type") or "generic").strip().lower()
+
+                validation = validate_note(note_path, paper_type=note_paper_type)
                 while not validation.get("ok") and repair_rounds < 2:
                     repair = auto_repair_note(note_path, validation.get("errors", []), pdf_text, paper)
                     if not repair.get("repaired"):
                         break  # no auto-repairable errors remain
                     repair_rounds += 1
-                    validation = validate_note(note_path, paper_type="generic")
+                    validation = validate_note(note_path, paper_type=note_paper_type)
 
             # E2: auto wiki-link the new note into the paper-notes graph so it is
             # not an island. Reuses the daily_recommend linking pattern.
