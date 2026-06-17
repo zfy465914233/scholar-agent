@@ -149,6 +149,60 @@ def _pull_title_terms(title: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# E1: arxiv URL → [[wikilink]] when a matching paper-note exists
+# ---------------------------------------------------------------------------
+
+_ARXIV_URL_RE = re.compile(
+    r"https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/([0-9]{4}\.[0-9]{4,5})(?:v\d+)?",
+    re.IGNORECASE,
+)
+
+
+def build_arxiv_id_to_stem(paper_notes_dir: str) -> dict[str, str]:
+    """Scan paper-notes frontmatter (``paper_id`` key) → {arxiv_id: note_stem}.
+
+    The arxiv id is stored under ``paper_id`` (NOT ``arxiv_id``), possibly with
+    an ``arXiv:`` prefix — a known footgun.
+    """
+    mapping: dict[str, str] = {}
+    root = Path(paper_notes_dir)
+    if not root.exists():
+        return mapping
+    for md in root.rglob("*.md"):
+        try:
+            raw = md.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        meta, _ = parse_frontmatter(raw)
+        pid = re.sub(r"^arXiv:\s*", "", str(meta.get("paper_id", "")).strip())
+        if pid:
+            mapping[pid] = md.stem
+    return mapping
+
+
+def arxiv_urls_to_wikilinks(text: str, paper_notes_dir: str) -> tuple[str, int]:
+    """Replace arxiv URLs in text with ``[[stem]]`` where a paper-note exists.
+
+    E4: never emit a dangling link — URLs without a matching note are left as-is.
+    Returns (new_text, links_added).
+    """
+    id_to_stem = build_arxiv_id_to_stem(paper_notes_dir)
+    if not id_to_stem:
+        return text, 0
+    links = 0
+
+    def _replace(m: re.Match) -> str:
+        nonlocal links
+        stem = id_to_stem.get(m.group(1))
+        if stem:
+            links += 1
+            return f"[[{stem}]]"
+        return str(m.group(0))  # no matching note → keep URL (no dangling link)
+
+    return str(_ARXIV_URL_RE.sub(_replace, text)), links
+
+
+# ---------------------------------------------------------------------------
 # KeywordIndex — inverted index with frequency filtering
 # ---------------------------------------------------------------------------
 

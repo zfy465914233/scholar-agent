@@ -922,6 +922,38 @@ class TestNoteLinkerCJK(unittest.TestCase):
             self.assertIn("react", mapping)  # from paper-notes
             self.assertIn("综述", mapping)  # from knowledge dir (E3)
 
+    def test_arxiv_url_to_wikilink(self):
+        """E1: arxiv URL replaced with [[stem]] when a paper-note exists."""
+        import tempfile
+        from pathlib import Path
+
+        from scholar_agent.engine.academic.note_linker import arxiv_urls_to_wikilinks
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pn = Path(tmp) / "paper-notes"
+            pn.mkdir()
+            (pn / "ReAct_Paper.md").write_text("---\npaper_id: 2210.03629\n---\n\nbody\n", encoding="utf-8")
+            text = "See https://arxiv.org/abs/2210.03629 for details."
+            new_text, links = arxiv_urls_to_wikilinks(text, str(pn))
+            self.assertEqual(links, 1)
+            self.assertIn("[[ReAct_Paper]]", new_text)
+
+    def test_arxiv_url_kept_when_no_matching_note(self):
+        """E4: no dangling link — URL kept when no paper-note matches."""
+        import tempfile
+        from pathlib import Path
+
+        from scholar_agent.engine.academic.note_linker import arxiv_urls_to_wikilinks
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pn = Path(tmp) / "paper-notes"
+            pn.mkdir()
+            (pn / "Other.md").write_text("---\npaper_id: 9999.99999\n---\n\nbody\n", encoding="utf-8")
+            text = "See https://arxiv.org/abs/2210.03629 for details."
+            new_text, links = arxiv_urls_to_wikilinks(text, str(pn))
+            self.assertEqual(links, 0)
+            self.assertIn("arxiv.org/abs/2210.03629", new_text)  # URL kept (no dangling)
+
 
 if __name__ == "__main__":
     unittest.main()

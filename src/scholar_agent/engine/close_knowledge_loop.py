@@ -981,7 +981,19 @@ def build_knowledge_card(
     # 6. Write to knowledge tree
     output_dir.mkdir(parents=True, exist_ok=True)
     card_path: Path = output_dir / f"{card_id}.md"
-    atomic_write_text(card_path, "\n".join(lines) + "\n", encoding="utf-8")
+    body = "\n".join(lines) + "\n"
+    # E1: convert arxiv URLs (sources/参考文献) to [[wikilink]] where a matching
+    # paper-note exists (E4: only existing stems, no dangling links).
+    try:
+        from scholar_agent.engine.academic.note_linker import arxiv_urls_to_wikilinks
+        from scholar_agent.engine.scholar_config import get_paper_notes_dir
+
+        pn = get_paper_notes_dir()
+        if pn.exists():
+            body, _ = arxiv_urls_to_wikilinks(body, str(pn))
+    except Exception:
+        logger.warning("arxiv URL→wikilink failed", exc_info=True)
+    atomic_write_text(card_path, body, encoding="utf-8")
 
     detail = f"type={card_type}, domain={major_domain}"
     if topic:

@@ -1125,13 +1125,25 @@ if SCHOLAR_ACADEMIC:
             # not an island. Reuses the daily_recommend linking pattern.
             wiki_linked = False
             try:
-                from scholar_agent.engine.academic.note_linker import apply_wiki_links, build_keyword_index
+                from scholar_agent.engine.academic.note_linker import (
+                    apply_wiki_links,
+                    arxiv_urls_to_wikilinks,
+                    build_keyword_index,
+                )
+                from scholar_agent.engine.common import atomic_write_text
 
                 pn_path = get_paper_notes_dir()
                 if pn_path.exists():
                     keyword_index = build_keyword_index(str(pn_path), str(get_knowledge_dir()))
                     if keyword_index:
                         apply_wiki_links(note_path, keyword_index)
+                        wiki_linked = True
+                    # E1: convert arxiv URLs (External Resources) to [[wikilink]]
+                    # where a matching paper-note exists (E4: only existing stems).
+                    content = Path(note_path).read_text(encoding="utf-8")
+                    new_content, _url_links = arxiv_urls_to_wikilinks(content, str(pn_path))
+                    if new_content != content:
+                        atomic_write_text(Path(note_path), new_content)
                         wiki_linked = True
             except Exception:
                 logger.warning("Auto wiki-linking failed", exc_info=True)
