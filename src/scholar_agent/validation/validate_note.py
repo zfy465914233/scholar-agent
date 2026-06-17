@@ -428,22 +428,42 @@ def content_density_checks(sections: dict[str, str], paper_type: str) -> list[st
     return errors
 
 
-def main() -> int:
-    args = parse_args()
-    note_path = Path(args.note).expanduser().resolve()
+def validate_note(
+    source: Path | str,
+    paper_type: str = "generic",
+    dataset_policy: str = "auto",
+    require_frontmatter: bool = False,
+    require_evidence: bool = False,
+) -> dict:
+    """Validate a note and return a structured result dict.
 
-    if not note_path.exists():
-        result = {"ok": False, "errors": ["note_not_found"], "warnings": [], "note": str(note_path)}
-        print(json.dumps(result, ensure_ascii=False, indent=args.json_indent))
-        return 1
+    Programmatic entry point (no CLI/argparse, no printing). ``main()``
+    delegates here. ``source`` accepts a ``Path`` (read from disk, fail with
+    ``note_not_found`` if missing) or raw note ``str`` text.
+    """
+    if isinstance(source, Path):
+        note_path = source.expanduser().resolve()
+        if not note_path.exists():
+            return {
+                "ok": False,
+                "note": str(note_path),
+                "paper_type": paper_type,
+                "errors": ["note_not_found"],
+                "warnings": [],
+                "summary": {},
+            }
+        text = load_text(note_path)
+        note_str = str(note_path)
+    else:
+        text = source
+        note_str = ""
 
-    text = load_text(note_path)
     metadata, body, frontmatter_errors = split_frontmatter(text)
     sections = extract_sections(body)
 
-    effective_dataset_policy = args.dataset_policy
-    if args.dataset_policy == "auto":
-        effective_dataset_policy = "required" if args.paper_type in {"empirical", "benchmark"} else "fallback"
+    effective_dataset_policy = dataset_policy
+    if dataset_policy == "auto":
+        effective_dataset_policy = "required" if paper_type in {"empirical", "benchmark"} else "fallback"
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -451,7 +471,7 @@ def main() -> int:
     errors.extend(collect_forbidden_errors(text))
     errors.extend(collect_unknown_metadata_errors(metadata))
 
-    if args.require_frontmatter and not metadata:
+    if require_frontmatter and not metadata:
         errors.append("missing_frontmatter")
 
     if not sections:
@@ -460,9 +480,9 @@ def main() -> int:
         core_errors, core_warnings, resolved = validate_core_sections(sections, effective_dataset_policy, body)
         errors.extend(core_errors)
         warnings.extend(core_warnings)
-        errors.extend(type_specific_checks(args.paper_type, sections, resolved))
+        errors.extend(type_specific_checks(paper_type, sections, resolved))
 
-    if args.require_evidence:
+    if require_evidence:
         errors.extend(provenance_checks(metadata, body))
 
     # Math depth checks (always on — reads math_depth from frontmatter)
@@ -470,13 +490,12 @@ def main() -> int:
 
     # Content density checks
     if sections:
-        density_errors = content_density_checks(sections, args.paper_type)
-        errors.extend(density_errors)
+        errors.extend(content_density_checks(sections, paper_type))
 
-    result = {
+    return {
         "ok": not errors,
-        "note": str(note_path),
-        "paper_type": args.paper_type,
+        "note": note_str,
+        "paper_type": paper_type,
         "errors": sorted(set(errors)),
         "warnings": warnings,
         "summary": {
@@ -486,6 +505,17 @@ def main() -> int:
             "dataset_policy": effective_dataset_policy,
         },
     }
+
+
+def main() -> int:
+    args = parse_args()
+    result = validate_note(
+        Path(args.note),
+        paper_type=args.paper_type,
+        dataset_policy=args.dataset_policy,
+        require_frontmatter=args.require_frontmatter,
+        require_evidence=args.require_evidence,
+    )
     print(json.dumps(result, ensure_ascii=False, indent=args.json_indent))
     return 0 if result["ok"] else 1
 

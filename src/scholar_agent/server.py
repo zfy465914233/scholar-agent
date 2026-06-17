@@ -1098,17 +1098,36 @@ if SCHOLAR_ACADEMIC:
             except Exception:
                 pass
 
-            # Build instructions for the caller about remaining placeholders
+            # C loop: validate against the strict validator, auto-repair until ok or cap.
+            # Repair (fill/expand) needs PDF text; without it we skip the loop and rely
+            # on the placeholder_count check below for status.
+            validation: dict[str, Any] = {"ok": True, "errors": [], "warnings": []}
+            repair_rounds = 0
+            if pdf_text:
+                from scholar_agent.engine.academic.paper_analyzer import auto_repair_note
+                from scholar_agent.validation import validate_note
+
+                validation = validate_note(note_path, paper_type="generic")
+                while not validation.get("ok") and repair_rounds < 2:
+                    repair = auto_repair_note(note_path, validation.get("errors", []), pdf_text, paper)
+                    if not repair.get("repaired"):
+                        break  # no auto-repairable errors remain
+                    repair_rounds += 1
+                    validation = validate_note(note_path, paper_type="generic")
+
+            # Build instructions for the caller about remaining issues
             placeholder_count = quality_check.get("placeholder_count", 0)
+            unresolved_errors = validation.get("errors", [])
             instructions = None
-            if placeholder_count > 0 and pdf_text:
+            if (placeholder_count > 0 or not validation.get("ok")) and pdf_text:
                 instructions = (
                     f"Note still has {placeholder_count} unfilled <!-- LLM: --> placeholders "
-                    "(status=incomplete). Review and supplement any gaps, or re-run analyze_paper to retry."
+                    f"and/or {len(unresolved_errors)} validation issue(s): {unresolved_errors}. "
+                    "(status=incomplete). Review and supplement any gaps, or re-run analyze_paper."
                 )
 
             result_payload: dict[str, object] = {
-                "status": "incomplete" if placeholder_count > 0 else "ok",
+                "status": "ok" if (placeholder_count == 0 and validation.get("ok")) else "incomplete",
                 "note_path": note_path,
                 "title": paper.get("title", ""),
                 "language": lang,
@@ -1117,6 +1136,8 @@ if SCHOLAR_ACADEMIC:
                 "has_full_text": bool(pdf_text),
                 "pdf_text": pdf_text,
                 "quality_check": quality_check,
+                "validation": validation,
+                "repair_rounds": repair_rounds,
                 "instructions": instructions,
                 "images": [
                     {"filename": img.get("filename", ""), "section": img.get("section", "")} for img in (images or [])

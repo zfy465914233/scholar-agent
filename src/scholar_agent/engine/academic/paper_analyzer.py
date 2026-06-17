@@ -16,6 +16,13 @@ from typing import Any
 
 from scholar_agent.engine.common import atomic_write_text, sanitize_title
 from scholar_agent.engine.llm_client import chat_with_fallback, resolve_providers
+from scholar_agent.validation.validate_note import (
+    SECTION_ALIASES,
+    UNKNOWN_VALUES,
+    _has_prose_paragraph,
+    extract_sections,
+    find_section,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -842,3 +849,154 @@ def fill_note_from_pdf(note_path: str, pdf_text: str) -> dict:
         "model_used": last_model,
         "api_format": last_format,
     }
+
+
+# ---------------------------------------------------------------------------
+# Self-repair (C loop): expand thin sections + backfill metadata
+# ---------------------------------------------------------------------------
+
+_EXPAND_SECTION_SYSTEM_PROMPT = """\
+You are a research paper analysis assistant. A section of a structured markdown
+note is too thin (only bullets/tables, no explanatory prose). Rewrite THIS
+SECTION ONLY, keeping its `##` heading and any existing content, and ADD
+substantive prose paragraphs (each over 50 characters, in your own words)
+grounded in the paper's PDF.
+
+Rules:
+1. Output the COMPLETE section — keep the `##` heading and existing tables/lists;
+   ADD prose explaining the key ideas. Do NOT drop existing content.
+2. Do NOT add new `##` sections or touch other sections. Do NOT wrap in code fences.
+3. Write in the section's language (Chinese for zh, English for en). Use LaTeX for math.
+4. Cite specifics from the PDF. Do NOT invent numbers or facts the PDF does not support.
+"""
+
+# validate_note content-density errors → section alias group for expand_section.
+_THIN_ERROR_TO_ALIAS = {
+    "method_section_lacks_prose": "method",
+    "findings_section_lacks_substance": "findings",
+}
+
+# metadata_unknown:{key} → paper_json field holding a known replacement value.
+_METADATA_BACKFILL = {
+    "authors": "authors",
+    "domain": "best_domain",
+    "conference": "conference",
+    "arxiv_id": "arxiv_id",
+}
+
+
+def expand_section(note_path: str, section_title: str, pdf_text: str) -> bool:
+    """Expand a thin section with LLM-generated prose. Returns True if rewritten.
+
+    Locates the ``## {section_title}`` chunk; if it has no prose paragraph, asks
+    the LLM to expand it using the PDF text, then writes the note back.
+    """
+    providers = resolve_providers()
+    if not providers:
+        return False
+    content = Path(note_path).read_text(encoding="utf-8")
+    heading = f"## {section_title}"
+    chunks = _split_into_sections(content)
+    idx = next((i for i, c in enumerate(chunks) if c.startswith(heading)), None)
+    if idx is None:
+        return False
+    chunk = chunks[idx]
+    if _has_prose_paragraph(chunk):
+        return False  # already substantive
+
+    truncated = pdf_text[:60000]
+    messages = [
+        {"role": "system", "content": _EXPAND_SECTION_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Paper PDF full text:\n\n---\n{truncated}\n---\n\n"
+                "Expand this thin section with substantive prose:\n\n"
+                f"{chunk}"
+            ),
+        },
+    ]
+    try:
+        resp = chat_with_fallback(messages, providers=providers, max_tokens=4096, temperature=0.3)
+        expanded = _strip_code_fences(resp.content)
+    except Exception:
+        return False
+    if not expanded.strip() or not _has_prose_paragraph(expanded):
+        return False
+    if not expanded.startswith("##"):
+        expanded = f"{heading}\n\n{expanded}"
+    chunks[idx] = expanded
+    new_content = _strip_orphaned_comment_markers("".join(chunks))
+    atomic_write_text(Path(note_path), new_content)
+    return True
+
+
+def _resolve_section_title(note_path: str, error: str) -> str | None:
+    """Map a thin/prose error to the section title (via validate_note aliases)."""
+    content = Path(note_path).read_text(encoding="utf-8")
+    sections = extract_sections(content)
+    alias_key: str | None
+    if error.startswith("thin_section:"):
+        alias_key = error.split(":", 1)[1]
+        if alias_key == "dataset_fallback":
+            alias_key = "dataset"
+    else:
+        alias_key = _THIN_ERROR_TO_ALIAS.get(error)
+    if not alias_key or alias_key not in SECTION_ALIASES:
+        return None
+    title, _body = find_section(sections, SECTION_ALIASES[alias_key])
+    return title
+
+
+def _backfill_metadata(note_path: str, key: str, paper_json: dict) -> bool:
+    """Replace an unknown metadata value with a known one from paper_json."""
+    source_key = _METADATA_BACKFILL.get(key)
+    if not source_key:
+        return False
+    val = paper_json.get(source_key)
+    if isinstance(val, list):
+        val = ", ".join(str(v) for v in val) if val else ""
+    if not val or (isinstance(val, str) and val.strip().lower() in UNKNOWN_VALUES):
+        return False
+    content = Path(note_path).read_text(encoding="utf-8")
+    pattern = re.compile(rf"(?m)^({re.escape(key)}):\s.*$")
+    new_content, n = pattern.subn(rf'\1: "{val}"', content, count=1)
+    if n == 0:
+        return False
+    atomic_write_text(Path(note_path), new_content)
+    return True
+
+
+def auto_repair_note(note_path: str, errors: list[str], pdf_text: str, paper_json: dict) -> dict:
+    """Auto-repair validate_note errors in place. Returns {repaired, unresolved}.
+
+    Dispatch by error prefix:
+    - placeholder/skeleton/pdf_placeholder → fill_note_from_pdf (one re-fill fixes all)
+    - thin_section:* / *_lacks_prose / *_lacks_substance → expand_section
+    - metadata_unknown:* → backfill from paper_json
+    - structural (duplicated_frontmatter, etc.) → not auto-repairable
+    """
+    repaired = False
+    unresolved: list[str] = []
+    needs_fill = False
+    for err in errors:
+        if err in ("llm_placeholder_comment", "skeleton_status", "pdf_placeholder_text"):
+            needs_fill = True
+        elif err.startswith("thin_section:") or err in _THIN_ERROR_TO_ALIAS:
+            title = _resolve_section_title(note_path, err)
+            if title and expand_section(note_path, title, pdf_text):
+                repaired = True
+            else:
+                unresolved.append(err)
+        elif err.startswith("metadata_unknown:"):
+            key = err.split(":", 1)[1]
+            if _backfill_metadata(note_path, key, paper_json):
+                repaired = True
+            else:
+                unresolved.append(err)
+        else:
+            unresolved.append(err)
+    if needs_fill:
+        fill_note_from_pdf(note_path, pdf_text)
+        repaired = True
+    return {"repaired": repaired, "unresolved": unresolved}

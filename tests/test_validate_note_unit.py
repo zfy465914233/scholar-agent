@@ -7,6 +7,7 @@ math_depth_checks, and content_density_checks using direct imports.
 """
 
 import unittest
+from pathlib import Path
 
 from scholar_agent.validation.validate_note import (
     SECTION_ALIASES,
@@ -22,6 +23,7 @@ from scholar_agent.validation.validate_note import (
     split_frontmatter,
     type_specific_checks,
     validate_core_sections,
+    validate_note,
 )
 
 # ── split_frontmatter ─────────────────────────────────────────────
@@ -750,6 +752,43 @@ class TestContentDensityChecks(unittest.TestCase):
         }
         errors = content_density_checks(sections, "generic")
         self.assertNotIn("method_section_lacks_prose", errors)
+
+
+class TestValidateNoteProgrammatic(unittest.TestCase):
+    """The programmatic validate_note(source) entry point (C1)."""
+
+    # A long prose paragraph (>50 chars) reused so every section passes density.
+    _LONG = "这是一段足够长的描述性文字用于通过内容密度校验阈值要求，包含超过五十个字符以保证 prose 段落被认可。"
+
+    def _ok_note_text(self) -> str:
+        return (
+            "---\ntitle: T\nmath_depth: none\n---\n\n# T\n\n"
+            f"## 研究背景与动机\n\n{self._LONG}这是动机部分。\n\n"
+            f"## 方法概述\n\n{self._LONG}这是方法部分。\n\n"
+            f"## 实验设置\n\n{self._LONG}数据集与评测协议。\n\n"
+            f"## 实验结果\n\n{self._LONG}结果：AUC 0.92 与 F1 0.88。\n\n"
+            f"## 局限性\n\n{self._LONG}这是局限性部分。\n"
+        )
+
+    def test_ok_note_returns_ok_true(self):
+        result = validate_note(self._ok_note_text(), paper_type="generic")
+        self.assertTrue(result["ok"], msg=result["errors"])
+        self.assertEqual(result["errors"], [])
+
+    def test_placeholder_text_returns_ok_false(self):
+        result = validate_note("---\ntitle: T\n---\n\n## S\n\n<!-- LLM: fill -->\n")
+        self.assertFalse(result["ok"])
+        self.assertIn("llm_placeholder_comment", result["errors"])
+
+    def test_missing_path_returns_note_not_found(self):
+        result = validate_note(Path("/nonexistent/note.md"))
+        self.assertFalse(result["ok"])
+        self.assertIn("note_not_found", result["errors"])
+
+    def test_returns_structured_dict(self):
+        result = validate_note(self._ok_note_text())
+        for key in ("ok", "errors", "warnings", "summary"):
+            self.assertIn(key, result)
 
 
 if __name__ == "__main__":

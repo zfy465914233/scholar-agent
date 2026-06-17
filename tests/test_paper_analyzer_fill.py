@@ -647,5 +647,100 @@ class TestOrphanedCommentMarkers(unittest.TestCase):
         self.assertEqual(_strip_orphaned_comment_markers(text), text)
 
 
+# ============================================================================
+# 9. Self-repair (C loop): expand_section + auto_repair_note
+# ============================================================================
+class TestExpandSection(unittest.TestCase):
+    def setUp(self):
+        _clean_env()
+
+    def _setup_provider(self):
+        os.environ["SCHOLAR_FILLER_API_KEY"] = "test-key"
+        os.environ["SCHOLAR_FILLER_API_FORMAT"] = "openai"
+        os.environ["SCHOLAR_FILLER_API_URL"] = "https://example.com/v1"
+        os.environ["SCHOLAR_FILLER_MODEL"] = "test-model"
+
+    def test_expand_thin_section_adds_prose(self):
+        """A bullet-only section is expanded via LLM into prose."""
+        self._setup_provider()
+        note = "---\nstatus: filled\n---\n\n# T\n\n## 方法概述\n\n- bullet only\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(note)
+            tmp = f.name
+
+        expanded = "## 方法概述\n\n这是扩写后的方法 section，包含足够长的实质性 prose 描述，详细阐述了方法的核心思想、整体架构以及关键模块的具体实现步骤与设计考量。\n"
+        mock = MagicMock()
+        mock.read.return_value = json.dumps({"choices": [{"message": {"content": expanded}}]}).encode()
+        mock.__enter__ = lambda s: s
+        mock.__exit__ = lambda s, *a: None
+
+        with patch("scholar_agent.engine.llm_client.urlopen", return_value=mock):
+            pa = _reload_paper_analyzer()
+            changed = pa.expand_section(tmp, "方法概述", "pdf text")
+
+        self.assertTrue(changed)
+        from scholar_agent.validation.validate_note import _has_prose_paragraph
+
+        body = Path(tmp).read_text(encoding="utf-8").split("## 方法概述", 1)[1]
+        self.assertTrue(_has_prose_paragraph(body))
+        os.unlink(tmp)
+
+    def test_expand_skips_without_provider(self):
+        note = "---\nstatus: filled\n---\n\n# T\n\n## 方法概述\n\n- bullet only\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(note)
+            tmp = f.name
+        pa = _reload_paper_analyzer()
+        self.assertFalse(pa.expand_section(tmp, "方法概述", "pdf text"))
+        os.unlink(tmp)
+
+
+class TestAutoRepairNote(unittest.TestCase):
+    def setUp(self):
+        _clean_env()
+
+    def test_structural_error_unresolved(self):
+        pa = _reload_paper_analyzer()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write("---\ntitle: T\n---\n\n## S\n\nbody\n")
+            tmp = f.name
+        result = pa.auto_repair_note(tmp, ["duplicated_frontmatter"], "pdf", {"title": "T"})
+        self.assertFalse(result["repaired"])
+        self.assertIn("duplicated_frontmatter", result["unresolved"])
+        os.unlink(tmp)
+
+    def test_metadata_unknown_backfilled(self):
+        pa = _reload_paper_analyzer()
+        note = "---\ntitle: T\nauthors: unknown\n---\n\n## S\n\nbody\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(note)
+            tmp = f.name
+        result = pa.auto_repair_note(tmp, ["metadata_unknown:authors"], "pdf", {"authors": ["Alice", "Bob"]})
+        self.assertTrue(result["repaired"])
+        self.assertIn("Alice", Path(tmp).read_text(encoding="utf-8"))
+        os.unlink(tmp)
+
+    def test_placeholder_error_triggers_fill(self):
+        os.environ["SCHOLAR_FILLER_API_KEY"] = "test-key"
+        os.environ["SCHOLAR_FILLER_API_FORMAT"] = "openai"
+        os.environ["SCHOLAR_FILLER_API_URL"] = "https://example.com/v1"
+        os.environ["SCHOLAR_FILLER_MODEL"] = "test-model"
+        pa = _reload_paper_analyzer()
+        note = "---\nstatus: skeleton\n---\n\n# T\n\n## S\n\n<!-- LLM: fill -->\n"
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+            f.write(note)
+            tmp = f.name
+        mock = MagicMock()
+        mock.read.return_value = json.dumps(
+            {"choices": [{"message": {"content": "## S\n\nFilled content here.\n"}}]}
+        ).encode()
+        mock.__enter__ = lambda s: s
+        mock.__exit__ = lambda s, *a: None
+        with patch("scholar_agent.engine.llm_client.urlopen", return_value=mock):
+            result = pa.auto_repair_note(tmp, ["llm_placeholder_comment"], "pdf text", {"title": "T"})
+        self.assertTrue(result["repaired"])
+        os.unlink(tmp)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
