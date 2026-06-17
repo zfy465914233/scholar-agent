@@ -226,6 +226,22 @@ def collect_source_images(research_data: dict | None) -> list[dict[str, str]]:
     return images[:6]
 
 
+def _build_evidence_map(research_data: dict | None) -> dict[str, dict[str, str]]:
+    """F3: ``{evidence_id: {url, label}}`` from research evidence.
+
+    Lets ``## 支撑论据`` render evidence_ids as readable source refs instead
+    of opaque ids; label falls back to the url when no title is present.
+    """
+    mapping: dict[str, dict[str, str]] = {}
+    if not research_data:
+        return mapping
+    for idx, item in enumerate(research_data.get("evidence", []), 1):
+        eid = item.get("id") or f"e{idx}"
+        url = item.get("url", "")
+        mapping[eid] = {"url": url, "label": item.get("title", "") or url}
+    return mapping
+
+
 def validate_answer_schema(answer_data: dict) -> list[str]:
     """Validate answer_data against schemas/answer.schema.json.
 
@@ -712,6 +728,7 @@ def _build_body_sections(
     verification: str = "",
     pitfalls: list | None = None,
     rollback: str = "",
+    evidence_map: dict[str, dict[str, str]] | None = None,
 ) -> list[str]:
     """Build the main body sections (answer, claims, inferences, etc.)."""
     lines: list[str] = []
@@ -724,12 +741,20 @@ def _build_body_sections(
 
     if claims:
         lines.extend(["## 支撑论据", ""])
+        emap = evidence_map or {}
         for c in claims:
             if isinstance(c, dict):
                 claim_text = c.get("claim", "")
                 conf = c.get("confidence", "")
                 ids = c.get("evidence_ids", [])
-                lines.append(f"- **[{conf}]** {claim_text} (evidence: {', '.join(ids)})")
+                lines.append(f"- **[{conf}]** {claim_text}")
+                # F3: resolve evidence_ids to readable source links (arxiv
+                # URLs become [[wikilinks]] to paper-notes via E1).
+                refs = [f"[{emap[i]['label']}]({emap[i]['url']})" for i in ids if i in emap and emap[i].get("url")]
+                if refs:
+                    lines.append(f"  - 来源：{', '.join(refs)}")
+                elif ids:
+                    lines.append(f"  - 来源：{', '.join(ids)}（详见参考文献）")
             else:
                 lines.append(f"- {c}")
         lines.append("")
@@ -938,6 +963,8 @@ def build_knowledge_card(
     tags = _collect_tags(query, answer_data, major_domain, topic, card_type)
     va_by_section = _index_visual_aids(answer_data.get("visual_aids", []))
     source_images = collect_source_images(research_data)
+    # F3: map evidence ids to source refs so claims link to their sources.
+    evidence_map = _build_evidence_map(research_data)
 
     # 5. Assemble card
     lines = _build_frontmatter(
@@ -990,6 +1017,7 @@ def build_knowledge_card(
             verification,
             pitfalls,
             rollback,
+            evidence_map,
         )
     )
 

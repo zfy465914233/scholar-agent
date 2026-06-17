@@ -205,7 +205,12 @@ def run_discovery(
 
     if not merged_evidence:
         raise RuntimeError("No search results returned from configured provider(s).")
-    return merged_evidence[:max_items]
+    # F3: assign stable evidence ids (e1..eN) so supporting_claims.evidence_ids
+    # can resolve to a concrete source in the rendered card.
+    selected = merged_evidence[:max_items]
+    for idx, item in enumerate(selected, 1):
+        item["id"] = f"e{idx}"
+    return selected
 
 
 def formulate_queries(query: str, depth: str) -> list[str]:
