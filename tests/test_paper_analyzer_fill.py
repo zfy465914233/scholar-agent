@@ -262,7 +262,7 @@ class TestFillNoteFromPdf(unittest.TestCase):
         """No API keys -> returns skipped."""
         _reload_paper_analyzer()
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write("---\nstatus: skeleton\n---\n\n## Test\n<!-- LLM: fill this -->\n")
             f.flush()
             tmp_name = f.name
@@ -283,7 +283,7 @@ class TestFillNoteFromPdf(unittest.TestCase):
 
         pa = _reload_paper_analyzer()
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write("---\nstatus: filled\n---\n\n## Already filled\nContent here.\n")
             f.flush()
             tmp_name = f.name
@@ -323,7 +323,7 @@ class TestFillNoteFromPdf(unittest.TestCase):
                 mock_resp.__exit__ = lambda s, *a: None
                 return mock_resp
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write("---\nstatus: skeleton\n---\n\n## Test\n<!-- LLM: fill this -->\n")
             f.flush()
             tmp_name = f.name
@@ -375,7 +375,7 @@ class TestFillPerSection(unittest.TestCase):
             "## Section One\n\n<!-- LLM: fill A -->\n\n"
             "## Section Two\n\n<!-- LLM: fill B -->\n"
         )
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(note)
             tmp_name = f.name
 
@@ -406,7 +406,7 @@ class TestFillPerSection(unittest.TestCase):
             "## Section One\n\n<!-- LLM: fill A -->\n\n"
             "## Section Two\n\n<!-- LLM: fill B -->\n"
         )
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(note)
             tmp_name = f.name
 
@@ -578,7 +578,7 @@ class TestFillContinuation(unittest.TestCase):
         """Round 1 leaves the placeholder; round 2 fills it -> status ok."""
         self._setup_single_provider()
         note = "---\nstatus: skeleton\n---\n\n# T\n\n## S\n\n<!-- LLM: fill -->\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(note)
             tmp = f.name
 
@@ -606,7 +606,7 @@ class TestFillContinuation(unittest.TestCase):
         """A round that makes no progress stops the loop (capped, no spin)."""
         self._setup_single_provider()
         note = "---\nstatus: skeleton\n---\n\n# T\n\n## S\n\n<!-- LLM: fill -->\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(note)
             tmp = f.name
 
@@ -664,7 +664,7 @@ class TestExpandSection(unittest.TestCase):
         """A bullet-only section is expanded via LLM into prose."""
         self._setup_provider()
         note = "---\nstatus: filled\n---\n\n# T\n\n## 方法概述\n\n- bullet only\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(note)
             tmp = f.name
 
@@ -687,7 +687,7 @@ class TestExpandSection(unittest.TestCase):
 
     def test_expand_skips_without_provider(self):
         note = "---\nstatus: filled\n---\n\n# T\n\n## 方法概述\n\n- bullet only\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(note)
             tmp = f.name
         pa = _reload_paper_analyzer()
@@ -701,7 +701,7 @@ class TestAutoRepairNote(unittest.TestCase):
 
     def test_structural_error_unresolved(self):
         pa = _reload_paper_analyzer()
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write("---\ntitle: T\n---\n\n## S\n\nbody\n")
             tmp = f.name
         result = pa.auto_repair_note(tmp, ["duplicated_frontmatter"], "pdf", {"title": "T"})
@@ -712,7 +712,7 @@ class TestAutoRepairNote(unittest.TestCase):
     def test_metadata_unknown_backfilled(self):
         pa = _reload_paper_analyzer()
         note = "---\ntitle: T\nauthors: unknown\n---\n\n## S\n\nbody\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(note)
             tmp = f.name
         result = pa.auto_repair_note(tmp, ["metadata_unknown:authors"], "pdf", {"authors": ["Alice", "Bob"]})
@@ -727,7 +727,7 @@ class TestAutoRepairNote(unittest.TestCase):
         os.environ["SCHOLAR_FILLER_MODEL"] = "test-model"
         pa = _reload_paper_analyzer()
         note = "---\nstatus: skeleton\n---\n\n# T\n\n## S\n\n<!-- LLM: fill -->\n"
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8") as f:
             f.write(note)
             tmp = f.name
         mock = MagicMock()
