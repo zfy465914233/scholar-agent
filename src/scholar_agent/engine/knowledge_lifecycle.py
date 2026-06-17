@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -138,13 +139,19 @@ def validate_card(metadata: dict[str, Any]) -> list[CardIssue]:
     return issues
 
 
-def validate_card_quality(card_path: str) -> dict[str, Any]:
-    """F2: validate a persisted card's frontmatter schema + body density.
+def validate_card_quality(
+    card_path: str,
+    *,
+    freshness_years: float = 3.0,
+    now_year: int | None = None,
+) -> dict[str, Any]:
+    """F2/F4: validate a persisted card's frontmatter schema, body density,
+    and source freshness.
 
-    Wraps :func:`validate_card` (frontmatter schema) and adds a body-density
-    check so save_research can self-check the card it just wrote. Returns
-    ``{"errors": [...], "warnings": [...]}`` with ``{field, message}`` items.
-    Advisory — never raises; a failed read yields a single error entry.
+    Wraps :func:`validate_card` (frontmatter schema), adds a body-density
+    check, and flags a ``source_date`` older than ``freshness_years`` (F4).
+    Returns ``{"errors": [...], "warnings": [...]}`` with ``{field, message}``
+    items. Advisory — never raises; a failed read yields a single error entry.
     """
     from pathlib import Path
 
@@ -159,6 +166,15 @@ def validate_card_quality(card_path: str) -> dict[str, Any]:
     body_text = body.strip() if isinstance(body, str) else ""
     if len(body_text) < 300:
         warnings.append({"field": "body", "message": f"card body is thin ({len(body_text)} chars < 300)"})
+    # F4: flag stale sources so old cards surface for refresh.
+    source_date = meta.get("source_date")
+    if source_date:
+        m = re.search(r"\d{4}", str(source_date))
+        if m:
+            sy = int(m.group())
+            cur = now_year if now_year is not None else datetime.now().year
+            if cur - sy > freshness_years:
+                warnings.append({"field": "source_date", "message": f"source is old ({sy}, >{freshness_years}y)"})
     return {"errors": errors, "warnings": warnings}
 
 

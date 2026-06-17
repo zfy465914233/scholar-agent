@@ -538,6 +538,24 @@ def _index_visual_aids(visual_aids: list[dict]) -> dict[str | None, list[dict]]:
     return va_by_section
 
 
+def _extract_source_year(answer_data: dict, source_urls: list[str]) -> str:
+    """F4: best-effort source year for freshness tracking.
+
+    Prefers explicit 4-digit years in the answer/sources; falls back to the
+    arxiv-id prefix (YYMM -> 20YY). Returns the earliest year found, or ''.
+    """
+    import re
+
+    blob = " ".join([str(answer_data.get("answer", "")), *source_urls])
+    years = [int(m) for m in re.findall(r"\b(?:19|20)\d{2}\b", blob)]
+    if not years:
+        for prefix in re.findall(r"\b(\d{2})\d{2}\.\d{4,5}\b", blob):
+            y = 2000 + int(prefix)
+            if 1990 <= y <= 2030:
+                years.append(y)
+    return str(min(years)) if years else ""
+
+
 def _build_frontmatter(
     card_id: str,
     note_label: str,
@@ -570,10 +588,17 @@ def _build_frontmatter(
         for url in source_urls[:10]:
             lines.append(f"  - {url}")
     card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
-    lines.extend(
+    # F4: record source vintage for freshness tracking.
+    source_date = _extract_source_year(answer_data, source_urls)
+    fm_block = [
+        f"confidence: {confidence}",
+        f"created_at: {now}",
+        f"updated_at: {now}",
+    ]
+    if source_date:
+        fm_block.append(f"source_date: {source_date}")
+    fm_block.extend(
         [
-            f"confidence: {confidence}",
-            f"updated_at: {now}",
             "origin: web_research_with_synthesis",
             "review_status: draft",
             f'language: "{card_language}"',
@@ -585,6 +610,7 @@ def _build_frontmatter(
             ">",
         ]
     )
+    lines.extend(fm_block)
     if source_urls:
         lines.append(f"> 主要参考：{', '.join(source_urls[:5])}")
     lines.extend(

@@ -62,5 +62,53 @@ class TestValidateCardQuality(unittest.TestCase):
         self.assertEqual(len(q["errors"]), 1)
 
 
+class TestExtractSourceYear(unittest.TestCase):
+    """F4: source-year extraction for freshness tracking."""
+
+    def test_explicit_year_in_answer(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import _extract_source_year
+
+        self.assertEqual(_extract_source_year({"answer": "Per Smith (2019)..."}, []), "2019")
+
+    def test_picks_earliest_year(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import _extract_source_year
+
+        self.assertEqual(_extract_source_year({"answer": "results from 2019 then 2022"}, []), "2019")
+
+    def test_arxiv_id_fallback(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import _extract_source_year
+
+        # 2303.11366 -> 2023 when no explicit year is present.
+        self.assertEqual(
+            _extract_source_year({"answer": "see paper"}, ["https://arxiv.org/abs/2303.11366"]),
+            "2023",
+        )
+
+    def test_no_year_returns_empty(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import _extract_source_year
+
+        self.assertEqual(_extract_source_year({"answer": "no year here"}, []), "")
+
+
+class TestSourceFreshness(unittest.TestCase):
+    """F4: validate_card_quality flags stale sources."""
+
+    def test_old_source_warns(self) -> None:
+        fm = {**_VALID_FM, "source_date": "2018"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, freshness_years=3.0, now_year=2026)
+            self.assertTrue(any(w["field"] == "source_date" for w in q["warnings"]))
+
+    def test_fresh_source_no_warn(self) -> None:
+        fm = {**_VALID_FM, "source_date": "2025"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, freshness_years=3.0, now_year=2026)
+            self.assertFalse(any(w["field"] == "source_date" for w in q["warnings"]))
+
+
 if __name__ == "__main__":
     unittest.main()
