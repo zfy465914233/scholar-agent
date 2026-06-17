@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -54,6 +55,37 @@ def prune_empty_parents(path: Path, stop_at: Path) -> None:
         except OSError:
             return
         current = current.parent
+
+
+def _move_note_images(note_path: Path, root: Path) -> tuple[int, int]:
+    """F5②: move images referenced by the note into ``<note_dir>/images``.
+
+    On promote only the ``.md`` moves, so ``![[images/...]]`` links break. This
+    scans the note for image references, locates each file under any ``images/``
+    dir in the paper-notes root (excluding the note's own target dir), and
+    moves it next to the promoted note. Returns ``(moved, missing)``.
+    """
+    body = note_path.read_text(encoding="utf-8", errors="replace")
+    refs = re.findall(r"!\[\[images/([^\]|]+)", body)
+    if not refs:
+        return 0, 0
+    src_dirs = [p for p in root.rglob("images") if p.is_dir() and any(p.iterdir()) and p.parent != note_path.parent]
+    dst = note_path.parent / "images"
+    dst.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    missing = 0
+    for ref in dict.fromkeys(refs):  # dedupe, preserve order
+        found = next((d / ref for d in src_dirs if (d / ref).exists()), None)
+        if found is None:
+            missing += 1
+            continue
+        dest = dst / ref
+        if dest.exists():
+            found.unlink()  # already at target; drop the duplicate source
+        else:
+            shutil.move(str(found), str(dest))
+        moved += 1
+    return moved, missing
 
 
 def main() -> int:
@@ -112,11 +144,16 @@ def main() -> int:
         target.unlink()
 
     shutil.move(str(source), str(target))
+    # F5②: relocate referenced images next to the promoted note.
+    images_moved, images_missing = _move_note_images(target, root)
     if staging_root.exists() and staging_root in source.parents:
         prune_empty_parents(target, stop_at=target_dir)
         prune_empty_parents(source, stop_at=staging_root)
 
     result["ok"] = True
+    if images_moved or images_missing:
+        result["images_moved"] = images_moved
+        result["images_missing"] = images_missing
     print(json.dumps(result, ensure_ascii=False, indent=args.json_indent))
     return 0
 

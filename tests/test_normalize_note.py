@@ -167,5 +167,79 @@ class TestMainDryRun(unittest.TestCase):
             self.assertIn("source_not_found", data["errors"])
 
 
+class TestPromoteImages(unittest.TestCase):
+    """F5②: promote must relocate the note's referenced images."""
+
+    def _promote(self, argv_extra: list[str]) -> tuple[int, dict]:
+        import sys
+        from io import StringIO
+
+        old_argv = sys.argv
+        sys.argv = ["normalize_note", *argv_extra]
+        try:
+            captured = StringIO()
+            old_stdout = sys.stdout
+            sys.stdout = captured
+            rc = main()
+            sys.stdout = old_stdout
+        finally:
+            sys.argv = old_argv
+        return rc, json.loads(captured.getvalue())
+
+    def test_promote_moves_referenced_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging = root / ".staging"
+            (staging / "images").mkdir(parents=True)
+            (staging / "images" / "fig1.png").write_bytes(b"PNG1")
+            (staging / "images" / "fig2.png").write_bytes(b"PNG2")
+            src = staging / "note.md"
+            src.write_text("# T\n\n![[images/fig1.png|800]]\n![[images/fig2.png]]\n", encoding="utf-8")
+
+            rc, data = self._promote(
+                [
+                    "--source",
+                    str(src),
+                    "--paper-notes-root",
+                    str(root),
+                    "--domain",
+                    "ml",
+                    "--paper-folder",
+                    "p",
+                    "--promote",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(data["images_moved"], 2)
+            self.assertTrue((root / "ml" / "p" / "images" / "fig1.png").exists())
+            self.assertTrue((root / "ml" / "p" / "images" / "fig2.png").exists())
+
+    def test_promote_no_image_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging = root / ".staging"
+            staging.mkdir()
+            src = staging / "note.md"
+            src.write_text("# T\n\nno images here\n", encoding="utf-8")
+
+            rc, data = self._promote(
+                [
+                    "--source",
+                    str(src),
+                    "--paper-notes-root",
+                    str(root),
+                    "--domain",
+                    "ml",
+                    "--paper-folder",
+                    "p",
+                    "--promote",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertNotIn("images_moved", data)
+
+
 if __name__ == "__main__":
     unittest.main()

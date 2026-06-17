@@ -559,7 +559,10 @@ def generate_note(
     paper_id = paper.get("arxiv_id") or paper.get("paper_id") or "unknown"
     authors_list = paper.get("authors", [])
     authors = ", ".join(authors_list[:5]) if isinstance(authors_list, list) else str(authors_list)
-    domain = paper.get("best_domain") or paper.get("domain") or ""
+    # F5①: respect the caller's domain. analyze_paper passes `matched_domain`
+    # (its paper_json field name); without reading it we fell back to
+    # infer_domain and mis-filed papers (e.g. Reflexion into toolformer-*).
+    domain = paper.get("best_domain") or paper.get("matched_domain") or paper.get("domain") or ""
     if not domain or domain == "Other":
         try:
             from scholar_agent.engine.domain_router import infer_domain
