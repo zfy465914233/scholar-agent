@@ -53,12 +53,23 @@ def _normalize_answer_markdown(text: str) -> str:
     parts = re.split(r"(```.*?```)", text, flags=re.DOTALL)
     for i in range(0, len(parts), 2):
         seg = parts[i]
-        # Ensure headers start at beginning of a line
-        seg = re.sub(r"(?<!^)(?<!\n)(#{1,6}\s)", r"\n\1", seg, flags=re.MULTILINE)
+        # Ensure headers start at beginning of a line. (?<!#) prevents matching
+        # a header from its 2nd+ '#', which would split an in-place ## heading.
+        seg = re.sub(r"(?<!^)(?<!\n)(?<!#)(#{1,6}\s)", r"\n\1", seg, flags=re.MULTILINE)
         # Ensure a blank line before headers
         seg = re.sub(r"([^\n])\n(#{1,6}\s)", r"\1\n\n\2", seg)
         # Collapse 3+ consecutive blank lines into 2
         seg = re.sub(r"\n{4,}", "\n\n\n", seg)
+        # F1: demote every answer header so it sits below the card's own
+        # sections (## 回答 / ## 支撑论据) and never rivals the card H1.
+        # Done last so the structural fixes above operate on the original
+        # levels; min level 3 => even a bare # in the answer becomes ###.
+        seg = re.sub(
+            r"^(#{1,6})(\s)",
+            lambda m: "#" * min(max(len(m.group(1)) + 1, 3), 6) + m.group(2),
+            seg,
+            flags=re.MULTILINE,
+        )
         parts[i] = seg
     return "".join(parts)
 
