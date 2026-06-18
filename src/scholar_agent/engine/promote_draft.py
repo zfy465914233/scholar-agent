@@ -8,6 +8,7 @@ from pathlib import Path
 
 from scholar_agent.engine.common import atomic_write_text, safe_slug
 from scholar_agent.engine.domain_router import infer_domain as _infer_domain
+from scholar_agent.engine.scholar_config import get_paper_notes_dir
 
 
 def parse_args() -> argparse.Namespace:
@@ -126,6 +127,27 @@ def main() -> int:
         build_candidate_markdown(query, card_type, citation_ids, direct_support),
         encoding="utf-8",
     )
+
+    # E2: promote 后自动接入图谱 — wiki-link 关键词 + arxiv URL 转链到 paper-notes。
+    # best-effort: wikilink 是增强,失败不阻断 promote(核心是落盘)。
+    try:
+        from scholar_agent.engine.academic.note_linker import (
+            apply_wiki_links,
+            arxiv_urls_to_wikilinks,
+            build_keyword_index,
+        )
+
+        paper_notes_dir = get_paper_notes_dir()
+        if paper_notes_dir and Path(paper_notes_dir).exists():
+            keyword_index = build_keyword_index(str(paper_notes_dir), str(args.knowledge_root))
+            apply_wiki_links(str(output_path), keyword_index)
+            content = output_path.read_text(encoding="utf-8")
+            new_content, _url_links = arxiv_urls_to_wikilinks(content, str(paper_notes_dir))
+            if new_content != content:
+                atomic_write_text(output_path, new_content, encoding="utf-8")
+    except Exception:
+        pass
+
     return 0
 
 

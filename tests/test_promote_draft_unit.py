@@ -5,6 +5,7 @@ and build_candidate_markdown using direct imports.
 """
 
 import unittest
+import unittest.mock  # noqa: F401  unittest.mock 子模块需显式 import,否则 unittest.mock.patch 报 AttributeError
 
 from scholar_agent.engine.common import safe_slug
 from scholar_agent.engine.promote_draft import (
@@ -405,6 +406,62 @@ class TestMain(unittest.TestCase):
             # Should have created a candidate file
             candidates = list(kb.rglob("candidate-*.md"))
             self.assertGreater(len(candidates), 0)
+
+    def test_promote_applies_wikilinks(self) -> None:
+        """E2: promote 后自动接入图谱 — 候选卡正文应被替换为 [[wiki-link]]。
+
+        验证 main() 末尾新增的 wikilink 逻辑:build_keyword_index 从 paper-notes
+        提取关键词(标题冒号前段),apply_wiki_links 把候选卡正文里的关键词替换
+        成 ``[[stem|text]]``。
+        """
+        import tempfile
+        from pathlib import Path
+
+        from scholar_agent.engine.promote_draft import main
+
+        draft_content = (
+            "## Query\n\nWhat is ReAct reasoning\n\n"
+            "## Route\n\nmixed\n\n"
+            "## Direct Support\n\n"
+            "- ReAct interleaves reasoning and acting for tool use.\n\n"
+            "## Citations\n\n"
+            "`cite-001` (web / paper): ReAct | https://arxiv.org/abs/2210.03629\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            # paper-notes: a note whose title-colon-head yields keyword "ReAct".
+            paper_notes = root / "paper-notes"
+            paper_notes.mkdir()
+            (paper_notes / "ReAct.md").write_text(
+                "---\n"
+                "arxiv_id: 2210.03629\n"
+                'title: "ReAct: Synergizing Reasoning and Acting in Language Models"\n'
+                "---\n\n"
+                "ReAct couples reasoning traces with actions.\n",
+                encoding="utf-8",
+            )
+            kb = root / "knowledge"
+            kb.mkdir()
+            draft = root / "draft.md"
+            draft.write_text(draft_content, encoding="utf-8")
+
+            with unittest.mock.patch(
+                "scholar_agent.engine.promote_draft.get_paper_notes_dir",
+                return_value=str(paper_notes),
+            ), unittest.mock.patch(
+                "sys.argv",
+                ["promote_draft", "--draft", str(draft), "--knowledge-root", str(kb)],
+            ):
+                ret = main()
+            self.assertEqual(ret, 0)
+
+            candidates = list(kb.rglob("candidate-*.md"))
+            self.assertEqual(len(candidates), 1)
+            body = candidates[0].read_text(encoding="utf-8")
+            # Direct Support 正文中的裸 "ReAct" 应被替换成 wikilink。
+            # keyword-link 形如 ``[[ReAct|ReAct]]``;断言 ``[[ReAct`` 同时兼容
+            # arxiv-url 转链(需 paper_id frontmatter,见 arxiv_urls_to_wikilinks)。
+            self.assertIn("[[ReAct", body)
 
 
 if __name__ == "__main__":

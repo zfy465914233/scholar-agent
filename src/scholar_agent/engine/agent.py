@@ -295,6 +295,7 @@ class Curator:
             [
                 sys.executable,
                 str(ENGINE_DIR / "promote_draft.py"),
+                "--draft",
                 str(draft_path),
                 "--knowledge-root",
                 str(knowledge_root),
