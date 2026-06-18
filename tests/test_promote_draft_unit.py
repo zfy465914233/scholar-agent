@@ -5,7 +5,7 @@ and build_candidate_markdown using direct imports.
 """
 
 import unittest
-import unittest.mock  # noqa: F401  unittest.mock 子模块需显式 import,否则 unittest.mock.patch 报 AttributeError
+import unittest.mock
 
 from scholar_agent.engine.common import safe_slug
 from scholar_agent.engine.promote_draft import (
@@ -445,12 +445,15 @@ class TestMain(unittest.TestCase):
             draft = root / "draft.md"
             draft.write_text(draft_content, encoding="utf-8")
 
-            with unittest.mock.patch(
-                "scholar_agent.engine.promote_draft.get_paper_notes_dir",
-                return_value=str(paper_notes),
-            ), unittest.mock.patch(
-                "sys.argv",
-                ["promote_draft", "--draft", str(draft), "--knowledge-root", str(kb)],
+            with (
+                unittest.mock.patch(
+                    "scholar_agent.engine.promote_draft.get_paper_notes_dir",
+                    return_value=str(paper_notes),
+                ),
+                unittest.mock.patch(
+                    "sys.argv",
+                    ["promote_draft", "--draft", str(draft), "--knowledge-root", str(kb)],
+                ),
             ):
                 ret = main()
             self.assertEqual(ret, 0)

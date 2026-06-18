@@ -650,10 +650,7 @@ def _build_info_freshness(years: list[int], domain: str, now: str) -> str:
     else:
         coverage = "未标定源年份"
     key = (domain or "").strip().lower()
-    if key in _FAST_CHANGE_DOMAINS:
-        cadence = "该领域变化较快，建议每 6 个月复核一次"
-    else:
-        cadence = "该领域变化较慢，建议定期复核"
+    cadence = "该领域变化较快，建议每 6 个月复核一次" if key in _FAST_CHANGE_DOMAINS else "该领域变化较慢，建议定期复核"
     return f"{coverage}；{cadence}"
 
 
@@ -708,7 +705,7 @@ def _build_frontmatter(
     info_freshness = _build_info_freshness(source_years_list, major_domain, now)
     fm_block.append(f"info_freshness: {json.dumps(info_freshness, ensure_ascii=False)}")
     # G4: card version — new cards start at 1.0 (incremental updates bump it).
-    fm_block.append("version: \"1.0\"")
+    fm_block.append('version: "1.0"')
     fm_block.extend(
         [
             "origin: web_research_with_synthesis",

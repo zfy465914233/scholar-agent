@@ -202,9 +202,7 @@ def validate_card_quality(
     # When the caller left freshness_years at the default, derive the
     # threshold from the card's domain (AI/ML decay fast, history/math
     # decay slowly) instead of a one-size-fits-all 3 years.
-    effective_freshness = (
-        _freshness_years_for(meta.get("domain")) if freshness_years == 3.0 else freshness_years
-    )
+    effective_freshness = _freshness_years_for(meta.get("domain")) if freshness_years == 3.0 else freshness_years
     source_date = meta.get("source_date")
     if source_date:
         m = re.search(r"\d{4}", str(source_date))
@@ -212,9 +210,7 @@ def validate_card_quality(
             sy = int(m.group())
             cur = now_year if now_year is not None else datetime.now().year
             if cur - sy > effective_freshness:
-                warnings.append(
-                    {"field": "source_date", "message": f"source is old ({sy}, >{effective_freshness}y)"}
-                )
+                warnings.append({"field": "source_date", "message": f"source is old ({sy}, >{effective_freshness}y)"})
     return {"errors": errors, "warnings": warnings}
 
 

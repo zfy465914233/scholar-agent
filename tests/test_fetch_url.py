@@ -1,6 +1,5 @@
 """Tests for fetch_url / _fetch_url_impl (G5 一手抓取 + G2 网页快照)."""
 
-import json
 from pathlib import Path
 from unittest import mock
 
@@ -70,8 +69,9 @@ def test_no_snapshot_when_fetch_empty(tmp_path, monkeypatch):
 
 def test_snapshot_filename_is_stable_sha1_of_url(tmp_path, monkeypatch):
     """Same URL → same snapshot filename (so re-fetch refreshes, doesn't duplicate)."""
-    from scholar_agent import server
     import hashlib
+
+    from scholar_agent import server
 
     monkeypatch.setattr(server, "get_knowledge_dir", lambda: tmp_path)
     stub = _stub_fetch_content(content_md="body", title="t")

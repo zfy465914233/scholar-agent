@@ -1398,7 +1398,7 @@ def _scan_stale_cards(
         if years_elapsed > threshold:
             # days past the freshness horizon, for the report.
             # 365.25 to stay close to calendar years.
-            days_stale = int(round((years_elapsed - threshold) * 365.25))
+            days_stale = round((years_elapsed - threshold) * 365.25)
             stale.append(
                 {
                     "path": str(path),
@@ -1441,10 +1441,7 @@ def _mark_card_stale(card_path: Path) -> bool:
 def _run_scan_stale(knowledge_dir: str, write: bool, output_format: str) -> int:
     from scholar_agent.engine import scholar_config as _scholar_config
 
-    if knowledge_dir:
-        root = Path(knowledge_dir)
-    else:
-        root = Path(_scholar_config.get_knowledge_dir())
+    root = Path(knowledge_dir) if knowledge_dir else Path(_scholar_config.get_knowledge_dir())
 
     stale = _scan_stale_cards(root)
 
@@ -1485,8 +1482,8 @@ def _run_scan_stale(knowledge_dir: str, write: bool, output_format: str) -> int:
 
 def _run_report_dangling(notes_dirs: list[str], knowledge_dir: str, output_format: str) -> int:
     """Scan note directories for dangling [[wikilinks]] and print a grouped report."""
-    from scholar_agent.engine.academic.note_linker import find_dangling_links
     from scholar_agent.engine import scholar_config as _scholar_config
+    from scholar_agent.engine.academic.note_linker import find_dangling_links
 
     # Fall back to configured defaults when nothing is passed.
     if not notes_dirs:
