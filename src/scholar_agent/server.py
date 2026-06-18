@@ -3,6 +3,7 @@
 Tools:
   - query_knowledge: Search the local knowledge base
   - save_research: Persist structured research results as a knowledge card
+  - fetch_url: Fetch a web URL → main content as markdown + local snapshot (G5/G2)
   - list_knowledge: Browse all knowledge cards, optionally filtered by topic
   - capture_answer: Capture a Q&A answer as a draft knowledge card
   - ingest_source: Ingest a URL or raw text into the knowledge base
@@ -399,6 +400,77 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
         ensure_ascii=False,
         indent=2,
     )
+
+
+def _fetch_url_impl(url: str, max_chars: int = 6000) -> dict:
+    """G5: fetch a web URL → main content as markdown + persist a local snapshot (G2).
+
+    Core logic (kept separate from the @tool wrapper so it is unit-testable).
+    Reuses research_harness.fetch_content (HTML→text extraction + cache + blocklist).
+    The snapshot under knowledge/_snapshots/ archives the full text with a
+    captured_at date so dead links (job postings, pages that get taken down)
+    stay traceable.
+    """
+    if not url or not url.strip():
+        return {"error": "url must not be empty"}
+    url = url.strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return {"error": "url must start with http:// or https://"}
+
+    from scholar_agent.engine.research_harness import fetch_content
+
+    result = fetch_content(url)
+    content_md = result.get("content_md", "") or ""
+    title = result.get("title", "") or ""
+
+    snapshot_path = ""
+    captured_at = ""
+    if content_md:
+        try:
+            import hashlib
+
+            snap_dir = get_knowledge_dir() / "_snapshots"
+            snap_dir.mkdir(parents=True, exist_ok=True)
+            digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+            captured_at = datetime.now().strftime("%Y-%m-%d")
+            snap_path = snap_dir / f"{digest}.md"
+            snap_path.write_text(
+                f"---\nurl: {url}\ncaptured_at: {captured_at}\ntitle: {title}\n---\n\n{content_md}\n",
+                encoding="utf-8",
+            )
+            snapshot_path = str(snap_path)
+        except Exception:
+            logger.warning("failed to persist snapshot for %s", url, exc_info=True)
+
+    return {
+        "url": url,
+        "title": title,
+        "content_md": content_md[:max_chars],
+        "retrieval_status": result.get("retrieval_status", ""),
+        "failure_reason": result.get("failure_reason", ""),
+        "snapshot_path": snapshot_path,
+        "captured_at": captured_at,
+        "content_chars": len(content_md),
+        "snapshot_truncated": len(content_md) > max_chars,
+    }
+
+
+@tool
+def fetch_url(url: str, max_chars: int = 6000) -> str:
+    """Fetch a web URL and return its main content as markdown — first-hand retrieval (G5).
+
+    抓取网页正文(已做 HTML→正文提取)返回给调用方,用于在 save_research 之前把
+    knowledge card 建立在**一手出处**之上,而非凭记忆或摘要。同时把完整正文存本地
+    快照 `knowledge/_snapshots/<sha1(url)>.md`(含 captured_at),防止原链接失效
+    (招聘 JD、网页易下架)后无法回溯(G2)。
+
+    典型用法:fetch_url 抓一手 → 基于正文写带具体数字/机制的深度 answer → save_research 存卡。
+
+    Args:
+        url: 要抓取的 http(s) URL。
+        max_chars: 返回 content_md 的最大字符数(默认 6000;完整正文在快照里)。
+    """
+    return json.dumps(_fetch_url_impl(url, max_chars), ensure_ascii=False, indent=2)
 
 
 @tool

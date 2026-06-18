@@ -110,5 +110,190 @@ class TestSourceFreshness(unittest.TestCase):
             self.assertFalse(any(w["field"] == "source_date" for w in q["warnings"]))
 
 
+class TestDomainFreshness(unittest.TestCase):
+    """F4: freshness threshold varies by domain."""
+
+    def test_ai_domain_short_threshold_stale(self) -> None:
+        # AI/ML threshold is 0.5y; a 1-year-old source should be flagged stale.
+        fm = {**_VALID_FM, "domain": "ai", "source_date": "2025"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, now_year=2026)  # default freshness_years
+            self.assertTrue(
+                any(w["field"] == "source_date" for w in q["warnings"]),
+                "AI-domain card with 1y-old source should be stale",
+            )
+
+    def test_ai_domain_case_insensitive(self) -> None:
+        fm = {**_VALID_FM, "domain": "Machine-Learning", "source_date": "2025"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, now_year=2026)
+            self.assertTrue(any(w["field"] == "source_date" for w in q["warnings"]))
+
+    def test_default_domain_3y_not_stale(self) -> None:
+        # Unknown domain -> 3y default; 1-year-old source stays fresh.
+        fm = {**_VALID_FM, "domain": "economics", "source_date": "2025"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, now_year=2026)
+            self.assertFalse(any(w["field"] == "source_date" for w in q["warnings"]))
+
+    def test_default_domain_no_domain_field(self) -> None:
+        # No domain field at all -> 3y default; 1y old stays fresh.
+        fm = {**_VALID_FM, "source_date": "2025"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, now_year=2026)
+            self.assertFalse(any(w["field"] == "source_date" for w in q["warnings"]))
+
+    def test_history_domain_5y_not_stale(self) -> None:
+        # History threshold is 5y; 3-year-old source stays fresh.
+        fm = {**_VALID_FM, "domain": "history", "source_date": "2023"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, now_year=2026)
+            self.assertFalse(any(w["field"] == "source_date" for w in q["warnings"]))
+
+    def test_history_domain_stale_beyond_5y(self) -> None:
+        fm = {**_VALID_FM, "domain": "math", "source_date": "2018"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, now_year=2026)
+            self.assertTrue(any(w["field"] == "source_date" for w in q["warnings"]))
+
+    def test_explicit_freshness_overrides_domain(self) -> None:
+        # Caller passes freshness_years explicitly (even if == 3.0) ->
+        # domain lookup is skipped; explicit value wins.
+        # 1y old with explicit 0.5 threshold -> stale even for default domain.
+        fm = {**_VALID_FM, "domain": "economics", "source_date": "2025"}
+        body = "## 回答\n" + "x" * 400
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write_card(tmp, fm, body)
+            q = validate_card_quality(p, freshness_years=0.5, now_year=2026)
+            self.assertTrue(any(w["field"] == "source_date" for w in q["warnings"]))
+
+    def test_helper_defaults(self) -> None:
+        from scholar_agent.engine.knowledge_lifecycle import _freshness_years_for
+
+        self.assertEqual(_freshness_years_for(None), 3.0)
+        self.assertEqual(_freshness_years_for("unknown-domain"), 3.0)
+        self.assertEqual(_freshness_years_for("AI"), 0.5)
+        self.assertEqual(_freshness_years_for("history"), 5.0)
+
+
+def _fm_text(lines: list[str]) -> str:
+    """Join frontmatter-builder lines and slice the YAML block between the fences."""
+    joined = "\n".join(lines)
+    start = joined.index("---\n") + 4
+    end = joined.index("\n---", start)
+    return joined[start:end]
+
+
+class TestBuildFrontmatterG4Fields(unittest.TestCase):
+    """G4: _build_frontmatter emits source_years / info_freshness / version."""
+
+    @staticmethod
+    def _call(answer_data: dict, major_domain: str = "economics") -> list[str]:
+        from scholar_agent.engine.close_knowledge_loop import _build_frontmatter
+
+        return _build_frontmatter(
+            card_id="test-card",
+            note_label="知识卡片",
+            query="test query",
+            card_type="knowledge",
+            major_domain=major_domain,
+            topic="t",
+            tags=["t"],
+            source_urls=answer_data.get("sources", []),
+            now="2026-06-18",
+            answer_data=answer_data,
+            confidence="draft",
+        )
+
+    def test_three_g4_fields_present_single_year(self) -> None:
+        lines = self._call({"answer": "Per Smith (2024)...", "sources": []})
+        fm = _fm_text(lines)
+        self.assertIn("source_years:", fm)
+        self.assertIn('source_years: "2024"', fm)
+        self.assertIn("info_freshness:", fm)
+        self.assertIn("version:", fm)
+        self.assertIn('version: "1.0"', fm)
+
+    def test_source_years_range_for_multiple_years(self) -> None:
+        lines = self._call({"answer": "results from 2022 then 2026", "sources": []})
+        fm = _fm_text(lines)
+        self.assertIn('source_years: "2022~2026"', fm)
+        # source_date (F4) still present and keeps the earliest year.
+        self.assertIn("source_date: 2022", fm)
+
+    def test_source_years_unknown_when_no_year(self) -> None:
+        lines = self._call({"answer": "no year here", "sources": []})
+        fm = _fm_text(lines)
+        self.assertIn('source_years: "unknown"', fm)
+        # source_date omitted when no year; the new G4 fields still present.
+        self.assertNotIn("source_date:", fm)
+        self.assertIn("info_freshness:", fm)
+        self.assertIn("未标定源年份", fm)
+
+    def test_info_freshness_fast_change_domain(self) -> None:
+        lines = self._call(
+            {"answer": "GPT results in 2024", "sources": []},
+            major_domain="machine-learning",
+        )
+        fm = _fm_text(lines)
+        self.assertIn("变化较快", fm)
+        self.assertIn("建议每 6 个月复核", fm)
+
+    def test_info_freshness_slow_change_domain(self) -> None:
+        lines = self._call(
+            {"answer": "Per Smith (2024)", "sources": []},
+            major_domain="economics",
+        )
+        fm = _fm_text(lines)
+        self.assertIn("变化较慢", fm)
+        self.assertNotIn("变化较快", fm)
+
+    def test_version_always_present(self) -> None:
+        # version: "1.0" regardless of source vintage.
+        for answer in [{"answer": "2024"}, {"answer": "no year"}]:
+            fm = _fm_text(self._call(answer))
+            self.assertIn('version: "1.0"', fm)
+
+
+class TestBuildKnowledgeCardG4Fields(unittest.TestCase):
+    """G4: end-to-end — build_knowledge_card writes the three G4 fields to disk."""
+
+    def test_card_file_has_g4_frontmatter(self) -> None:
+        from scholar_agent.engine.close_knowledge_loop import build_knowledge_card
+
+        with tempfile.TemporaryDirectory() as tmp:
+            kr = Path(tmp) / "knowledge"
+            kr.mkdir()
+            answer_data = {
+                "answer": "贝叶斯优化的核心是代理模型(2024 综述所述)。",
+                "supporting_claims": [],
+                "sources": ["https://arxiv.org/abs/2401.12345"],
+                "language": "zh",
+            }
+            card_path = build_knowledge_card(
+                "什么是贝叶斯优化",
+                answer_data,
+                None,
+                kr,
+            )
+            content = card_path.read_text(encoding="utf-8")
+            frontmatter = content.split("---", 2)[1]
+            self.assertIn("source_years:", frontmatter)
+            self.assertIn("info_freshness:", frontmatter)
+            self.assertIn('version: "1.0"', frontmatter)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -242,6 +242,28 @@ def _build_evidence_map(research_data: dict | None) -> dict[str, dict[str, str]]
     return mapping
 
 
+def _evidence_map_from_sources(sources) -> dict[str, dict[str, str]]:
+    """F3 fallback: when there is no research_data (e.g. save_research path),
+    map each source URL to itself so claims whose ``evidence_ids`` cite a source
+    URL still render as source links instead of opaque bare ids. Label is the
+    URL's host (falls back to the full URL) to keep the rendered ref concise.
+    """
+    from urllib.parse import urlparse
+
+    mapping: dict[str, dict[str, str]] = {}
+    for url in sources or []:
+        url = str(url).strip()
+        if not url:
+            continue
+        try:
+            host = urlparse(url).netloc
+            label = host or url
+        except Exception:
+            label = url
+        mapping[url] = {"url": url, "label": label}
+    return mapping
+
+
 def validate_answer_schema(answer_data: dict) -> list[str]:
     """Validate answer_data against schemas/answer.schema.json.
 
@@ -554,22 +576,85 @@ def _index_visual_aids(visual_aids: list[dict]) -> dict[str | None, list[dict]]:
     return va_by_section
 
 
-def _extract_source_year(answer_data: dict, source_urls: list[str]) -> str:
-    """F4: best-effort source year for freshness tracking.
+def _extract_source_years_list(answer_data: dict, source_urls: list[str]) -> list[int]:
+    """F4/G4: all candidate source years found in the answer + sources.
 
-    Prefers explicit 4-digit years in the answer/sources; falls back to the
-    arxiv-id prefix (YYMM -> 20YY). Returns the earliest year found, or ''.
+    Prefers explicit 4-digit years; falls back to the arxiv-id prefix
+    (YYMM -> 20YY). Returns the years sorted ascending (deduped), or [].
+    Shared by ``_extract_source_year`` (earliest, single-value frontmatter) and
+    ``_build_frontmatter`` (source_years range + info_freshness) so the regex is
+    evaluated only once per card.
     """
     import re
 
     blob = " ".join([str(answer_data.get("answer", "")), *source_urls])
-    years = [int(m) for m in re.findall(r"\b(?:19|20)\d{2}\b", blob)]
+    years = {int(m) for m in re.findall(r"\b(?:19|20)\d{2}\b", blob)}
     if not years:
         for prefix in re.findall(r"\b(\d{2})\d{2}\.\d{4,5}\b", blob):
             y = 2000 + int(prefix)
             if 1990 <= y <= 2030:
-                years.append(y)
-    return str(min(years)) if years else ""
+                years.add(y)
+    return sorted(years)
+
+
+def _extract_source_year(answer_data: dict, source_urls: list[str]) -> str:
+    """F4: best-effort earliest source year for freshness tracking.
+
+    Thin wrapper over ``_extract_source_years_list``; returns '' when none found.
+    """
+    years = _extract_source_years_list(answer_data, source_urls)
+    return str(years[0]) if years else ""
+
+
+# Domains whose knowledge changes fast (sub-year staleness, mirrors
+# knowledge_lifecycle._DOMAIN_FRESHNESS_YEARS). Kept inline to avoid a circular
+# import; both lists must stay in sync.
+_FAST_CHANGE_DOMAINS = {
+    "ai",
+    "llm",
+    "llm-agents",
+    "machine-learning",
+    "ml",
+    "deep-learning",
+    "transformers",
+}
+
+
+def _format_source_years(years: list[int], now: str) -> str:
+    """G4: render the source_years frontmatter value.
+
+    Empty -> 'unknown'. Single year -> 'YYYY'. Multiple -> 'min~max'.
+    ``now`` (YYYY-MM-DD) is accepted for symmetry but not used here; the range
+    is bounded by the years actually found in the sources.
+    """
+    del now  # accepted for call-site symmetry; range uses only found years
+    if not years:
+        return "unknown"
+    if len(years) == 1:
+        return str(years[0])
+    return f"{years[0]}~{years[-1]}"
+
+
+def _build_info_freshness(years: list[int], domain: str, now: str) -> str:
+    """G4: one-line freshness description for the info_freshness field.
+
+    Combines the latest covered year with a domain-aware review cadence hint:
+    fast-changing domains (AI/ML/LLM) prompt more frequent re-verification.
+    """
+    now_year = int(now[:4]) if now and now[:4].isdigit() else None
+    if years:
+        latest = years[-1]
+        coverage = f"覆盖到 {latest}"
+        if now_year is not None and latest < now_year:
+            coverage += f"(距今 {now_year - latest} 年)"
+    else:
+        coverage = "未标定源年份"
+    key = (domain or "").strip().lower()
+    if key in _FAST_CHANGE_DOMAINS:
+        cadence = "该领域变化较快，建议每 6 个月复核一次"
+    else:
+        cadence = "该领域变化较慢，建议定期复核"
+    return f"{coverage}；{cadence}"
 
 
 def _build_frontmatter(
@@ -604,8 +689,11 @@ def _build_frontmatter(
         for url in source_urls[:10]:
             lines.append(f"  - {url}")
     card_label = "知识卡片" if card_type == "knowledge" else "方法卡片"
-    # F4: record source vintage for freshness tracking.
-    source_date = _extract_source_year(answer_data, source_urls)
+    # F4/G4: record source vintage for freshness tracking. Compute the year list
+    # once and reuse for source_date (single year) + source_years (range) +
+    # info_freshness (prose), so the regex is not re-evaluated.
+    source_years_list = _extract_source_years_list(answer_data, source_urls)
+    source_date = str(source_years_list[0]) if source_years_list else ""
     fm_block = [
         f"confidence: {confidence}",
         f"created_at: {now}",
@@ -613,6 +701,14 @@ def _build_frontmatter(
     ]
     if source_date:
         fm_block.append(f"source_date: {source_date}")
+    # G4: source_years range (min~max, or single year) for freshness overview.
+    source_years_field = _format_source_years(source_years_list, now)
+    fm_block.append(f"source_years: {json.dumps(source_years_field, ensure_ascii=False)}")
+    # G4: human-readable freshness hint; varies by domain change-rate.
+    info_freshness = _build_info_freshness(source_years_list, major_domain, now)
+    fm_block.append(f"info_freshness: {json.dumps(info_freshness, ensure_ascii=False)}")
+    # G4: card version — new cards start at 1.0 (incremental updates bump it).
+    fm_block.append("version: \"1.0\"")
     fm_block.extend(
         [
             "origin: web_research_with_synthesis",
@@ -965,6 +1061,10 @@ def build_knowledge_card(
     source_images = collect_source_images(research_data)
     # F3: map evidence ids to source refs so claims link to their sources.
     evidence_map = _build_evidence_map(research_data)
+    # F3 (save_research path): no research_data → fall back to answer sources
+    # so claims whose evidence_ids cite a source URL still render as links.
+    if not evidence_map:
+        evidence_map = _evidence_map_from_sources(source_urls)
 
     # 5. Assemble card
     lines = _build_frontmatter(

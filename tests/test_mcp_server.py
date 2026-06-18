@@ -137,6 +137,40 @@ class SaveResearchTest(unittest.TestCase):
         self.assertIn("error", result)
         self.assertIn("Quality gate failed", result["error"])
 
+    def test_save_research_triggers_reindex(self) -> None:
+        """E6: save_research 写卡成功后必须触发一次 _async_reindex 重建索引。
+
+        验证 server.save_research 末尾的 ``_async_reindex(index_path)`` 调用,
+        避免新卡片落盘后索引陈旧。用 spy mock 记录调用,断言至少被调用一次。
+        """
+        answer = {
+            "answer": (
+                "This is a substantive answer that is long enough to pass the "
+                "quality gate threshold of 200 characters. It describes how "
+                "save_research should trigger an async reindex of the knowledge "
+                "base so newly written cards become searchable immediately."
+            ),
+            "supporting_claims": [
+                {
+                    "claim": "save_research writes the card then calls _async_reindex to refresh the index",
+                    "evidence_ids": ["e1"],
+                    "confidence": "high",
+                },
+            ],
+            "inferences": ["Reindex keeps the embedding index fresh after writes"],
+            "uncertainty": [],
+            "missing_evidence": [],
+            "suggested_next_steps": [],
+        }
+        with patch("scholar_agent.server._async_reindex") as spy:
+            result = json.loads(save_research("e6 reindex trigger test", json.dumps(answer)))
+        try:
+            self.assertEqual("ok", result["status"])
+            self.assertGreaterEqual(spy.call_count, 1)
+        finally:
+            if result.get("card_path"):
+                _cleanup_card(result["card_path"])
+
 
 class ListKnowledgeTest(unittest.TestCase):
     @classmethod
