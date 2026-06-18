@@ -437,6 +437,127 @@ class KeywordIndex:
 
 
 # ---------------------------------------------------------------------------
+# E4: dangling wikilink scan — report [[links]] pointing to nonexistent notes
+# ---------------------------------------------------------------------------
+
+# Match a wikilink: [[target]], [[target|alias]], [[target#anchor]], [[target#anchor|alias]]
+# Anchors (#) target a heading inside a note; the existence check is on the stem
+# before the '#'. Image embeds ![[...]] are handled by the leading '!' exclusion.
+_WIKILINK_RE = re.compile(r"(?<!!)\[\[([^\[\]]+?)\]\]")
+_IMAGE_PATH_RE = re.compile(r"^(images|attachments|assets|fig|figures)[/\\]", re.IGNORECASE)
+
+
+def _collect_all_stems(directories) -> set[str]:
+    """Collect every .md note stem under the given directories.
+
+    Reuses the same rglob + md.stem collection logic as KeywordIndex._build so
+    the existence set stays consistent with how links are generated.
+    """
+    stems: set[str] = set()
+    for directory in directories:
+        if not directory:
+            continue
+        root = Path(directory)
+        if not root.exists():
+            continue
+        for md in root.rglob("*.md"):
+            stems.add(md.stem)
+    return stems
+
+
+def _wikilink_target_stem(inner: str) -> str | None:
+    """Extract the note-stem to check for existence from a wikilink's inner text.
+
+    Returns None when the link should be excluded from the dangling check:
+      - image embeds / asset paths (images/x.png, attachments/...)
+      - external URLs (http://, https://, mailto:)
+      - empty target
+    Strips alias (|...) and anchor (#...) parts.
+    """
+    target = inner.split("|", 1)[0].strip()
+    target = target.split("#", 1)[0].strip()
+    if not target:
+        return None
+    if _IMAGE_PATH_RE.match(target):
+        return None
+    if target.lower().startswith(("http://", "https://", "mailto:")):
+        return None
+    # Bare image filename with an extension and no path is also an embed.
+    if "." in target and "/" not in target and "\\" not in target:
+        return None
+    return target
+
+
+def find_dangling_links(notes_dirs, knowledge_dir: str | None = None) -> list[dict]:
+    """Scan all .md files under notes_dirs (+knowledge_dir) for dangling wikilinks.
+
+    A dangling wikilink is a ``[[target]]`` (or ``[[target|alias]]`` /
+    ``[[target#anchor]]``) whose target stem does not correspond to any existing
+    note in the scanned directories. Image embeds (``![[images/...]]``) and
+    self-anchor links are excluded.
+
+    Args:
+        notes_dirs: iterable of directories to scan for notes AND wikilinks.
+        knowledge_dir: optional additional directory (also scanned for both
+            existence and links, so knowledge-card links resolve too).
+
+    Returns:
+        List of dicts, one per dangling link:
+        ``{"file": <path relative to CWD>, "link": <original [[...]]>, "target": <stem>}``
+    """
+    dirs = list(notes_dirs)
+    if knowledge_dir:
+        dirs.append(knowledge_dir)
+
+    existing = _collect_all_stems(dirs)
+
+    # De-duplicate scan directories by resolved path so overlapping
+    # notes_dir/knowledge_dir (or repeated dirs) don't double-report links.
+    seen_roots: set[str] = set()
+    unique_dirs: list[str] = []
+    for directory in dirs:
+        if not directory:
+            continue
+        try:
+            key = str(Path(directory).resolve())
+        except OSError:
+            key = str(directory)
+        if key in seen_roots:
+            continue
+        seen_roots.add(key)
+        unique_dirs.append(directory)
+
+    dangling: list[dict] = []
+    for directory in unique_dirs:
+        root = Path(directory)
+        if not root.exists():
+            continue
+        for md in root.rglob("*.md"):
+            self_stem = md.stem
+            try:
+                text = md.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for m in _WIKILINK_RE.finditer(text):
+                inner = m.group(1)
+                target = _wikilink_target_stem(inner)
+                if target is None:
+                    continue
+                if target == self_stem:
+                    continue  # self-anchor link
+                if target in existing:
+                    continue
+                dangling.append(
+                    {
+                        "file": str(md),
+                        "link": m.group(0),
+                        "target": target,
+                    }
+                )
+    return dangling
+
+
+# ---------------------------------------------------------------------------
 # Module-level backward-compat aliases
 # ---------------------------------------------------------------------------
 

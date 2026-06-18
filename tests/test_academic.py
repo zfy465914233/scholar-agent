@@ -1031,6 +1031,48 @@ class TestNoteLinkerCJK(unittest.TestCase):
             self.assertEqual(links, 0)
             self.assertIn("arxiv.org/abs/2210.03629", new_text)  # URL kept (no dangling)
 
+    def test_find_dangling_links(self):
+        """E4: scan reports [[nonexistent]] but skips valid links + image embeds."""
+        import tempfile
+        from pathlib import Path
+
+        from scholar_agent.engine.academic.note_linker import find_dangling_links
+
+        with tempfile.TemporaryDirectory() as tmp:
+            notes = Path(tmp) / "paper-notes"
+            notes.mkdir()
+            # A.md references an existing B (valid), a nonexistent target (dangling),
+            # an aliased dangling link, an image embed (skip), and a self anchor (skip).
+            (notes / "A.md").write_text(
+                "---\ntitle: A\n---\n"
+                "See [[B]] for context.\n"
+                "Broken ref: [[nonexistent]].\n"
+                "Aliased broken: [[ghost|the ghost paper]].\n"
+                "Image: ![[images/x.png]].\n"
+                "Self anchor: [[A#section]].\n"
+                "Alias to valid: [[B|B paper]].\n",
+                encoding="utf-8",
+            )
+            (notes / "B.md").write_text("---\ntitle: B\n---\n\nbody\n", encoding="utf-8")
+
+            dangling = find_dangling_links([str(notes)])
+
+            targets = sorted(d["target"] for d in dangling)
+            self.assertEqual(targets, ["ghost", "nonexistent"])
+            # Ensure image embed and valid/self links are NOT reported.
+            reported_links = {d["link"] for d in dangling}
+            self.assertNotIn("![[images/x.png]]", reported_links)
+            self.assertNotIn("[[B]]", reported_links)
+            self.assertNotIn("[[B|B paper]]", reported_links)
+            self.assertNotIn("[[A#section]]", reported_links)
+            # The original link text is preserved.
+            self.assertIn("[[nonexistent]]", reported_links)
+            self.assertIn("[[ghost|the ghost paper]]", reported_links)
+            # Every entry has the expected keys.
+            for d in dangling:
+                self.assertEqual(set(d.keys()), {"file", "link", "target"})
+                self.assertTrue(d["file"].endswith("A.md"))
+
 
 if __name__ == "__main__":
     unittest.main()

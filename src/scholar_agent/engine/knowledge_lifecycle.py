@@ -53,6 +53,38 @@ CARD_TYPES = {"knowledge", "method", "engineering"}
 CONFIDENCE_LEVELS = {"draft", "confirmed", "likely", "unknown"}
 ORIGINS = {"local_seed", "manual_web_research", "web_research_with_synthesis", "distilled", "promoted", "imported"}
 
+# F4: domain-specific freshness thresholds (years). Fast-moving fields
+# (AI/ML) decay quickly; slow fields (history/math) stay valid much longer.
+# Keys are matched case-insensitively; unknown domains fall back to the
+# default below.
+_DEFAULT_FRESHNESS_YEARS: float = 3.0
+_DOMAIN_FRESHNESS_YEARS: dict[str, float] = {
+    "ai": 0.5,
+    "llm-agents": 0.5,
+    "llm": 0.5,
+    "machine-learning": 0.5,
+    "ml": 0.5,
+    "deep-learning": 0.5,
+    "transformers": 0.5,
+    "history": 5.0,
+    "math": 5.0,
+    "mathematics": 5.0,
+    "philosophy": 5.0,
+}
+
+
+def _freshness_years_for(domain: str | None) -> float:
+    """Return the staleness threshold (years) for a card's domain.
+
+    Unknown/empty domains fall back to ``_DEFAULT_FRESHNESS_YEARS``.
+    Match is case-insensitive.
+    """
+    if not domain:
+        return _DEFAULT_FRESHNESS_YEARS
+    key = str(domain).strip().lower()
+    return _DOMAIN_FRESHNESS_YEARS.get(key, _DEFAULT_FRESHNESS_YEARS)
+
+
 # Required fields for a valid card
 REQUIRED_FIELDS = {"id", "title", "type", "topic", "confidence", "updated_at"}
 
@@ -167,14 +199,22 @@ def validate_card_quality(
     if len(body_text) < 300:
         warnings.append({"field": "body", "message": f"card body is thin ({len(body_text)} chars < 300)"})
     # F4: flag stale sources so old cards surface for refresh.
+    # When the caller left freshness_years at the default, derive the
+    # threshold from the card's domain (AI/ML decay fast, history/math
+    # decay slowly) instead of a one-size-fits-all 3 years.
+    effective_freshness = (
+        _freshness_years_for(meta.get("domain")) if freshness_years == 3.0 else freshness_years
+    )
     source_date = meta.get("source_date")
     if source_date:
         m = re.search(r"\d{4}", str(source_date))
         if m:
             sy = int(m.group())
             cur = now_year if now_year is not None else datetime.now().year
-            if cur - sy > freshness_years:
-                warnings.append({"field": "source_date", "message": f"source is old ({sy}, >{freshness_years}y)"})
+            if cur - sy > effective_freshness:
+                warnings.append(
+                    {"field": "source_date", "message": f"source is old ({sy}, >{effective_freshness}y)"}
+                )
     return {"errors": errors, "warnings": warnings}
 
 

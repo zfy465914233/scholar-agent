@@ -7,8 +7,10 @@ import importlib.util
 import json
 import locale
 import os
+import re
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -448,6 +450,54 @@ def build_parser() -> argparse.ArgumentParser:
         "automatically uses hybrid retrieval and keeps the embedding index fresh.",
     )
     index_parser.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="text",
+        help="Output format.",
+    )
+
+    scan_stale_parser = subparsers.add_parser(
+        "scan-stale",
+        help="Scan the knowledge directory for cards whose source_date exceeds "
+        "the domain-specific freshness threshold (F4/G3). Reports stale cards; "
+        "pass --write to mark them with `stale: true` in frontmatter.",
+    )
+    scan_stale_parser.add_argument(
+        "--knowledge-dir",
+        default="",
+        help="Directory to scan (defaults to the configured knowledge directory).",
+    )
+    scan_stale_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Add `stale: true` to the frontmatter of each stale card (default: report only).",
+    )
+    scan_stale_parser.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="text",
+        help="Output format.",
+    )
+
+    dangling_parser = subparsers.add_parser(
+        "report-dangling",
+        help="Scan note directories for dangling [[wikilinks]] (target notes that "
+        "do not exist) and print a grouped report.",
+    )
+    dangling_parser.add_argument(
+        "--notes-dir",
+        action="append",
+        default=[],
+        help="Directory of notes to scan (may be passed multiple times). "
+        "Defaults to the configured paper-notes directory if omitted.",
+    )
+    dangling_parser.add_argument(
+        "--knowledge-dir",
+        default="",
+        help="Optional additional directory (e.g. knowledge cards) also scanned "
+        "for both existence and wikilinks. Defaults to the configured knowledge directory.",
+    )
+    dangling_parser.add_argument(
         "--format",
         choices=("json", "text"),
         default="text",
@@ -1296,6 +1346,190 @@ def _run_index(full_rebuild: bool, build_embedding_index: bool, output_format: s
     return 0
 
 
+def _scan_stale_cards(
+    knowledge_root: Path,
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """F4/G3: scan a knowledge directory for stale cards.
+
+    Reuses :func:`knowledge_lifecycle._freshness_years_for` for the per-domain
+    threshold and the same logic as ``validate_card_quality`` (derive the year
+    from ``source_date``, falling back to ``updated_at``; flag when
+    ``now_year - source_year > threshold``).
+
+    Returns a list of dicts ``{"path", "domain", "source_year", "threshold_years",
+    "days_stale"}`` for every stale card. Advisory; never raises for a single
+    unreadable card (it is skipped).
+    """
+    from scholar_agent.engine.common import parse_frontmatter
+    from scholar_agent.engine.knowledge_lifecycle import _freshness_years_for
+
+    current = now or datetime.now()
+    current_year = current.year
+
+    stale: list[dict[str, Any]] = []
+    for path in sorted(knowledge_root.rglob("*.md")):
+        if "templates" in path.parts or path.name.lower() == "readme.md":
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not raw.startswith("---\n"):
+            continue
+        meta, _body = parse_frontmatter(raw)
+
+        # Resolve the source year: prefer source_date, fall back to updated_at.
+        source_date = meta.get("source_date") or meta.get("updated_at")
+        if not source_date:
+            continue
+        m = re.search(r"\d{4}", str(source_date))
+        if not m:
+            continue
+        source_year = int(m.group())
+
+        domain = meta.get("domain")
+        threshold = _freshness_years_for(domain)
+
+        # years elapsed (float, fractional), compare against threshold exactly
+        # as validate_card_quality does (integer year difference > threshold).
+        years_elapsed = current_year - source_year
+        if years_elapsed > threshold:
+            # days past the freshness horizon, for the report.
+            # 365.25 to stay close to calendar years.
+            days_stale = int(round((years_elapsed - threshold) * 365.25))
+            stale.append(
+                {
+                    "path": str(path),
+                    "domain": domain or "",
+                    "source_year": source_year,
+                    "threshold_years": threshold,
+                    "days_stale": days_stale,
+                }
+            )
+    return stale
+
+
+def _mark_card_stale(card_path: Path) -> bool:
+    """Add `stale: true` to a card's frontmatter in place.
+
+    Inserts the key right after the opening ``---`` line if absent. Returns
+    True if the file was written, False if it already had the flag.
+    """
+    raw = card_path.read_text(encoding="utf-8")
+    lines = raw.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return False
+    # Walk to the closing frontmatter delimiter.
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+    if end_idx is None:
+        return False
+    # Already present?
+    for line in lines[1:end_idx]:
+        if line.strip().startswith("stale:"):
+            return False
+    lines.insert(1, "stale: true")
+    card_path.write_text("\n".join(lines), encoding="utf-8")
+    return True
+
+
+def _run_scan_stale(knowledge_dir: str, write: bool, output_format: str) -> int:
+    from scholar_agent.engine import scholar_config as _scholar_config
+
+    if knowledge_dir:
+        root = Path(knowledge_dir)
+    else:
+        root = Path(_scholar_config.get_knowledge_dir())
+
+    stale = _scan_stale_cards(root)
+
+    if write:
+        written = 0
+        for item in stale:
+            if _mark_card_stale(Path(item["path"])):
+                written += 1
+    else:
+        written = None
+
+    if output_format == "json":
+        payload = {
+            "status": "ok",
+            "knowledge_dir": str(root),
+            "stale_count": len(stale),
+            "marked": written,
+            "stale": stale,
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if not stale:
+        print("no stale cards")
+        return 0
+
+    for item in stale:
+        print(
+            f"{item['path']}  domain={item['domain'] or '(none)'}  "
+            f"source={item['source_year']}  超期{item['days_stale']}天 "
+            f"(阈值{item['threshold_years']}年)"
+        )
+    print()
+    suffix = f"  (marked {written} card(s) with stale: true)" if write else ""
+    print(f"{len(stale)} stale card(s){suffix}")
+    return 0
+
+
+def _run_report_dangling(notes_dirs: list[str], knowledge_dir: str, output_format: str) -> int:
+    """Scan note directories for dangling [[wikilinks]] and print a grouped report."""
+    from scholar_agent.engine.academic.note_linker import find_dangling_links
+    from scholar_agent.engine import scholar_config as _scholar_config
+
+    # Fall back to configured defaults when nothing is passed.
+    if not notes_dirs:
+        notes_dirs = [str(_scholar_config.get_paper_notes_dir())]
+    if not knowledge_dir:
+        try:
+            knowledge_dir = str(_scholar_config.get_knowledge_dir())
+        except Exception:
+            knowledge_dir = ""
+
+    dangling = find_dangling_links(notes_dirs, knowledge_dir=knowledge_dir or None)
+
+    if output_format == "json":
+        payload = {
+            "status": "ok",
+            "notes_dirs": notes_dirs,
+            "knowledge_dir": knowledge_dir or None,
+            "dangling_count": len(dangling),
+            "dangling": dangling,
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    if not dangling:
+        print("no dangling links")
+        return 0
+
+    # Group by file for readability.
+    grouped: dict[str, list[dict]] = {}
+    for item in dangling:
+        grouped.setdefault(item["file"], []).append(item)
+
+    print(f"Found {len(dangling)} dangling link(s) across {len(grouped)} file(s):")
+    print()
+    for file_path in sorted(grouped):
+        items = grouped[file_path]
+        print(f"{file_path}  ({len(items)})")
+        for it in items:
+            print(f"  {it['link']}  → target '{it['target']}' not found")
+        print()
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -1398,6 +1632,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _run_daily_process(
             date_str=args.date,
             dry_run=args.dry_run,
+            output_format=args.format,
+        )
+
+    if command == "report-dangling":
+        return _run_report_dangling(
+            notes_dirs=args.notes_dir,
+            knowledge_dir=args.knowledge_dir,
+            output_format=args.format,
+        )
+
+    if command == "scan-stale":
+        return _run_scan_stale(
+            knowledge_dir=args.knowledge_dir,
+            write=args.write,
             output_format=args.format,
         )
 
