@@ -370,7 +370,13 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
         for r in results:
             r["usage_boost"] = round(_usage.usage_boost(r.get("doc_id", ""), counts), 3)
         if not rerank and counts:
-            results.sort(key=lambda r: -(r.get("score", 0.0) * r.get("usage_boost", 1.0)))
+            # Reflect the popularity boost in the emitted score so the result
+            # order and the score field stay consistent — otherwise a boosted
+            # card can rank above a higher-BM25 card while reporting a lower
+            # score (the field and the order disagreed).
+            for r in results:
+                r["score"] = round(r.get("score", 0.0) * r.get("usage_boost", 1.0), 4)
+            results.sort(key=lambda r: -r.get("score", 0.0))
     except Exception:
         pass
     return {"query": query, "results": results, "ambiguous": ambiguous}
