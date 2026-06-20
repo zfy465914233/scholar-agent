@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import hashlib
+import importlib.util
 import json
 import locale
 import os
@@ -1541,8 +1541,7 @@ def _refresh_card_sources(
         else:
             reason = result.get("failure_reason", "")
             sys.stderr.write(
-                f"[scan-stale --refresh] {url} not snapshotted "
-                f"(status={status}{f': {reason}' if reason else ''})\n"
+                f"[scan-stale --refresh] {url} not snapshotted (status={status}{f': {reason}' if reason else ''})\n"
             )
 
     if any_success:
@@ -1600,7 +1599,7 @@ def _run_scan_stale(
         written = None
 
     # G3: incrementally refresh stale cards' source snapshots + captured_at.
-    refresh_report: list[dict[str, object]] | None = None
+    refresh_report: list[dict[str, Any]] | None = None
     if refresh:
         refresh_report = []
         for item in stale:

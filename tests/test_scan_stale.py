@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
-from scholar_agent.cli import _mark_card_stale, _run_scan_stale, _scan_stale_cards, _extract_card_urls
+from scholar_agent.cli import _extract_card_urls, _mark_card_stale, _run_scan_stale, _scan_stale_cards
 
 
 def _write_card(path: Path, *, domain: str | None, source_date: str | None, updated_at: str | None = None) -> None:
@@ -294,9 +294,7 @@ class TestScanStaleRefresh(unittest.TestCase):
 
     def test_extract_card_urls_reads_source_refs(self):
         urls = _extract_card_urls(self.tmp / "ai_old.md")
-        self.assertEqual(
-            urls, ["https://example.com/alpha", "https://example.com/beta"]
-        )
+        self.assertEqual(urls, ["https://example.com/alpha", "https://example.com/beta"])
 
     def test_extract_card_urls_empty_when_no_sources(self):
         self.assertEqual(_extract_card_urls(self.tmp / "ai_old_no_sources.md"), [])
@@ -313,10 +311,13 @@ class TestScanStaleRefresh(unittest.TestCase):
                 "images": [],
             }
 
-        with mock.patch(
-            "scholar_agent.engine.research_harness.fetch_content",
-            side_effect=_fake_fetch,
-        ) as fc, mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+        with (
+            mock.patch(
+                "scholar_agent.engine.research_harness.fetch_content",
+                side_effect=_fake_fetch,
+            ) as fc,
+            mock.patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
             rc = _run_scan_stale(
                 knowledge_dir=str(self.tmp),
                 write=False,
@@ -344,9 +345,7 @@ class TestScanStaleRefresh(unittest.TestCase):
         # captured_at stamped on the refreshed card, not on the no-sources one.
         refreshed_fm = (self.tmp / "ai_old.md").read_text(encoding="utf-8").split("---")[1]
         self.assertIn("captured_at:", refreshed_fm)
-        no_src_fm = (
-            (self.tmp / "ai_old_no_sources.md").read_text(encoding="utf-8").split("---")[1]
-        )
+        no_src_fm = (self.tmp / "ai_old_no_sources.md").read_text(encoding="utf-8").split("---")[1]
         self.assertNotIn("captured_at:", no_src_fm)
 
         # Answer body untouched (no snapshot content leaked into the card body).
@@ -354,16 +353,19 @@ class TestScanStaleRefresh(unittest.TestCase):
         self.assertNotIn("body of https", body)
 
     def test_refresh_json_payload_includes_refreshed(self):
-        with mock.patch(
-            "scholar_agent.engine.research_harness.fetch_content",
-            return_value={
-                "title": "t",
-                "content_md": "c",
-                "retrieval_status": "succeeded",
-                "failure_reason": "",
-                "images": [],
-            },
-        ), mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+        with (
+            mock.patch(
+                "scholar_agent.engine.research_harness.fetch_content",
+                return_value={
+                    "title": "t",
+                    "content_md": "c",
+                    "retrieval_status": "succeeded",
+                    "failure_reason": "",
+                    "images": [],
+                },
+            ),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
             rc = _run_scan_stale(
                 knowledge_dir=str(self.tmp),
                 write=False,
@@ -396,11 +398,14 @@ class TestScanStaleRefresh(unittest.TestCase):
                 "images": [],
             }
 
-        with mock.patch(
-            "scholar_agent.engine.research_harness.fetch_content",
-            side_effect=_fake_fetch,
-        ), mock.patch("sys.stderr", new_callable=io.StringIO), \
-             mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+        with (
+            mock.patch(
+                "scholar_agent.engine.research_harness.fetch_content",
+                side_effect=_fake_fetch,
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
             rc = _run_scan_stale(
                 knowledge_dir=str(self.tmp),
                 write=False,
@@ -419,11 +424,14 @@ class TestScanStaleRefresh(unittest.TestCase):
         def _fake_fetch(url: str) -> dict:
             raise RuntimeError("network down")
 
-        with mock.patch(
-            "scholar_agent.engine.research_harness.fetch_content",
-            side_effect=_fake_fetch,
-        ), mock.patch("sys.stderr", new_callable=io.StringIO), \
-             mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+        with (
+            mock.patch(
+                "scholar_agent.engine.research_harness.fetch_content",
+                side_effect=_fake_fetch,
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
             rc = _run_scan_stale(
                 knowledge_dir=str(self.tmp),
                 write=False,
@@ -438,16 +446,19 @@ class TestScanStaleRefresh(unittest.TestCase):
         self.assertNotIn("captured_at:", fm)
 
     def test_refresh_combinable_with_write(self):
-        with mock.patch(
-            "scholar_agent.engine.research_harness.fetch_content",
-            return_value={
-                "title": "t",
-                "content_md": "c",
-                "retrieval_status": "succeeded",
-                "failure_reason": "",
-                "images": [],
-            },
-        ), mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+        with (
+            mock.patch(
+                "scholar_agent.engine.research_harness.fetch_content",
+                return_value={
+                    "title": "t",
+                    "content_md": "c",
+                    "retrieval_status": "succeeded",
+                    "failure_reason": "",
+                    "images": [],
+                },
+            ),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
             rc = _run_scan_stale(
                 knowledge_dir=str(self.tmp),
                 write=True,
