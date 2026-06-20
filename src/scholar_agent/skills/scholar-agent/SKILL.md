@@ -81,6 +81,13 @@ argument-hint: "描述研究主题、范围、时间区间与期望产出"
 - 明确共识、分歧、趋势、空白点与潜在机会。
 - 最终展示完整产出清单：论文笔记列表，以及综述卡片或综合结论列表。
 
+## 知识卡沉淀工作流（一手抓取 → save_research）
+沉淀「看卡不用查网」的深度知识卡（区别于论文笔记）时，走一手抓取工作流，让卡片自带出处、防链接失效：
+1. `fetch_url` 抓关键 sources —— 返回正文 + 存本地快照（`knowledge/_snapshots/`，防招聘 JD / 网页下架后无法回溯）。
+2. 基于抓到的正文写深度 answer（具体数字 / 机制，而非记忆）；`supporting_claims[].evidence_ids` 用 `sources` 里的 url，这样渲染成可点击来源链接。
+3. `save_research` 存卡 —— 自动带 `source_years`/`info_freshness`/`version` 时效字段；`sources` 自动后台快照（即使没显式 fetch_url 也有备份）。
+卡片落盘后跑质量门（frontmatter schema + 正文密度 + 时效），结果进 `card_quality` 字段（advisory）。超期卡用 `scholar-agent scan-stale`（`--refresh` 重抓 sources 快照）。
+
 ## 禁止事项
 - 不要在搜索结果质量差时静默降级。
 - 不要为了凑篇数保留低相关或低质量论文。
