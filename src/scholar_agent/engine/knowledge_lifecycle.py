@@ -50,7 +50,7 @@ VALID_TRANSITIONS: dict[LifecycleState, set[LifecycleState]] = {
 # ── Schema definition ─────────────────────────────────────────────
 
 CARD_TYPES = {"knowledge", "method", "engineering"}
-CONFIDENCE_LEVELS = {"draft", "confirmed", "likely", "unknown"}
+CONFIDENCE_LEVELS = {"draft", "confirmed", "likely", "unknown", "reviewed"}
 ORIGINS = {"local_seed", "manual_web_research", "web_research_with_synthesis", "distilled", "promoted", "imported"}
 
 # F4: domain-specific freshness thresholds (years). Fast-moving fields

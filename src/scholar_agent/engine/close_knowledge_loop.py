@@ -677,8 +677,9 @@ def _build_frontmatter(
         f"domain: {major_domain}",
         "tags:",
     ]
-    if topic:
-        lines.insert(len(lines) - 1, f"topic: {json.dumps(topic, ensure_ascii=False)}")
+    effective_topic = topic or major_domain
+    if effective_topic:
+        lines.insert(len(lines) - 1, f"topic: {json.dumps(effective_topic, ensure_ascii=False)}")
     for tag in tags:
         lines.append(f"  - {tag}")
     if source_urls:
