@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
-from scholar_agent.cli import _mark_card_stale, _run_scan_stale, _scan_stale_cards
+from scholar_agent.cli import _mark_card_stale, _run_scan_stale, _scan_stale_cards, _extract_card_urls
 
 
 def _write_card(path: Path, *, domain: str | None, source_date: str | None, updated_at: str | None = None) -> None:
@@ -235,6 +235,233 @@ class TestRunScanStaleText(unittest.TestCase):
             rc = _run_scan_stale(knowledge_dir=str(empty), write=False, output_format="text")
         self.assertEqual(rc, 0)
         self.assertEqual(out.getvalue().strip(), "no stale cards")
+
+
+def _write_card_with_sources(
+    path: Path,
+    *,
+    domain: str,
+    source_date: str,
+    source_refs: list[str] | None,
+) -> None:
+    """Write a card carrying a source_refs YAML list."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "---",
+        f"id: {path.stem}",
+        "title: Test Card",
+        "type: knowledge",
+        "topic: test",
+        "confidence: confirmed",
+        f"updated_at: {source_date}",
+        f"domain: {domain}",
+        f"source_date: {source_date}",
+    ]
+    if source_refs is not None:
+        lines.append("source_refs:")
+        for url in source_refs:
+            lines.append(f"  - {url}")
+    lines.append("---")
+    lines.append("")
+    lines.append("x " * 200)
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+class TestScanStaleRefresh(unittest.TestCase):
+    """--refresh re-fetches source URLs, writes snapshots, stamps captured_at."""
+
+    def setUp(self) -> None:
+        import tempfile
+
+        self.tmp = Path(tempfile.mkdtemp(prefix="refresh_scan_"))
+        # A stale card with two source URLs.
+        _write_card_with_sources(
+            self.tmp / "ai_old.md",
+            domain="ai",
+            source_date="2020-01-01",
+            source_refs=[
+                "https://example.com/alpha",
+                "https://example.com/beta",
+            ],
+        )
+        # A stale card with no sources at all.
+        _write_card_with_sources(
+            self.tmp / "ai_old_no_sources.md",
+            domain="ai",
+            source_date="2019-01-01",
+            source_refs=None,
+        )
+
+    def test_extract_card_urls_reads_source_refs(self):
+        urls = _extract_card_urls(self.tmp / "ai_old.md")
+        self.assertEqual(
+            urls, ["https://example.com/alpha", "https://example.com/beta"]
+        )
+
+    def test_extract_card_urls_empty_when_no_sources(self):
+        self.assertEqual(_extract_card_urls(self.tmp / "ai_old_no_sources.md"), [])
+
+    def test_refresh_writes_snapshots_and_stamps_captured_at(self):
+        import hashlib
+
+        def _fake_fetch(url: str) -> dict:
+            return {
+                "title": f"Title for {url}",
+                "content_md": f"# Snapshot\n\nbody of {url}",
+                "retrieval_status": "succeeded",
+                "failure_reason": "",
+                "images": [],
+            }
+
+        with mock.patch(
+            "scholar_agent.engine.research_harness.fetch_content",
+            side_effect=_fake_fetch,
+        ) as fc, mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = _run_scan_stale(
+                knowledge_dir=str(self.tmp),
+                write=False,
+                output_format="text",
+                refresh=True,
+            )
+
+        text = out.getvalue()
+        self.assertEqual(rc, 0)
+        # Both source URLs were fetched.
+        self.assertEqual(fc.call_count, 2)
+        # The card-with-sources reports 2/2 refreshed.
+        self.assertIn("refreshed 2/2 sources", text)
+        # The no-sources card reports accordingly.
+        self.assertIn("no sources to refresh", text)
+
+        # Snapshots exist under _snapshots/.
+        snapshots_dir = self.tmp / "_snapshots"
+        self.assertTrue(snapshots_dir.is_dir())
+        files = sorted(p.name for p in snapshots_dir.glob("*.md"))
+        self.assertEqual(len(files), 2)
+        slug_alpha = hashlib.sha1(b"https://example.com/alpha").hexdigest()[:16]
+        self.assertIn(f"{slug_alpha}.md", files)
+
+        # captured_at stamped on the refreshed card, not on the no-sources one.
+        refreshed_fm = (self.tmp / "ai_old.md").read_text(encoding="utf-8").split("---")[1]
+        self.assertIn("captured_at:", refreshed_fm)
+        no_src_fm = (
+            (self.tmp / "ai_old_no_sources.md").read_text(encoding="utf-8").split("---")[1]
+        )
+        self.assertNotIn("captured_at:", no_src_fm)
+
+        # Answer body untouched (no snapshot content leaked into the card body).
+        body = (self.tmp / "ai_old.md").read_text(encoding="utf-8").split("---", 2)[2]
+        self.assertNotIn("body of https", body)
+
+    def test_refresh_json_payload_includes_refreshed(self):
+        with mock.patch(
+            "scholar_agent.engine.research_harness.fetch_content",
+            return_value={
+                "title": "t",
+                "content_md": "c",
+                "retrieval_status": "succeeded",
+                "failure_reason": "",
+                "images": [],
+            },
+        ), mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = _run_scan_stale(
+                knowledge_dir=str(self.tmp),
+                write=False,
+                output_format="json",
+                refresh=True,
+            )
+        payload = json.loads(out.getvalue())
+        self.assertEqual(rc, 0)
+        self.assertIn("refreshed", payload)
+        self.assertEqual(len(payload["refreshed"]), 2)  # two stale cards
+        by_refreshed = {r["refreshed"] for r in payload["refreshed"]}
+        self.assertEqual(by_refreshed, {0, 2})
+
+    def test_refresh_best_effort_skips_failed_fetch(self):
+        # First URL fails (returns failed status, empty content); second succeeds.
+        def _fake_fetch(url: str) -> dict:
+            if url.endswith("/alpha"):
+                return {
+                    "title": "",
+                    "content_md": "",
+                    "retrieval_status": "failed",
+                    "failure_reason": "boom",
+                    "images": [],
+                }
+            return {
+                "title": "beta",
+                "content_md": "ok",
+                "retrieval_status": "succeeded",
+                "failure_reason": "",
+                "images": [],
+            }
+
+        with mock.patch(
+            "scholar_agent.engine.research_harness.fetch_content",
+            side_effect=_fake_fetch,
+        ), mock.patch("sys.stderr", new_callable=io.StringIO), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = _run_scan_stale(
+                knowledge_dir=str(self.tmp),
+                write=False,
+                output_format="text",
+                refresh=True,
+            )
+        self.assertEqual(rc, 0)
+        self.assertIn("refreshed 1/2 sources", out.getvalue())
+        # Only one snapshot written.
+        self.assertEqual(len(list((self.tmp / "_snapshots").glob("*.md"))), 1)
+        # captured_at still stamped because at least one source succeeded.
+        fm = (self.tmp / "ai_old.md").read_text(encoding="utf-8").split("---")[1]
+        self.assertIn("captured_at:", fm)
+
+    def test_refresh_does_not_abort_on_fetch_exception(self):
+        def _fake_fetch(url: str) -> dict:
+            raise RuntimeError("network down")
+
+        with mock.patch(
+            "scholar_agent.engine.research_harness.fetch_content",
+            side_effect=_fake_fetch,
+        ), mock.patch("sys.stderr", new_callable=io.StringIO), \
+             mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = _run_scan_stale(
+                knowledge_dir=str(self.tmp),
+                write=False,
+                output_format="text",
+                refresh=True,
+            )
+        self.assertEqual(rc, 0)
+        self.assertIn("refreshed 0/2 sources", out.getvalue())
+        # No snapshot written, no captured_at stamped (zero successes).
+        self.assertFalse((self.tmp / "_snapshots").exists())
+        fm = (self.tmp / "ai_old.md").read_text(encoding="utf-8").split("---")[1]
+        self.assertNotIn("captured_at:", fm)
+
+    def test_refresh_combinable_with_write(self):
+        with mock.patch(
+            "scholar_agent.engine.research_harness.fetch_content",
+            return_value={
+                "title": "t",
+                "content_md": "c",
+                "retrieval_status": "succeeded",
+                "failure_reason": "",
+                "images": [],
+            },
+        ), mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            rc = _run_scan_stale(
+                knowledge_dir=str(self.tmp),
+                write=True,
+                output_format="text",
+                refresh=True,
+            )
+        self.assertEqual(rc, 0)
+        text = out.getvalue()
+        self.assertIn("refreshed 2/2 sources", text)
+        self.assertIn("marked 2 card(s) with stale: true", text)
+        # stale: true written to both stale cards.
+        for name in ("ai_old.md", "ai_old_no_sources.md"):
+            fm = (self.tmp / name).read_text(encoding="utf-8").split("---")[1]
+            self.assertIn("stale: true", fm)
 
 
 if __name__ == "__main__":

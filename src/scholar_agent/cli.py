@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import hashlib
 import json
 import locale
 import os
@@ -471,6 +472,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--write",
         action="store_true",
         help="Add `stale: true` to the frontmatter of each stale card (default: report only).",
+    )
+    scan_stale_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Incrementally refresh stale cards: re-fetch each source_refs URL, "
+        "store a snapshot under knowledge/_snapshots/ (guards against link rot), "
+        "and update the card's `captured_at` freshness marker. Best-effort per URL. "
+        "Does NOT rewrite the answer body. Combinable with --write.",
     )
     scan_stale_parser.add_argument(
         "--format",
@@ -1438,7 +1447,144 @@ def _mark_card_stale(card_path: Path) -> bool:
     return True
 
 
-def _run_scan_stale(knowledge_dir: str, write: bool, output_format: str) -> int:
+def _extract_card_urls(card_path: Path) -> list[str]:
+    """Return the http(s) URLs from a card's frontmatter ``source_refs``.
+
+    ``source_refs`` is a YAML list of URLs. Falls back to an inline ``sources``
+    list if present. Non-http entries and duplicates are skipped.
+    """
+    from scholar_agent.engine.common import parse_frontmatter
+
+    try:
+        raw = card_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    if not raw.startswith("---\n"):
+        return []
+    meta, _body = parse_frontmatter(raw)
+
+    urls: list[str] = []
+    seen: set[str] = set()
+    for key in ("source_refs", "sources"):
+        val = meta.get(key)
+        if isinstance(val, list):
+            candidates = val
+        elif isinstance(val, str) and val:
+            candidates = [val]
+        else:
+            candidates = []
+        for entry in candidates:
+            url = str(entry).strip().strip("'\"")
+            if url.startswith(("http://", "https://")) and url not in seen:
+                seen.add(url)
+                urls.append(url)
+    return urls
+
+
+def _refresh_card_sources(
+    card_path: Path,
+    knowledge_root: Path,
+    *,
+    now: datetime | None = None,
+) -> tuple[int, int]:
+    """G3: best-effort refresh of one card's source URLs.
+
+    Re-fetches each ``source_refs`` URL via ``fetch_content``, stores a snapshot
+    under ``knowledge_root/_snapshots/<sha1(url)[:16]>.md`` on success, and
+    stamps the card's ``captured_at`` with today's date.
+
+    Returns ``(refreshed, total)`` — the count of URLs whose snapshot was
+    written and the total number of source URLs considered. Does NOT modify the
+    answer body. Per-URL failures are logged as warnings and never raise.
+    """
+    from scholar_agent.engine.research_harness import fetch_content
+
+    current = now or datetime.now()
+    today = current.strftime("%Y-%m-%d")
+
+    urls = _extract_card_urls(card_path)
+    if not urls:
+        return (0, 0)
+
+    snapshots_dir = knowledge_root / "_snapshots"
+
+    refreshed = 0
+    any_success = False
+    for url in urls:
+        try:
+            result = fetch_content(url)
+        except Exception as exc:  # best-effort: never abort the whole sweep
+            sys.stderr.write(f"[scan-stale --refresh] {url} raised {exc}\n")
+            continue
+
+        status = result.get("retrieval_status", "")
+        content_md = result.get("content_md", "") or ""
+        if status in ("succeeded", "cached") and content_md.strip():
+            snapshots_dir.mkdir(parents=True, exist_ok=True)
+            slug = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+            snap_path = snapshots_dir / f"{slug}.md"
+            title = result.get("title", "") or url
+            snap_lines = [
+                "---",
+                f"url: {url}",
+                f"captured_at: {today}",
+                f"title: {title}",
+                f"retrieval_status: {status}",
+                "---",
+                "",
+                content_md.strip(),
+                "",
+            ]
+            snap_path.write_text("\n".join(snap_lines), encoding="utf-8")
+            refreshed += 1
+            any_success = True
+        else:
+            reason = result.get("failure_reason", "")
+            sys.stderr.write(
+                f"[scan-stale --refresh] {url} not snapshotted "
+                f"(status={status}{f': {reason}' if reason else ''})\n"
+            )
+
+    if any_success:
+        _stamp_captured_at(card_path, today)
+    return (refreshed, len(urls))
+
+
+def _stamp_captured_at(card_path: Path, today: str) -> bool:
+    """Set/replace ``captured_at`` in a card's frontmatter.
+
+    Returns True if the file was written.
+    """
+    raw = card_path.read_text(encoding="utf-8")
+    lines = raw.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return False
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+    if end_idx is None:
+        return False
+
+    for i in range(1, end_idx):
+        if lines[i].strip().startswith("captured_at:"):
+            lines[i] = f"captured_at: {today}"
+            card_path.write_text("\n".join(lines), encoding="utf-8")
+            return True
+
+    # Insert right after opening delimiter.
+    lines.insert(1, f"captured_at: {today}")
+    card_path.write_text("\n".join(lines), encoding="utf-8")
+    return True
+
+
+def _run_scan_stale(
+    knowledge_dir: str,
+    write: bool,
+    output_format: str,
+    refresh: bool = False,
+) -> int:
     from scholar_agent.engine import scholar_config as _scholar_config
 
     root = Path(knowledge_dir) if knowledge_dir else Path(_scholar_config.get_knowledge_dir())
@@ -1453,20 +1599,48 @@ def _run_scan_stale(knowledge_dir: str, write: bool, output_format: str) -> int:
     else:
         written = None
 
+    # G3: incrementally refresh stale cards' source snapshots + captured_at.
+    refresh_report: list[dict[str, object]] | None = None
+    if refresh:
+        refresh_report = []
+        for item in stale:
+            card = Path(item["path"])
+            refreshed, total = _refresh_card_sources(card, root)
+            refresh_report.append(
+                {
+                    "path": str(card),
+                    "refreshed": refreshed,
+                    "total": total,
+                }
+            )
+
     if output_format == "json":
-        payload = {
+        payload: dict[str, object] = {
             "status": "ok",
             "knowledge_dir": str(root),
             "stale_count": len(stale),
             "marked": written,
             "stale": stale,
         }
+        if refresh_report is not None:
+            payload["refreshed"] = refresh_report
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
 
     if not stale:
         print("no stale cards")
         return 0
+
+    if refresh:
+        # Under --refresh, lead with the per-card refresh report so link-rot
+        # remediation is the focus; freshness detail stays below it.
+        for r in refresh_report or []:
+            total = r["total"]
+            if total == 0:
+                print(f"{r['path']}  no sources to refresh")
+            else:
+                print(f"{r['path']}  refreshed {r['refreshed']}/{total} sources")
+        print()
 
     for item in stale:
         print(
@@ -1644,6 +1818,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             knowledge_dir=args.knowledge_dir,
             write=args.write,
             output_format=args.format,
+            refresh=args.refresh,
         )
 
     parser.error(f"unknown command: {command}")
