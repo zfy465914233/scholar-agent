@@ -80,3 +80,30 @@ def test_snapshot_filename_is_stable_sha1_of_url(tmp_path, monkeypatch):
 
     expected_digest = hashlib.sha1(b"https://example.com/stable").hexdigest()[:16]
     assert out["snapshot_path"].endswith(f"{expected_digest}.md")
+
+
+def test_snapshot_sources_archives_each_http_url(tmp_path, monkeypatch):
+    """save_research auto-snapshot helper (G2): fetch + archive each http(s) source."""
+    import hashlib
+
+    from scholar_agent import server
+
+    monkeypatch.setattr(server, "get_knowledge_dir", lambda: tmp_path)
+    fetched = []
+
+    def fake_fetch(url):
+        fetched.append(url)
+        return _stub_fetch_content(content_md=f"body of {url}", title="t")
+
+    with mock.patch("scholar_agent.engine.research_harness.fetch_content", side_effect=fake_fetch):
+        server._snapshot_sources(["https://a.com/x", "https://b.com/y", "ftp://skip", "", "not-a-url"])
+
+    # only http(s) urls are fetched
+    assert "https://a.com/x" in fetched and "https://b.com/y" in fetched
+    assert "ftp://skip" not in fetched
+    # each archived under sha1(url)[:16].md with its content
+    for u in ["https://a.com/x", "https://b.com/y"]:
+        digest = hashlib.sha1(u.encode("utf-8")).hexdigest()[:16]
+        snap = tmp_path / "_snapshots" / f"{digest}.md"
+        assert snap.exists(), f"missing snapshot for {u}"
+        assert f"body of {u}" in snap.read_text(encoding="utf-8")

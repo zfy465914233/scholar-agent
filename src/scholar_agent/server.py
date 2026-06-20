@@ -269,6 +269,14 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
     - DO NOT use this tool for trivial facts or one-sentence answers — those are not worth persisting.
     - ALWAYS include a "sources" array with the URLs you referenced during research.
       These are written to the card's frontmatter source_refs for provenance tracking.
+    - evidence_ids in supporting_claims SHOULD cite the source URL (from "sources") —
+      the card renders them as clickable `[host](url)` source links. Opaque ids like
+      "s1" stay as bare text and lose the link.
+    - For first-hand depth: call `fetch_url` on key sources BEFORE writing the answer,
+      so it cites concrete numbers/mechanisms from the actual page (not memory).
+      fetch_url also archives a local snapshot (knowledge/_snapshots/) so dead links
+      stay traceable. save_research best-effort snapshots any listed sources in the
+      background even without an explicit fetch_url.
     - When language="zh" (default), the entire answer field MUST be written in Chinese (中文).
       When language="en", write in English.
 
@@ -379,6 +387,20 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
     index_path = get_index_path()
     _async_reindex(index_path)
 
+    # G2: best-effort snapshot cited sources so dead links stay traceable even
+    # when the caller didn't explicitly fetch_url each one. Background daemon
+    # thread — never delays the tool response (network fetches can be slow).
+    try:
+        _src_list = answer_data.get("sources") or []
+        if isinstance(_src_list, list) and _src_list:
+            threading.Thread(
+                target=_snapshot_sources,
+                args=([str(s) for s in _src_list if s],),
+                daemon=True,
+            ).start()
+    except Exception:
+        pass
+
     # F2: self-check the card we just wrote (frontmatter schema + body density).
     card_quality: dict[str, Any] = {"errors": [], "warnings": []}
     try:
@@ -402,6 +424,55 @@ def save_research(query: str, answer_json: str, domain: str = "", language: str 
     )
 
 
+def _persist_snapshot(url: str, content_md: str, title: str = "") -> tuple[str, str]:
+    """G2: archive fetched content to knowledge/_snapshots/<sha1(url)>.md.
+
+    Returns (snapshot_path, captured_at) — empty strings on failure. Shared by
+    fetch_url and save_research (auto-snapshot of sources) so dead links stay
+    traceable whether or not the caller used fetch_url explicitly.
+    """
+    if not content_md:
+        return "", ""
+    try:
+        import hashlib
+
+        snap_dir = get_knowledge_dir() / "_snapshots"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+        captured_at = datetime.now().strftime("%Y-%m-%d")
+        snap_path = snap_dir / f"{digest}.md"
+        snap_path.write_text(
+            f"---\nurl: {url}\ncaptured_at: {captured_at}\ntitle: {title}\n---\n\n{content_md}\n",
+            encoding="utf-8",
+        )
+        return str(snap_path), captured_at
+    except Exception:
+        logger.warning("failed to persist snapshot for %s", url, exc_info=True)
+        return "", ""
+
+
+def _snapshot_sources(urls: list[str]) -> None:
+    """G2 background helper: best-effort fetch + snapshot each source URL.
+
+    Used by save_research to archive cited sources even when the caller didn't
+    explicitly fetch_url each one. Runs in a daemon thread so it never delays
+    the tool response.
+    """
+    try:
+        from scholar_agent.engine.research_harness import fetch_content
+
+        for url in urls:
+            url = (url or "").strip()
+            if not url or not url.startswith(("http://", "https://")):
+                continue
+            result = fetch_content(url)
+            content_md = result.get("content_md", "") or ""
+            if content_md:
+                _persist_snapshot(url, content_md, result.get("title", "") or "")
+    except Exception:
+        logger.warning("background source snapshot failed", exc_info=True)
+
+
 def _fetch_url_impl(url: str, max_chars: int = 6000) -> dict:
     """G5: fetch a web URL → main content as markdown + persist a local snapshot (G2).
 
@@ -423,24 +494,7 @@ def _fetch_url_impl(url: str, max_chars: int = 6000) -> dict:
     content_md = result.get("content_md", "") or ""
     title = result.get("title", "") or ""
 
-    snapshot_path = ""
-    captured_at = ""
-    if content_md:
-        try:
-            import hashlib
-
-            snap_dir = get_knowledge_dir() / "_snapshots"
-            snap_dir.mkdir(parents=True, exist_ok=True)
-            digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
-            captured_at = datetime.now().strftime("%Y-%m-%d")
-            snap_path = snap_dir / f"{digest}.md"
-            snap_path.write_text(
-                f"---\nurl: {url}\ncaptured_at: {captured_at}\ntitle: {title}\n---\n\n{content_md}\n",
-                encoding="utf-8",
-            )
-            snapshot_path = str(snap_path)
-        except Exception:
-            logger.warning("failed to persist snapshot for %s", url, exc_info=True)
+    snapshot_path, captured_at = _persist_snapshot(url, content_md, title)
 
     return {
         "url": url,
