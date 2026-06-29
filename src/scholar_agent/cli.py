@@ -1020,7 +1020,7 @@ def _run_serve_mcp() -> int:
 
 def _run_serve_http() -> int:
     from scholar_agent import __version__
-    from scholar_agent.server import start_local_server
+    from scholar_agent.adapters.http_server import start_local_server
 
     sys.stderr.write(f"\nScholar Agent v{__version__} — HTTP Sync Server\n\n")
     sys.stderr.flush()

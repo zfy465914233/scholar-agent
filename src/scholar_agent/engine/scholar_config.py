@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from scholar_agent.config.loader import ConfigResolution
@@ -61,6 +61,16 @@ def get_knowledge_dir() -> Path:
 
 def get_index_path() -> Path:
     return Path(load_config()["index_path"])
+
+
+def _configured_index_path(config: dict[str, Any]) -> Path:
+    """Resolve the index path from a config dict, falling back to the default.
+
+    Shared by the MCP tool layer (``import_paperpulse_note``) and the HTTP sync
+    server (``/import-markdown``) so both agree on where the index lives.
+    """
+    configured = str(config.get("index_path", "")).strip()
+    return Path(configured) if configured else get_index_path()
 
 
 def get_scholar_dir() -> Path:

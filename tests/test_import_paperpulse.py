@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import unittest
 from pathlib import Path
@@ -65,7 +66,7 @@ class TestImportPaperPulse(unittest.TestCase):
         mock_response.read.return_value = b"---\ntitle: Mocked Paper\n---\nBody content"
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
-        res = import_paperpulse_note("test-paper-123")
+        res = asyncio.run(import_paperpulse_note("test-paper-123"))
         self.assertIn("Successfully imported paper note", res)
 
         # Check file was written to paper-notes under title folder
@@ -91,7 +92,7 @@ class TestImportPaperPulse(unittest.TestCase):
         self.assertIn("CLI Mocked Paper", card_file.read_text(encoding="utf-8"))
 
     def test_allowed_origin_matching(self) -> None:
-        from scholar_agent.server import _host_header_is_loopback, _is_allowed_origin, _is_loopback_peer
+        from scholar_agent.adapters.http_server import _host_header_is_loopback, _is_allowed_origin, _is_loopback_peer
 
         self.assertTrue(_is_allowed_origin("https://mindpulse.top"))
         self.assertTrue(_is_allowed_origin("http://localhost:3000"))
@@ -114,7 +115,7 @@ class TestImportPaperPulse(unittest.TestCase):
         self.assertFalse(_host_header_is_loopback("127.0.0.1.attacker.com"))
 
     def test_configured_index_path_falls_back_when_empty(self) -> None:
-        from scholar_agent.server import _configured_index_path
+        from scholar_agent.engine.scholar_config import _configured_index_path
 
         self.assertEqual(self.index_path, _configured_index_path({}))
         self.assertEqual(self.index_path, _configured_index_path({"index_path": ""}))
@@ -128,7 +129,7 @@ class TestImportPaperPulse(unittest.TestCase):
         import urllib.request
         from http.server import HTTPServer
 
-        from scholar_agent.server import ScholarAgentLocalServer
+        from scholar_agent.adapters.http_server import ScholarAgentLocalServer
 
         # Start server on free port
         server = HTTPServer(("127.0.0.1", 0), ScholarAgentLocalServer)
