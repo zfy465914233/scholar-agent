@@ -82,6 +82,11 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
         # Prevent printing to stdout to avoid corrupting MCP JSON-RPC protocol
         logger.info(format % args)
 
+    def _origin_is_forbidden(self) -> bool:
+        """True when an explicit Origin header is present but not allow-listed."""
+        origin = self.headers.get("Origin")
+        return origin is not None and not _is_allowed_origin(origin)
+
     def do_OPTIONS(self):
         origin = self.headers.get("Origin")
         if _is_allowed_origin(origin):
@@ -99,11 +104,11 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_GET(self):
-        origin = self.headers.get("Origin")
-        if not _is_allowed_origin(origin) and origin is not None:
+        if self._origin_is_forbidden():
             self.send_response(403)
             self.end_headers()
             return
+        origin = self.headers.get("Origin")
 
         if self.path == "/health":
             self.send_response(200)
@@ -117,11 +122,11 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        origin = self.headers.get("Origin")
-        if not _is_allowed_origin(origin) and origin is not None:
+        if self._origin_is_forbidden():
             self.send_response(403)
             self.end_headers()
             return
+        origin = self.headers.get("Origin")
 
         if self.path == "/import-markdown":
             # Cap body size at 10 MB to prevent OOM
@@ -204,7 +209,6 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                     self.send_error_response(400, msg, origin)
                     return
 
-                config = load_config()
                 index_path = _configured_index_path(config)
                 _async_reindex(index_path)
 
@@ -222,21 +226,20 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
         else:
             self.send_error_response(404, "Not Found", origin)
 
-    def send_success_response(self, origin, data):
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        if origin:
-            self.send_header("Access-Control-Allow-Origin", origin)
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
-
-    def send_error_response(self, code, message, origin=None):
+    def _respond(self, code: int, payload: dict, origin: str | None = None) -> None:
+        """Write a JSON response with an optional CORS header (shared by success/error)."""
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         if origin:
             self.send_header("Access-Control-Allow-Origin", origin)
         self.end_headers()
-        self.wfile.write(json.dumps({"error": message}).encode("utf-8"))
+        self.wfile.write(json.dumps(payload).encode("utf-8"))
+
+    def send_success_response(self, origin, data):
+        self._respond(200, data, origin)
+
+    def send_error_response(self, code, message, origin=None):
+        self._respond(code, {"error": message}, origin)
 
 
 def start_local_server() -> int:

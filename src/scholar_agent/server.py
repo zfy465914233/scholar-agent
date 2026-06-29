@@ -97,6 +97,7 @@ _DEFAULT_TOOL_TIMEOUTS: dict[str, float] = {
     "download_paper": 300.0,
     "daily_recommend": 1800.0,
     "fetch_url": 60.0,
+    "ingest_source": 60.0,
     "import_paperpulse_note": 120.0,
 }
 
@@ -677,7 +678,9 @@ def capture_answer(query: str, answer: str, tags: str = "", language: str = "zh"
 
 
 @tool
-def ingest_source(source: str, title: str = "", tags: str = "", language: str = "zh") -> str:
+async def ingest_source(
+    source: str, title: str = "", tags: str = "", language: str = "zh", ctx: Context | None = None
+) -> str:
     """Ingest a URL or raw text into the knowledge base as a draft card.
 
     For URLs: fetches the page content, extracts text, and saves as a card.
@@ -695,66 +698,70 @@ def ingest_source(source: str, title: str = "", tags: str = "", language: str = 
             When "zh" and providing raw text, ensure the content is in Chinese.
             For URL sources, the content language is determined by the original page.
     """
-    if not source or not source.strip():
-        return json.dumps({"error": "source must not be empty"})
 
-    is_url = source.strip().startswith(("http://", "https://"))
+    def _impl() -> str:
+        if not source or not source.strip():
+            return json.dumps({"error": "source must not be empty"})
 
-    if is_url:
-        from scholar_agent.engine.research_harness import fetch_content
+        is_url = source.strip().startswith(("http://", "https://"))
 
-        result = fetch_content(source.strip())
-        if result["retrieval_status"] == "failed":
-            return json.dumps({"error": f"Failed to fetch URL: {result.get('failure_reason', 'unknown')}"})
-        content = result["content_md"]
-        auto_title = result.get("title", "") or title or source.strip()[:80]
-    else:
-        content = source.strip()
-        auto_title = title or content.split("\n")[0][:80]
+        if is_url:
+            from scholar_agent.engine.research_harness import fetch_content
 
-    if not auto_title or not auto_title.strip():
-        auto_title = f"untitled-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+            result = fetch_content(source.strip())
+            if result["retrieval_status"] == "failed":
+                return json.dumps({"error": f"Failed to fetch URL: {result.get('failure_reason', 'unknown')}"})
+            content = result["content_md"]
+            auto_title = result.get("title", "") or title or source.strip()[:80]
+        else:
+            content = source.strip()
+            auto_title = title or content.split("\n")[0][:80]
 
-    if not content:
-        return json.dumps({"error": "No content extracted from source"})
+        if not auto_title or not auto_title.strip():
+            auto_title = f"untitled-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
 
-    answer_data = {
-        "answer": content,
-        "supporting_claims": [],
-        "inferences": [],
-        "uncertainty": ["Ingested source — not yet verified or synthesized"],
-        "missing_evidence": ["Cross-reference with other sources needed"],
-        "suggested_next_steps": ["Verify key claims", "Link to related cards"],
-        "language": language,
-    }
+        if not content:
+            return json.dumps({"error": "No content extracted from source"})
 
-    if tags and tags.strip():
-        answer_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
-    if is_url:
-        answer_data["tags"] = [*answer_data.get("tags", []), "ingested-url"]
+        answer_data = {
+            "answer": content,
+            "supporting_claims": [],
+            "inferences": [],
+            "uncertainty": ["Ingested source — not yet verified or synthesized"],
+            "missing_evidence": ["Cross-reference with other sources needed"],
+            "suggested_next_steps": ["Verify key claims", "Link to related cards"],
+            "language": language,
+        }
 
-    try:
-        card_path = build_knowledge_card(
-            auto_title, answer_data, None, get_knowledge_dir(), index_path=get_index_path()
+        if tags and tags.strip():
+            answer_data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+        if is_url:
+            answer_data["tags"] = [*answer_data.get("tags", []), "ingested-url"]
+
+        try:
+            card_path = build_knowledge_card(
+                auto_title, answer_data, None, get_knowledge_dir(), index_path=get_index_path()
+            )
+        except Exception as e:
+            return json.dumps({"error": f"Failed to write card: {e}"})
+
+        index_path = get_index_path()
+        _async_reindex(index_path)
+
+        return json.dumps(
+            {
+                "status": "ok",
+                "card_path": str(card_path),
+                "reindexed": False,
+                "index_pending_refresh": True,
+                "source_type": "url" if is_url else "text",
+                "title": auto_title,
+            },
+            ensure_ascii=False,
+            indent=2,
         )
-    except Exception as e:
-        return json.dumps({"error": f"Failed to write card: {e}"})
 
-    index_path = get_index_path()
-    _async_reindex(index_path)
-
-    return json.dumps(
-        {
-            "status": "ok",
-            "card_path": str(card_path),
-            "reindexed": False,
-            "index_pending_refresh": True,
-            "source_type": "url" if is_url else "text",
-            "title": auto_title,
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
+    return await _run_blocking(_impl, tool_name="ingest_source", ctx=ctx)
 
 
 @tool
