@@ -203,7 +203,9 @@ class GovernanceCLITest(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertEqual(0, result.returncode, msg=result.stderr)
-        self.assertIn("cards", result.stdout.lower())
+        # duplicates 命令输出 "Found N potential duplicate(s):" — 断言核心语义词,
+        # 不绑定易变的人话措辞(原 "cards" 断言在措辞调整后失效)。
+        self.assertIn("duplicate", result.stdout.lower())
 
     def test_transitions_command(self) -> None:
         result = subprocess.run(
