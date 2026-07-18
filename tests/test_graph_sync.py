@@ -297,6 +297,7 @@ class TestSyncFlow:
         assert result["status"] == "partial"
         assert result["matched_papers"] == 2
         assert result["relations_upserted"] == 3  # all from the successful context
+        assert result["relations_pruned"] == 0  # partial fetch must NOT prune — would delete valid cloud edges
         assert result["warnings"]
         # Failing context was retried (_RETRY_MAX + 1 attempts).
         bert_calls = [u for u in session.calls if "uuid-bert" in u]

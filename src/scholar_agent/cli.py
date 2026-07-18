@@ -1069,6 +1069,10 @@ def _run_daily_process(date_str: str, dry_run: bool, output_format: str) -> int:
     )
 
     papers = result.get("papers", [])
+    # papers_raw carries pipeline-internal fields (best_domain, _impact_score,
+    # domain_keywords, …) the note-builders read; `papers` is the clean public
+    # view. Same pattern as mcp_academic.daily_recommend (Batch 5).
+    papers_raw = result.get("papers_raw") or papers
     pipeline_stats = result.get("stats") if result.get("unified_pipeline") else None
     warnings = result.get("warnings", [])
 
@@ -1084,14 +1088,14 @@ def _run_daily_process(date_str: str, dry_run: bool, output_format: str) -> int:
         _print_payload(payload, output_format)
         return 0
 
-    # Generate per-paper notes
-    paper_note_stems = generate_paper_notes_for_daily(papers, str(get_paper_notes_dir()))
+    # Generate per-paper notes (note-builders read internal fields → raw view)
+    paper_note_stems = generate_paper_notes_for_daily(papers_raw, str(get_paper_notes_dir()))
 
     # Build daily note
     output_dir = str(get_daily_notes_dir())
     note_path = build_daily_note(
         date_str_out,
-        papers,
+        papers_raw,
         output_dir,
         tracks=result.get("tracks"),
         paper_note_stems=paper_note_stems or None,

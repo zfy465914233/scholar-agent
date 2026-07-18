@@ -335,14 +335,16 @@ def _sync(
 
     # Reconcile to the cloud snapshot (I4/I5): upsert the edges seen this run,
     # then prune paperpulse edges no longer present. Manual edges are never
-    # touched (prune is source-scoped to 'paperpulse'). UUID-only orphans and
-    # cloud-deleted edges are dropped so the local set converges.
+    # touched (prune is source-scoped to 'paperpulse'). Pruning ONLY happens on
+    # a fully-successful fetch — a partial run is missing edges that still exist
+    # in the cloud (their context fetch failed), so pruning would delete valid
+    # data. Rerun the full sync to reconcile.
     expected_keys: set[tuple[str | None, str | None, str | None]] = set()
     with store.transaction():
         for relation in relations:
             store.upsert_relation(relation)
             expected_keys.add((relation["source_key"], relation["target_key"], relation["rel_type"]))
-        pruned = store.prune_paperpulse_relations(expected_keys)
+        pruned = store.prune_paperpulse_relations(expected_keys) if failures == 0 else 0
 
     result: dict[str, Any] = {
         "status": "ok" if failures == 0 else "partial",
@@ -352,5 +354,8 @@ def _sync(
         "cloud_nodes": cloud_nodes,
     }
     if failures:
-        result["warnings"] = [f"context fetch failed for {failures} of {len(matched)} matched paper(s)"]
+        result["warnings"] = [
+            f"context fetch failed for {failures} of {len(matched)} matched paper(s)",
+            "reconcile skipped — rerun to prune edges removed from the cloud",
+        ]
     return result
