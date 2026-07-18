@@ -69,12 +69,31 @@ def _stale_flag(metadata: dict[str, object]) -> bool:
 def _trust_tier(review_status: str, metadata: dict[str, object]) -> str:
     """Retrieval-facing trust tier: ``deprecated`` (filtered out) → ``stale``
     (score-penalized) → ``normal``. Drives retrieval fidelity (I3): known-bad
-    cards never surface as matches; stale ones sink below fresh ones."""
-    if review_status == "deprecated":
+    cards never surface as matches; stale ones sink below fresh ones.
+
+    Checks both the normalized *review_status* (which parse_card derives as
+    confidence-or-review_status) and the raw frontmatter fields directly, so an
+    explicit ``review_status`` is never masked by a ``confidence`` value — e.g.
+    ``confidence: confirmed`` + ``review_status: deprecated`` must still be
+    deprecated."""
+    rs_raw = str(metadata.get("review_status", "")).strip().lower()
+    conf_raw = str(metadata.get("confidence", "")).strip().lower()
+    if review_status == "deprecated" or rs_raw == "deprecated" or conf_raw == "deprecated":
         return "deprecated"
-    if review_status == "stale" or _stale_flag(metadata):
+    if review_status == "stale" or rs_raw == "stale" or conf_raw == "stale" or _stale_flag(metadata):
         return "stale"
     return "normal"
+
+
+def _is_deprecated_doc(doc: dict[str, object]) -> bool:
+    """True when a parsed card sits in the ``deprecated`` trust tier.
+
+    Deprecated is a terminal lifecycle state (I4): the card is known-bad and
+    must never surface in retrieval. Filtering happens here at the index layer
+    so such cards never enter ``index.json``; the source ``.md`` is left on
+    disk untouched for provenance (I2).
+    """
+    return doc.get("trust") == "deprecated"
 
 
 def parse_card(path: Path, knowledge_root: Path | None = None) -> dict[str, object]:
@@ -249,8 +268,18 @@ _INDEX_SCHEMA_VERSION = 2
 
 
 def build_index(knowledge_root: Path, extra_dirs: list[Path] | None = None) -> dict[str, object]:
-    """Build a full index from scratch."""
-    documents = [parse_card(path, knowledge_root=knowledge_root) for path in iter_cards(knowledge_root, extra_dirs)]
+    """Build a full index from scratch.
+
+    Deprecated cards (``trust == "deprecated"``) are dropped here so the
+    terminal lifecycle state is enforced at the index layer — they never enter
+    ``index.json`` and thus can never be retrieved. The source ``.md`` files
+    remain on disk for traceability (I2).
+    """
+    parsed = [parse_card(path, knowledge_root=knowledge_root) for path in iter_cards(knowledge_root, extra_dirs)]
+    documents = [doc for doc in parsed if not _is_deprecated_doc(doc)]
+    dropped = len(parsed) - len(documents)
+    if dropped:
+        logger.info("build_index: dropped %d deprecated card(s) from index", dropped)
     _attach_backlinks(documents)
     return {
         "schema_version": _INDEX_SCHEMA_VERSION,
@@ -323,6 +352,10 @@ def build_index_incremental(
             new_docs[abs_key] = parse_card(path, knowledge_root=knowledge_root)
 
     documents = list(new_docs.values())
+    # Enforce the deprecated terminal state at the index layer (I4): even if a
+    # deprecated doc lingers in an older persisted index, it is dropped here so
+    # it can never be retrieved. Source files stay on disk (I2).
+    documents = [doc for doc in documents if not _is_deprecated_doc(doc)]
     _attach_backlinks(documents)
 
     removed = len(existing_docs) - len(existing_docs.keys() & current_manifest.keys())

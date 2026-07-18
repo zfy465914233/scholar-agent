@@ -4,7 +4,9 @@ Tests validate_card, transition_card, and detect_duplicates using direct
 imports (no subprocess).
 """
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from scholar_agent.engine.knowledge_lifecycle import (
     CONFIDENCE_LEVELS,
@@ -491,6 +493,80 @@ class TestLifecycleStateEnum(unittest.TestCase):
         self.assertEqual(LifecycleState.TRUSTED.value, "trusted")
         self.assertEqual(LifecycleState.STALE.value, "stale")
         self.assertEqual(LifecycleState.DEPRECATED.value, "deprecated")
+
+
+# ── deprecated terminal state at the index layer (I4) ──────────────
+
+
+class TestDeprecatedExcludedFromIndex(unittest.TestCase):
+    """The deprecated terminal state must land at the index layer.
+
+    A deprecated card is known-bad (I4) and must never enter ``index.json`` —
+    that way it can never be retrieved. The source ``.md`` stays on disk for
+    provenance (I2). Guards the build_index / build_index_incremental filter.
+    """
+
+    @staticmethod
+    def _card(directory: Path, name: str, *, review_status: str | None = None, confidence: str | None = None) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        body = "deep learning survey methods fundamentals " * 10
+        lines = [
+            "---",
+            f"id: {name[:-3]}",
+            "title: T",
+            "type: knowledge",
+            "topic: x",
+        ]
+        if confidence is not None:
+            lines.append(f"confidence: {confidence}")
+        if review_status is not None:
+            lines.append(f"review_status: {review_status}")
+        lines += ["---", "", body]
+        path = directory / name
+        path.write_text("\n".join(lines), encoding="utf-8")
+        return path
+
+    def test_build_index_drops_deprecated_card(self) -> None:
+        from scholar_agent.engine.local_index import build_index
+
+        root = Path(tempfile.mkdtemp(prefix="dep_idx_"))
+        self._card(root, "good.md", confidence="confirmed")
+        # confidence == "deprecated" => trust tier deprecated
+        self._card(root, "bad.md", confidence="deprecated")
+        payload = build_index(root, extra_dirs=[])
+        ids = {d["doc_id"] for d in payload["documents"]}
+        self.assertIn("good", ids)
+        self.assertNotIn("bad", ids)  # deprecated never enters the index
+
+    def test_build_index_drops_deprecated_review_status(self) -> None:
+        from scholar_agent.engine.local_index import build_index
+
+        root = Path(tempfile.mkdtemp(prefix="dep_idx_"))
+        self._card(root, "good.md", review_status="reviewed", confidence="confirmed")
+        self._card(root, "bad.md", review_status="deprecated", confidence="confirmed")
+        payload = build_index(root, extra_dirs=[])
+        ids = {d["doc_id"] for d in payload["documents"]}
+        self.assertIn("good", ids)
+        self.assertNotIn("bad", ids)
+
+    def test_incremental_index_drops_deprecated(self) -> None:
+        from scholar_agent.engine.local_index import build_index_incremental
+
+        root = Path(tempfile.mkdtemp(prefix="dep_inc_"))
+        idx = root / "index.json"
+        self._card(root, "good.md", confidence="confirmed")
+        self._card(root, "bad.md", confidence="deprecated")
+        # build_index_incremental returns the payload (the caller persists
+        # index.json); deprecated cards must be absent from it on every pass.
+        payload = build_index_incremental(root, idx, extra_dirs=[])
+        ids = {d["doc_id"] for d in payload["documents"]}
+        self.assertNotIn("bad", ids)
+        self.assertIn("good", ids)
+        # Second pass (manifest now exists): a deprecated entry that could
+        # linger from an older persisted index is re-filtered here too.
+        payload = build_index_incremental(root, idx, extra_dirs=[])
+        ids = {d["doc_id"] for d in payload["documents"]}
+        self.assertNotIn("bad", ids)
 
 
 if __name__ == "__main__":

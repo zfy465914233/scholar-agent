@@ -914,15 +914,27 @@ def register_academic_tools(
                 return json.dumps({"error": str(e), "papers": []})
 
             papers = result.get("papers", [])
+            # papers_raw is the legitimate exit channel for pipeline-internal
+            # scoring fields (_impact_score, _innovation_final_score,
+            # best_domain, domain_keywords, …). It is parallel to `papers`
+            # (same order, same length). The clean public view is `papers`;
+            # never reach into _-prefixed or internal fields on `papers` itself
+            # — a pipeline rename would silently zero the summary otherwise.
+            papers_raw = result.get("papers_raw", [])
             date_str = result.get("date", "")
             skipped = result.get("skipped", 0)
             tracks = result.get("tracks")
             pipeline_stats = result.get("stats") if result.get("unified_pipeline") else None
 
+            # Note-builders read internal fields (best_domain, _impact_score,
+            # domain_keywords, …) — feed them the raw view, not the clean
+            # public `papers` view which deliberately omits those fields.
+            note_source = papers_raw if papers_raw else papers
+
             # Generate per-paper skeleton notes in paper-notes/
             paper_note_stems: dict[str, str] = {}
             try:
-                paper_note_stems = generate_paper_notes_for_daily(papers, paper_notes_dir, language=lang_val)
+                paper_note_stems = generate_paper_notes_for_daily(note_source, paper_notes_dir, language=lang_val)
             except Exception:
                 logger.warning("Per-paper note generation partially failed", exc_info=True)
 
@@ -931,7 +943,7 @@ def register_academic_tools(
             try:
                 note_path = build_daily_note(
                     date_str,
-                    papers,
+                    note_source,
                     output_dir,
                     language=lang_val,
                     tracks=tracks,
@@ -959,32 +971,37 @@ def register_academic_tools(
             except Exception:
                 logger.warning("Auto wiki-linking failed", exc_info=True)
 
-            # Identify papers for deep analysis
+            # Identify papers for deep analysis. Public fields come from the
+            # clean `papers` view; internal scoring signals (_impact_score,
+            # _innovation_final_score) come from the parallel `papers_raw`
+            # exit channel — never from `papers` itself.
             top_for_analysis = []
-            for p in papers[:4]:
+            for idx, p in enumerate(papers[:4]):
+                raw = papers_raw[idx] if idx < len(papers_raw) else {}
                 top_for_analysis.append(
                     {
                         "title": p.get("title", ""),
                         "arxiv_id": p.get("arxiv_id", ""),
                         "track": p.get("track", ""),
-                        "impact_score": round(p.get("_impact_score", 0), 2),
-                        "innovation_score": round(p.get("_innovation_final_score", 0), 3),
+                        "impact_score": round(raw.get("_impact_score", 0) or 0, 2),
+                        "innovation_score": round(raw.get("_innovation_final_score", 0) or 0, 3),
                         "recommendation_score": p.get("scores", {}).get("recommendation", 0),
                     }
                 )
 
             paper_summaries = []
-            for p in papers:
+            for idx, p in enumerate(papers):
+                raw = papers_raw[idx] if idx < len(papers_raw) else {}
                 entry = {
                     "title": p.get("title", ""),
                     "arxiv_id": p.get("arxiv_id", ""),
                     "track": p.get("track", ""),
-                    "domain": p.get("best_domain", ""),
+                    "domain": p.get("domain", ""),
                 }
-                if p.get("_impact_score") is not None:
-                    entry["impact_score"] = round(p["_impact_score"], 2)
-                if p.get("_innovation_final_score") is not None:
-                    entry["innovation_score"] = round(p["_innovation_final_score"], 3)
+                if raw.get("_impact_score") is not None:
+                    entry["impact_score"] = round(raw["_impact_score"], 2)
+                if raw.get("_innovation_final_score") is not None:
+                    entry["innovation_score"] = round(raw["_innovation_final_score"], 3)
                 if p.get("scores", {}).get("recommendation"):
                     entry["recommendation_score"] = p["scores"]["recommendation"]
                 paper_summaries.append(entry)

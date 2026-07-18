@@ -138,12 +138,24 @@ class TestGenerateRecommendationsE2E:
                 paper_notes_dir=str(tmp_path / "notes"),
             )
 
-        # Top-level schema keys
-        for key in ("schema_version", "date", "papers", "stats", "warnings", "skipped", "total_found"):
+        # Top-level schema keys — the core contract must always be present.
+        for key in (
+            "schema_version",
+            "date",
+            "papers",
+            "papers_raw",
+            "stats",
+            "warnings",
+            "skipped",
+            "total_found",
+        ):
             assert key in result, f"missing top-level key: {key}"
 
-        # Per-paper schema keys
-        required = {
+        # Per-paper public schema — EXACT key set. No pipeline-internal or
+        # source-alias field may leak into the public `papers` view. This is
+        # the I2 contract: any internal field rename that silently leaks
+        # through must fail here.
+        expected_paper_keys = {
             "arxiv_id",
             "title",
             "abstract",
@@ -156,15 +168,78 @@ class TestGenerateRecommendationsE2E:
             "track",
             "domain",
         }
+        # Internal/source fields that must NEVER appear in a public paper dict.
+        forbidden_internal_keys = {
+            "_heuristic_score",
+            "_impact_score",
+            "_innovation_final_score",
+            "_db_id",
+            "_llm_comment",
+            "best_domain",
+            "domain_keywords",
+            "relevance_score",
+            "paper_id",
+            "summary",
+            "published",
+            "publicationDate",
+            # llm_* live under scores, never at the top level
+            "llm_novelty",
+            "llm_credibility",
+            "llm_depth",
+            "llm_rigor",
+        }
         for p in result["papers"]:
-            assert required.issubset(p.keys()), f"missing paper keys: {required - p.keys()}"
-            assert "fit" in p["scores"]
-            assert "recommendation" in p["scores"]
+            actual = set(p.keys())
+            assert actual == expected_paper_keys, (
+                f"public paper keys must be exactly the schema set; "
+                f"unexpected={actual - expected_paper_keys}, "
+                f"missing={expected_paper_keys - actual}"
+            )
+            # Belt-and-suspenders: no internal field by name, ever.
+            leaked = actual & forbidden_internal_keys
+            assert not leaked, f"internal field(s) leaked into public papers: {leaked}"
+            # No key with an underscore prefix (catches future internal fields).
+            underscored = {k for k in actual if k.startswith("_")}
+            assert not underscored, f"underscore-prefixed field(s) leaked: {underscored}"
+            assert set(p["scores"].keys()) >= {"fit", "recommendation"}
 
-        # datetime values are normalized — the whole result is JSON-safe
+        # papers_raw is the legitimate exit channel for shell consumers
+        # (note-builders + impact/innovation summaries). It must be parallel
+        # to `papers` and carry the internal scoring signals the public view
+        # deliberately omits — proving the split, not just the absence.
+        raw_view = result["papers_raw"]
+        assert len(raw_view) == len(result["papers"]), "papers_raw must be parallel to papers"
+        internal_markers = {
+            "_heuristic_score",
+            "_impact_score",
+            "_innovation_final_score",
+            "best_domain",
+            "domain_keywords",
+        }
+        if raw_view:
+            raw_keys = set(raw_view[0].keys())
+            assert raw_keys & internal_markers, (
+                "papers_raw should carry pipeline-internal fields for shell consumers; "
+                f"got keys={sorted(raw_keys)}"
+            )
+            # The clean view must not share any internal marker with the raw view.
+            clean_keys = set(result["papers"][0].keys())
+            assert not (clean_keys & internal_markers), (
+                "internal marker leaked into clean papers: "
+                f"{clean_keys & internal_markers}"
+            )
+
+        # datetime values are normalized — the whole result (papers AND
+        # papers_raw) is JSON-safe and round-trips through json.dumps.
         encoded = json.dumps(result, ensure_ascii=False)
         assert json.loads(encoded)["schema_version"] == SCHEMA_VERSION
         assert isinstance(result["papers"][0]["published_date"], str)
+        # No datetime survived anywhere in the raw view either.
+        for raw in raw_view:
+            for value in raw.values():
+                assert not isinstance(value, datetime), (
+                    f"datetime leaked in papers_raw entry: {raw.get('arxiv_id')}"
+                )
 
     def test_empty_fetch_returns_stable_schema(self, tmp_path):
         with (

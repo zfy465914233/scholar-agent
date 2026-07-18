@@ -561,7 +561,8 @@ def build_parser() -> argparse.ArgumentParser:
     dead_links_parser = subparsers.add_parser(
         "report-dead-links",
         help="Diagnose dead source URLs (404/410/connection failure) across "
-        "knowledge cards. Read-only — never edits cards or snapshots.",
+        "knowledge cards. Read-only by default; pass --write to mark each "
+        "affected card review_status: stale.",
     )
     dead_links_parser.add_argument(
         "--knowledge-dir",
@@ -584,6 +585,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--offline",
         action="store_true",
         help="Skip all network probes; mark every URL as skipped.",
+    )
+    dead_links_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="Mark each card citing a dead URL with review_status: stale "
+        "(default: report only). draft/deprecated cards are skipped.",
     )
     dead_links_parser.add_argument(
         "--format",
@@ -1418,8 +1425,13 @@ def _run_report_dead_links(
     concurrency: int = 8,
     timeout: float = 10.0,
     offline: bool = False,
+    write: bool = False,
 ) -> int:
-    """Diagnose dead source URLs across knowledge cards. Read-only."""
+    """Diagnose dead source URLs across knowledge cards.
+
+    Read-only unless ``write=True``, in which case cards citing a dead URL are
+    marked ``review_status: stale`` (lifecycle-permitting).
+    """
     from scholar_agent.engine import scholar_config as _scholar_config
     from scholar_agent.engine.dead_link_check import check_dead_links
 
@@ -1438,6 +1450,7 @@ def _run_report_dead_links(
         concurrency=concurrency,
         timeout=timeout,
         offline=offline,
+        write=write,
     )
 
     if output_format == "json":
@@ -1472,6 +1485,8 @@ def _run_report_dead_links(
         for it in items:
             print(f"  [{it['status_code']}] {it['url']}")
         print()
+    if write:
+        print(f"Marked {report['written']} card(s) with review_status: stale")
     return 0
 
 
@@ -1605,6 +1620,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             concurrency=args.concurrency,
             timeout=args.timeout,
             offline=args.offline,
+            write=args.write,
         )
 
     if command == "scan-stale":

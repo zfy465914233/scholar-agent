@@ -1,9 +1,10 @@
 """Dead-link diagnosis for knowledge card sources.
 
-Read-only check of every ``source_refs`` URL across the knowledge base.
-Classifies each unique URL as ``ok`` / ``dead`` / ``transient`` / ``blocked`` /
-``skipped`` / ``unknown``, deduplicating across cards so the same URL is probed
-at most once and the result is fanned out to every card that cites it.
+Read-only by default: checks every ``source_refs`` URL across the knowledge
+base. Classifies each unique URL as ``ok`` / ``dead`` / ``transient`` /
+``blocked`` / ``skipped`` / ``unknown``, deduplicating across cards so the same
+URL is probed at most once and the result is fanned out to every card that
+cites it.
 
 Probe policy:
 - HEAD first, GET fallback (some hosts reject HEAD with 405/403).
@@ -12,7 +13,12 @@ Probe policy:
 - Paywalled domains (see ``common.BLOCKED_FETCH_DOMAINS``) => ``blocked``.
 - ``offline=True`` => every URL marked ``skipped`` (no network at all).
 
-This is a *diagnostic* tool — it never edits cards or writes snapshots.
+Write-back (``write=True``): every card citing at least one ``dead`` URL is
+marked ``review_status: stale`` via the lifecycle state machine, so retrieve
+score-penalizes it (I3). The transition is validated — ``draft`` and
+``deprecated`` cards cannot move to ``stale`` and are left untouched. No card
+is ever deleted or marked ``deprecated`` here. Default (``write=False``)
+remains a pure diagnostic that never edits cards.
 """
 
 from __future__ import annotations
@@ -147,17 +153,55 @@ def _check_urls(
     return results
 
 
+def _mark_stale(card_path: Path) -> bool:
+    """Mark a card ``review_status: stale`` iff the lifecycle allows it.
+
+    Validates the transition via :func:`transition_card` (respects the state
+    machine — ``draft`` / ``deprecated`` cards are skipped, never force-written,
+    so a terminal deprecated card can never be un-deprecated by a dead-link
+    sweep) and persists only the single ``review_status`` key. Returns True when
+    the file was written, False when the transition is disallowed or the card
+    is unreadable.
+    """
+    from scholar_agent.engine.knowledge_lifecycle import (
+        LifecycleState,
+        parse_frontmatter,
+        set_frontmatter_key,
+        transition_card,
+    )
+
+    try:
+        raw = card_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    if not raw.startswith("---\n"):
+        return False
+    meta, _ = parse_frontmatter(raw)
+    _updated, err = transition_card(dict(meta), LifecycleState.STALE)
+    if err:
+        return False  # draft / deprecated / invalid — respect lifecycle contract
+    return set_frontmatter_key(card_path, "review_status", "stale")
+
+
 def check_dead_links(
     knowledge_root: Path,
     *,
     concurrency: int = 8,
     timeout: float = 10.0,
     offline: bool = False,
+    write: bool = False,
 ) -> dict[str, Any]:
-    """Diagnose dead links across all knowledge cards. Read-only.
+    """Diagnose dead links across all knowledge cards.
 
-    Each unique URL is probed once; the result is fanned out to every card that
-    references it. Returns a structured report with per-card rows and a summary.
+    Read-only by default. Each unique URL is probed once; the result is fanned
+    out to every card that references it. Returns a structured report with
+    per-card rows and a summary.
+
+    When ``write=True``, each card citing at least one ``dead`` URL is marked
+    ``review_status: stale`` (subject to lifecycle validation — ``draft`` and
+    ``deprecated`` cards are skipped). The report then also carries ``written``
+    (count) and ``written_paths`` (the cards actually written). Never deletes
+    cards or marks anything ``deprecated``.
     """
     cards = scan_knowledge_dir(knowledge_root)
 
@@ -206,6 +250,22 @@ def check_dead_links(
     # Dead first, then by path/url for stable, actionable output.
     rows.sort(key=lambda r: (r["status"] != "dead", r["card_path"], r["url"]))
 
+    written = 0
+    written_paths: list[str] = []
+    if write:
+        # Unique cards citing at least one dead URL. ``skipped`` (offline) and
+        # ``transient`` never count as dead — only confirmed 4xx does.
+        dead_card_paths = sorted(
+            {r["card_path"] for r in rows if r["status"] == "dead" and r["card_path"]}
+        )
+        for cpath in dead_card_paths:
+            try:
+                if _mark_stale(Path(cpath)):
+                    written += 1
+                    written_paths.append(cpath)
+            except OSError as exc:
+                logger.warning("could not mark %s stale: %s", cpath, exc)
+
     return {
         "status": "ok",
         "knowledge_dir": str(knowledge_root),
@@ -213,5 +273,7 @@ def check_dead_links(
         "urls_checked": len(unique_urls),
         "summary": counts,
         "dead_count": counts.get("dead", 0),
+        "written": written,
+        "written_paths": written_paths,
         "results": rows,
     }

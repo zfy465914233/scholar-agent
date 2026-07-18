@@ -178,5 +178,121 @@ class TestCheckDeadLinks(unittest.TestCase):
         self.assertEqual(res["urls_checked"], 0)
 
 
+class TestWriteBack(unittest.TestCase):
+    """write=True marks dead-link cards stale, lifecycle-permitting."""
+
+    def _write_card(
+        self,
+        directory: Path,
+        name: str,
+        urls: list[str],
+        *,
+        review_status: str | None = None,
+    ) -> Path:
+        lines = ["---", f"id: {name[:-3]}", "title: T", "type: knowledge", "topic: x"]
+        if review_status is not None:
+            lines.append(f"review_status: {review_status}")
+        if urls:
+            lines.append("source_refs:")
+            for u in urls:
+                lines.append(f"  - {u}")
+        else:
+            lines.append("source_refs: []")
+        lines += ["---", "", "body content " * 40]
+        path = directory / name
+        path.write_text("\n".join(lines), encoding="utf-8")
+        return path
+
+    def _dead_probe(self) -> object:
+        return mock.patch.object(
+            dlc,
+            "check_one_url",
+            return_value={"url": "https://example.com/x", "status": "dead", "status_code": 404, "reason": ""},
+        )
+
+    def _frontmatter_value(self, path: Path, key: str) -> str:
+        from scholar_agent.engine.common import parse_frontmatter
+
+        meta, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+        return str(meta.get(key, ""))
+
+    def test_write_marks_reviewed_card_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            kd = Path(d)
+            card = self._write_card(kd, "a.md", ["https://example.com/x"], review_status="reviewed")
+            with self._dead_probe():
+                res = dlc.check_dead_links(kd, write=True)
+            self.assertEqual(res["dead_count"], 1)
+            self.assertEqual(res["written"], 1)
+            self.assertIn(str(card), res["written_paths"])
+            self.assertEqual(self._frontmatter_value(card, "review_status"), "stale")
+
+    def test_write_marks_trusted_card_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            kd = Path(d)
+            card = self._write_card(kd, "a.md", ["https://example.com/x"], review_status="trusted")
+            with self._dead_probe():
+                dlc.check_dead_links(kd, write=True)
+            self.assertEqual(self._frontmatter_value(card, "review_status"), "stale")
+
+    def test_write_skips_draft_card(self) -> None:
+        # draft -> stale is not a valid lifecycle transition; card stays draft.
+        with tempfile.TemporaryDirectory() as d:
+            kd = Path(d)
+            card = self._write_card(kd, "a.md", ["https://example.com/x"], review_status="draft")
+            with self._dead_probe():
+                res = dlc.check_dead_links(kd, write=True)
+            self.assertEqual(res["dead_count"], 1)
+            self.assertEqual(res["written"], 0)  # transition disallowed
+            self.assertEqual(self._frontmatter_value(card, "review_status"), "draft")
+
+    def test_write_skips_deprecated_card(self) -> None:
+        # deprecated is terminal — must never be un-deprecated to stale.
+        with tempfile.TemporaryDirectory() as d:
+            kd = Path(d)
+            card = self._write_card(kd, "a.md", ["https://example.com/x"], review_status="deprecated")
+            with self._dead_probe():
+                res = dlc.check_dead_links(kd, write=True)
+            self.assertEqual(res["written"], 0)
+            self.assertEqual(self._frontmatter_value(card, "review_status"), "deprecated")
+
+    def test_write_default_is_readonly(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            kd = Path(d)
+            card = self._write_card(kd, "a.md", ["https://example.com/x"], review_status="reviewed")
+            with self._dead_probe():
+                res = dlc.check_dead_links(kd)  # write defaults to False
+            self.assertEqual(res["written"], 0)
+            self.assertEqual(res["written_paths"], [])
+            # Card untouched.
+            self.assertEqual(self._frontmatter_value(card, "review_status"), "reviewed")
+
+    def test_write_idempotent_on_already_stale(self) -> None:
+        # already-stale -> stale is not a valid transition, so it is skipped
+        # (no rewrite needed); the card remains stale and written count is 0.
+        with tempfile.TemporaryDirectory() as d:
+            kd = Path(d)
+            card = self._write_card(kd, "a.md", ["https://example.com/x"], review_status="stale")
+            with self._dead_probe():
+                res = dlc.check_dead_links(kd, write=True)
+            self.assertEqual(res["written"], 0)
+            self.assertEqual(self._frontmatter_value(card, "review_status"), "stale")
+
+    def test_write_only_acts_on_dead_not_transient(self) -> None:
+        # A transient URL must not trigger a stale write.
+        with tempfile.TemporaryDirectory() as d:
+            kd = Path(d)
+            card = self._write_card(kd, "a.md", ["https://example.com/x"], review_status="reviewed")
+            with mock.patch.object(
+                dlc,
+                "check_one_url",
+                return_value={"url": "https://example.com/x", "status": "transient", "status_code": None, "reason": ""},
+            ):
+                res = dlc.check_dead_links(kd, write=True)
+            self.assertEqual(res["dead_count"], 0)
+            self.assertEqual(res["written"], 0)
+            self.assertEqual(self._frontmatter_value(card, "review_status"), "reviewed")
+
+
 if __name__ == "__main__":
     unittest.main()

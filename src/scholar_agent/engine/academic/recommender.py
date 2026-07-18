@@ -55,9 +55,12 @@ def generate_recommendations(
 
     Returns:
         Normalized dict (see :data:`SCHEMA_VERSION`) with keys:
-        ``schema_version``, ``date``, ``papers`` (normalized per-paper
-        dicts), ``stats``, ``warnings``, plus pass-through pipeline fields
-        (``skipped``, ``total_found``, ``tracks``, ``dual_track``,
+        ``schema_version``, ``date``, ``papers`` (clean per-paper dicts —
+        public schema only, no pipeline-internal fields), ``papers_raw``
+        (JSON-safe shallow copies of the original pipeline dicts, retaining
+        internal scoring fields like ``_impact_score``/``best_domain`` for
+        shell consumers), ``stats``, ``warnings``, plus pass-through pipeline
+        fields (``skipped``, ``total_found``, ``tracks``, ``dual_track``,
         ``unified_pipeline``).
         The result is JSON-serializable.
     """
@@ -140,14 +143,29 @@ def _resolve_research_config(academic: dict[str, Any], config_path: str) -> dict
 def _normalize_result(result: dict[str, Any], target_date: datetime) -> dict[str, Any]:
     """Normalize a raw pipeline result into the stable versioned schema.
 
-    Papers are augmented in place (the shells still need the pipeline's
-    internal fields); every schema key is guaranteed present afterwards.
+    Produces two parallel paper views so the public contract stays clean
+    while shells keep access to the pipeline's internal scoring signals:
+
+      * ``papers`` — clean public schema (whitelist keys only; no
+        pipeline-internal ``_*`` or source-alias fields such as
+        ``_heuristic_score``, ``_impact_score``, ``best_domain``,
+        ``domain_keywords``). External consumers and the MCP response read
+        this view.
+      * ``papers_raw`` — JSON-safe shallow copies of the original pipeline
+        dicts, retaining the internal fields the shells still need
+        (``build_daily_note`` reads ``best_domain``/``_impact_score``/
+        ``domain_keywords``; the MCP summary reads ``_impact_score``/
+        ``_innovation_final_score``). Shells pass this view to note-builders.
+
+    The two lists are parallel — same length, same order — by construction.
     """
-    papers = [_normalize_paper(p) for p in result.get("papers", [])]
+    raw_papers = [_raw_json_safe(p) for p in result.get("papers", [])]
+    papers = [_normalize_paper(raw) for raw in raw_papers]
     normalized: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "date": result.get("date") or target_date.strftime("%Y-%m-%d"),
         "papers": papers,
+        "papers_raw": raw_papers,
         "stats": result.get("stats", {}),
         "warnings": list(result.get("warnings", [])),
         "skipped": result.get("skipped", 0),
@@ -160,43 +178,88 @@ def _normalize_result(result: dict[str, Any], target_date: datetime) -> dict[str
     return normalized
 
 
-def _normalize_paper(p: dict[str, Any]) -> dict[str, Any]:
-    """Guarantee the stable per-paper schema keys on *p* (mutates in place).
+def _raw_json_safe(p: dict[str, Any]) -> dict[str, Any]:
+    """Shallow-copy a pipeline paper dict and make it JSON-serializable.
 
-    Schema keys: ``arxiv_id``, ``title``, ``abstract``, ``authors``,
-    ``url``, ``published_date``, ``categories``, ``scores`` (``fit``,
+    Pipeline sources may carry ``datetime`` values (e.g. arXiv
+    ``published``); both the public and the raw view must be plain JSON
+    types. Internal fields (``_heuristic_score``, ``_impact_score``,
+    ``best_domain``, ``domain_keywords`` …) are preserved — this is the
+    shell-facing raw view, not the public contract.
+    """
+    raw = dict(p)
+    for key, value in list(raw.items()):
+        if isinstance(value, datetime):
+            raw[key] = value.isoformat()
+    return raw
+
+
+#: The exact set of keys a clean public-schema paper dict may carry. Any
+#: pipeline-internal or source-alias field must NOT appear in this set —
+#: ``_normalize_paper`` is the single chokepoint that enforces it.
+PUBLIC_PAPER_KEYS: frozenset[str] = frozenset(
+    {
+        "arxiv_id",
+        "title",
+        "abstract",
+        "url",
+        "authors",
+        "categories",
+        "published_date",
+        "scores",
+        "recommendation_reason",
+        "track",
+        "domain",
+    }
+)
+
+
+def _normalize_paper(p: dict[str, Any]) -> dict[str, Any]:
+    """Build a clean public-schema paper dict from raw pipeline paper *p*.
+
+    Returns a brand-new whitelist dict; *p* is NOT mutated. Only the keys in
+    :data:`PUBLIC_PAPER_KEYS` are emitted — pipeline-internal fields
+    (``_heuristic_score``, ``_impact_score``, ``_innovation_final_score``,
+    ``best_domain``, ``domain_keywords``, ``_db_id``, …) and source aliases
+    (``paper_id``, ``summary``, ``published``, ``relevance_score``) never
+    appear in the result. Shells that need those read ``papers_raw`` instead.
+
+    Schema keys: ``arxiv_id``, ``title``, ``abstract``, ``url``,
+    ``authors``, ``categories``, ``published_date``, ``scores`` (``fit``,
     ``recommendation``, optional ``llm_novelty``/``llm_credibility``),
-    ``recommendation_reason``, ``track``, ``domain``. Pipeline-internal
-    fields (``_heuristic_score``, ``best_domain``, …) are preserved.
+    ``recommendation_reason``, ``track``, ``domain``.
     """
     arxiv_id = p.get("arxiv_id") or p.get("paper_id") or ""
-    if arxiv_id and not p.get("arxiv_id"):
-        p["arxiv_id"] = arxiv_id
-    p.setdefault("title", "")
-    if not p.get("abstract"):
-        p["abstract"] = p.get("summary", "") or ""
-    if not p.get("url"):
-        p["url"] = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""
-    p.setdefault("authors", [])
-    p.setdefault("categories", [])
-    if not p.get("published_date"):
-        p["published_date"] = p.get("published") or p.get("publicationDate") or ""
-    p.setdefault("recommendation_reason", "")
-    p.setdefault("track", "")
-    p.setdefault("domain", p.get("best_domain", "") or "")
+    abstract = p.get("abstract") or p.get("summary") or ""
+    url = p.get("url") or (f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else "")
+    published_date = (
+        p.get("published_date") or p.get("published") or p.get("publicationDate") or ""
+    )
 
-    scores = p.setdefault("scores", {})
-    if "fit" not in scores:
-        scores["fit"] = round(p.get("relevance_score", 0) or 0, 2)
-    if "recommendation" not in scores:
-        scores["recommendation"] = p.get("_heuristic_score", 0) or 0
+    raw_scores = p.get("scores")
+    src_scores = raw_scores if isinstance(raw_scores, dict) else {}
+    scores: dict[str, Any] = {
+        "fit": src_scores.get("fit", round(p.get("relevance_score", 0) or 0, 2)),
+        "recommendation": src_scores.get(
+            "recommendation", p.get("_heuristic_score", 0) or 0
+        ),
+    }
     for key in ("llm_novelty", "llm_credibility"):
-        if key not in scores and p.get(key) is not None:
+        if key in src_scores:
+            scores[key] = src_scores[key]
+        elif p.get(key) is not None:
             scores[key] = p[key]
 
-    # JSON-safety: pipeline sources may carry datetime values (e.g. arXiv
-    # published_date); the public schema is plain JSON types only.
-    for key, value in list(p.items()):
-        if isinstance(value, datetime):
-            p[key] = value.isoformat()
-    return p
+    return {
+        "arxiv_id": arxiv_id,
+        "title": p.get("title", ""),
+        "abstract": abstract,
+        "url": url,
+        "authors": list(p.get("authors") or []),
+        "categories": list(p.get("categories") or []),
+        "published_date": published_date,
+        "scores": scores,
+        "recommendation_reason": p.get("recommendation_reason", ""),
+        "track": p.get("track", ""),
+        "domain": p.get("domain", "") or p.get("best_domain", "") or "",
+    }
