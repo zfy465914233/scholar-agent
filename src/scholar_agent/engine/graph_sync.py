@@ -131,15 +131,22 @@ def _target_info(item: dict[str, Any]) -> tuple[str | None, str | None, str]:
     return (str(arxiv_id) if arxiv_id else None, str(uuid) if uuid else None, title)
 
 
-def _target_key(item: dict[str, Any], title_map: dict[str, str], local_arxivs: set[str]) -> tuple[str | None, str]:
-    """Relation key for a target paper: local arXiv id when matched, else the cloud UUID."""
+def _target_key(
+    item: dict[str, Any], title_map: dict[str, str], local_arxivs: set[str]
+) -> tuple[str | None, str, str]:
+    """Relation key for a target paper + how it was matched.
+
+    Returns ``(key, title, match_method)`` where *match_method* is
+    ``arxiv_id_exact`` / ``title_normalized`` / ``cloud_uuid_only`` — the
+    provenance consumers need to down-weight fuzzy title matches.
+    """
     arxiv_id, uuid, title = _target_info(item)
     norm = normalize_title(title)
-    if norm and norm in title_map:
-        return title_map[norm], title
     if arxiv_id and arxiv_id in local_arxivs:
-        return arxiv_id, title
-    return (uuid or arxiv_id), title
+        return arxiv_id, title, "arxiv_id_exact"
+    if norm and norm in title_map:
+        return title_map[norm], title, "title_normalized"
+    return (uuid or arxiv_id), title, "cloud_uuid_only"
 
 
 def _extract_relations(
@@ -160,7 +167,7 @@ def _extract_relations(
     for item in context.get("citations_outgoing") or []:
         if not isinstance(item, dict):
             continue
-        key, title = _target_key(item, title_map, local_arxivs)
+        key, title, match_method = _target_key(item, title_map, local_arxivs)
         if key:
             relations.append(
                 {
@@ -170,6 +177,7 @@ def _extract_relations(
                     "rel_type": "cites",
                     "confidence": _confidence(item),
                     "reason": None,
+                    "match_method": match_method,
                 }
             )
     for item in context.get("citations_incoming") or []:
@@ -177,7 +185,7 @@ def _extract_relations(
             continue
         # Incoming: the other paper cites the local one — store flipped so
         # the "cites" edge keeps its true direction (citing → cited).
-        key, title = _target_key(item, title_map, local_arxivs)
+        key, title, match_method = _target_key(item, title_map, local_arxivs)
         if key:
             relations.append(
                 {
@@ -187,6 +195,7 @@ def _extract_relations(
                     "rel_type": "cites",
                     "confidence": _confidence(item),
                     "reason": None,
+                    "match_method": match_method,
                 }
             )
     for item in context.get("semantic_relations") or []:
@@ -195,7 +204,7 @@ def _extract_relations(
         rel_type = str(item.get("rel_type") or "")
         if rel_type not in _SEMANTIC_REL_TYPES:
             continue
-        key, title = _target_key(item, title_map, local_arxivs)
+        key, title, match_method = _target_key(item, title_map, local_arxivs)
         if key:
             relations.append(
                 {
@@ -205,6 +214,7 @@ def _extract_relations(
                     "rel_type": rel_type,
                     "confidence": _confidence(item),
                     "reason": item.get("reason"),
+                    "match_method": match_method,
                 }
             )
     return relations
@@ -323,16 +333,22 @@ def _sync(
             continue
         relations.extend(_extract_relations(context, arxiv_id, title_map, local_arxivs))
 
-    upserted = 0
+    # Reconcile to the cloud snapshot (I4/I5): upsert the edges seen this run,
+    # then prune paperpulse edges no longer present. Manual edges are never
+    # touched (prune is source-scoped to 'paperpulse'). UUID-only orphans and
+    # cloud-deleted edges are dropped so the local set converges.
+    expected_keys: set[tuple[str | None, str | None, str | None]] = set()
     with store.transaction():
         for relation in relations:
             store.upsert_relation(relation)
-            upserted += 1
+            expected_keys.add((relation["source_key"], relation["target_key"], relation["rel_type"]))
+        pruned = store.prune_paperpulse_relations(expected_keys)
 
     result: dict[str, Any] = {
         "status": "ok" if failures == 0 else "partial",
         "matched_papers": len(matched),
-        "relations_upserted": upserted,
+        "relations_upserted": len(expected_keys),
+        "relations_pruned": pruned,
         "cloud_nodes": cloud_nodes,
     }
     if failures:

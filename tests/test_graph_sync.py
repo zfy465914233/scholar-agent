@@ -140,7 +140,7 @@ class TestMigration:
                 row["name"]
                 for row in cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='paper_relations'")
             ]
-        assert sorted(versions) == [1, 2, 3]
+        assert sorted(versions) == [1, 2, 3, 4]
         assert rel_tables == ["paper_relations"]
 
 
@@ -214,7 +214,13 @@ class TestSyncFlow:
         _patch_session(monkeypatch, session)
 
         result = sync_from_paperpulse(token="tok", base_url="https://example.test", store=store)
-        assert result == {"status": "ok", "matched_papers": 1, "relations_upserted": 3, "cloud_nodes": 2}
+        assert result == {
+            "status": "ok",
+            "matched_papers": 1,
+            "relations_upserted": 3,
+            "relations_pruned": 0,
+            "cloud_nodes": 2,
+        }
         # Bearer header set on the session.
         assert session.headers["Authorization"] == "Bearer tok"
 

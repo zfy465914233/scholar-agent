@@ -187,13 +187,14 @@ def build_graph_export(index_path: Path | None = None, *, include_cloud: bool = 
     all_ids.discard("")
 
     store = _open_paper_store()
+    cloud_edges = 0
+    cloud_degradations: list[dict[str, str]] = []
     try:
         store_titles = _store_title_map(store)
         nodes, arxiv_to_doc = _build_nodes(documents, store_titles)
         edges = _build_local_edges(documents, all_ids)
-        cloud_edges = 0
         if include_cloud:
-            cloud_edges = _merge_cloud_edges(edges, nodes, arxiv_to_doc, store, store_titles)
+            cloud_edges, cloud_degradations = _merge_cloud_edges(edges, nodes, arxiv_to_doc, store, store_titles)
     finally:
         if store is not None:
             store.close()
@@ -207,6 +208,7 @@ def build_graph_export(index_path: Path | None = None, *, include_cloud: bool = 
             "local_edges": len(edges) - cloud_edges,
             "cloud_edges": cloud_edges,
         },
+        "degradations": cloud_degradations,
     }
 
 
@@ -301,21 +303,28 @@ def _merge_cloud_edges(
     arxiv_to_doc: dict[str, str],
     store: PaperStore | None,
     store_titles: dict[str, str],
-) -> int:
+) -> tuple[int, list[dict[str, str]]]:
     """Append PaperPulse relation edges whose both ends resolve to local docs.
 
     Resolution order per relation key: (1) the arXiv bridge built from local
     paper-notes, (2) PaperStore arXiv → title → normalized local doc title.
-    Returns the number of cloud edges appended.
+    Returns ``(appended_count, degradations)`` — degradations distinguish
+    "no cloud edges yet" from "local DB unreadable" so the consumer is never
+    silently shown cloud_edges: 0 when the real cause is a degraded store.
     """
+    degradations: list[dict[str, str]] = []
     if store is None:
-        return 0
+        return 0, degradations
     try:
         relations = store.get_relations()
-    except Exception:
-        # e.g. older DB without the paper_relations table — no cloud edges yet.
-        logger.debug("paper_relations unavailable; skipping cloud edges", exc_info=True)
-        return 0
+    except Exception as exc:
+        msg = str(exc).lower()
+        if "no such table" in msg:
+            degradations.append({"reason": "paper_relations_table_missing", "impact": "cloud_edges_dropped"})
+        else:
+            degradations.append({"reason": "store_unavailable", "impact": "cloud_edges_dropped"})
+        logger.debug("paper_relations unavailable; skipping cloud edges: %s", exc)
+        return 0, degradations
 
     norm_title_to_doc = {normalize_title(node["title"]): node["id"] for node in nodes}
     # arXiv → normalized store title, for resolution path (2).
@@ -348,8 +357,9 @@ def _merge_cloud_edges(
                 "rel_type": str(rel.get("rel_type") or "cites"),
                 "confidence": confidence,
                 "reason": rel.get("reason"),
+                "match_method": rel.get("match_method"),
                 "origin": "paperpulse",
             }
         )
         appended += 1
-    return appended
+    return appended, degradations

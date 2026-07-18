@@ -24,6 +24,26 @@ def store(tmp_path: Path) -> PaperStore:
     s.close()
 
 
+class TestPrunePaperpulseRelations:
+    def test_prunes_unexpected_paperpulse_edges(self, store: PaperStore) -> None:
+        store.upsert_relation({"source_key": "a", "target_key": "b", "rel_type": "cites", "source": "paperpulse"})
+        store.upsert_relation({"source_key": "a", "target_key": "c", "rel_type": "cites", "source": "paperpulse"})
+        deleted = store.prune_paperpulse_relations({("a", "b", "cites")})
+        assert deleted == 1
+        keys = {(r["source_key"], r["target_key"], r["source"]) for r in store.get_relations()}
+        assert ("a", "b", "paperpulse") in keys
+        assert ("a", "c", "paperpulse") not in keys
+
+    def test_manual_edges_are_never_pruned(self, store: PaperStore) -> None:
+        store.upsert_relation({"source_key": "a", "target_key": "b", "rel_type": "cites", "source": "paperpulse"})
+        store.upsert_relation({"source_key": "x", "target_key": "y", "rel_type": "cites", "source": "manual"})
+        deleted = store.prune_paperpulse_relations(set())  # drop all paperpulse
+        assert deleted == 1
+        keys = {(r["source_key"], r["target_key"], r["source"]) for r in store.get_relations()}
+        assert ("x", "y", "manual") in keys  # manual untouched
+        assert ("a", "b", "paperpulse") not in keys
+
+
 def _arxiv_paper(**overrides):
     """Build a minimal arXiv paper dict for testing."""
     base = {

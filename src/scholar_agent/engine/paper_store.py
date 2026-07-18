@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS paper_relations (
     confidence   REAL DEFAULT 0,
     reason       TEXT,
     source       TEXT NOT NULL DEFAULT 'paperpulse',
+    match_method TEXT,
     synced_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(source_key, target_key, rel_type)
 );
@@ -282,6 +283,16 @@ class PaperStore:
             cur.execute(
                 "INSERT OR IGNORE INTO schema_version (version, description) VALUES (?, ?)",
                 (3, "paper_relations"),
+            )
+            # Migration: paper_relations.match_method (schema v4) — provenance
+            # of the title/arXiv match so consumers can down-weight fuzzy
+            # title matches (title_normalized / cloud_uuid_only).
+            rel_cols = {row["name"] for row in cur.execute("PRAGMA table_info(paper_relations)")}
+            if "match_method" not in rel_cols:
+                cur.execute("ALTER TABLE paper_relations ADD COLUMN match_method TEXT")
+            cur.execute(
+                "INSERT OR IGNORE INTO schema_version (version, description) VALUES (?, ?)",
+                (4, "paper_relations.match_method"),
             )
 
     # -- Upsert --------------------------------------------------------------
@@ -501,13 +512,14 @@ class PaperStore:
             cur.execute(
                 """INSERT INTO paper_relations (
                     source_key, target_key, target_title, rel_type,
-                    confidence, reason, source, synced_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    confidence, reason, source, match_method, synced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(source_key, target_key, rel_type) DO UPDATE SET
                     target_title = excluded.target_title,
                     confidence = excluded.confidence,
                     reason = excluded.reason,
                     source = excluded.source,
+                    match_method = excluded.match_method,
                     synced_at = excluded.synced_at
                 """,
                 (
@@ -518,6 +530,7 @@ class PaperStore:
                     relation.get("confidence", 0.0),
                     relation.get("reason"),
                     relation.get("source", "paperpulse"),
+                    relation.get("match_method"),
                     synced_at,
                 ),
             )
@@ -548,6 +561,26 @@ class PaperStore:
                 (arxiv_id, arxiv_id),
             )
             return [dict(row) for row in cur.fetchall()]
+
+    def prune_paperpulse_relations(self, expected_keys: set[tuple[str | None, str | None, str | None]]) -> int:
+        """Reconcile: delete ``source='paperpulse'`` edges not in *expected_keys*.
+
+        Cloud-deleted edges and UUID-only orphans are dropped so the local
+        relation set converges to the cloud snapshot (I4/I5). Edges with
+        ``source='manual'`` are never touched. Returns the number deleted.
+        """
+        with self._cursor() as cur:
+            cur.execute(
+                "SELECT id, source_key, target_key, rel_type FROM paper_relations WHERE source = 'paperpulse'"
+            )
+            to_delete = [
+                row["id"]
+                for row in cur.fetchall()
+                if (row["source_key"], row["target_key"], row["rel_type"]) not in expected_keys
+            ]
+            for row_id in to_delete:
+                cur.execute("DELETE FROM paper_relations WHERE id = ?", (row_id,))
+            return len(to_delete)
 
     # -- Checkpoints ---------------------------------------------------------
 

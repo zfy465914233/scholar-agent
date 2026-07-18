@@ -48,6 +48,23 @@ def _make_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PaperStore:
     return store
 
 
+def test_degradation_when_paper_relations_table_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An existing DB lacking paper_relations surfaces a degradation instead
+    of silently reporting cloud_edges: 0 (I5 contract honesty)."""
+    import sqlite3
+
+    db_path = tmp_path / "partial.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE papers (id INTEGER PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr("scholar_agent.engine.scholar_config.get_paper_db_path", lambda: db_path)
+    index_path = _write_index(tmp_path, [{"doc_id": "d", "title": "T", "type": "knowledge", "search_text": "x"}])
+    export = build_graph_export(index_path)
+    assert export["degradations"] == [{"reason": "paper_relations_table_missing", "impact": "cloud_edges_dropped"}]
+    assert export["stats"]["cloud_edges"] == 0
+
+
 class TestSchema:
     def test_missing_index_returns_empty_graph(self, tmp_path: Path) -> None:
         export = build_graph_export(tmp_path / "nope.json")
@@ -71,7 +88,7 @@ class TestSchema:
             ],
         )
         export = build_graph_export(index_path)
-        assert set(export) == {"schema_version", "nodes", "edges", "stats"}
+        assert set(export) == {"schema_version", "nodes", "edges", "stats", "degradations"}
         node = export["nodes"][0]
         assert set(node) == {
             "id",
@@ -240,6 +257,7 @@ class TestCloudEdges:
                 "rel_type": "extends",
                 "confidence": 0.85,
                 "reason": "builds on the method",
+                "match_method": None,
                 "origin": "paperpulse",
             }
         ]
