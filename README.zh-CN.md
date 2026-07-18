@@ -45,6 +45,28 @@ Scholar Agent 是 **MindPulse 学术套件** 的一部分，形成了本地开�
 * **一键同步**：当您在本地启动 Scholar Agent MCP 服务后，在 PaperPulse 网页端只需点击 **“导入本地 Scholar Agent”** 按钮，笔记即可通过本地安全回环接口（Loopback）免下载、免沙箱限制直接一键同步写入您的本地 `knowledge/` 知识库目录并自动索引，实现云端精读与本地知识大脑的无缝链接！
 * **手动导出**：您也可以点击 **“导出 Markdown”** 按钮下载标准 Markdown 格式笔记，手动放入本地知识库目录。
 
+### 知识图谱同步 (Knowledge Graph Sync)
+
+除了笔记导入，Scholar Agent 还能与 PaperPulse 双向同步知识图谱本身：
+
+* **本地 → 云端**：当 `scholar-agent serve-http` 运行时，PaperPulse 图谱页面会通过浏览器读取回环端点 `GET http://127.0.0.1:8374/graph`，把您的本地笔记合并进云端图谱视图。
+* **云端 → 本地**：`scholar-agent graph sync` 将 PaperPulse 的论文关系边拉取到本地论文库（可用 `--max-nodes` / `--min-confidence` 调节），后续导出即包含这些边。
+* **CLI**：`scholar-agent graph` 生成可交互的 HTML 图谱；`scholar-agent graph --json [PATH]` 导出机器可读的 JSON 契约（省略 PATH 时输出到 stdout）。
+
+`GET /graph` 返回 schema_version 1 契约：
+
+```json
+{"schema_version": 1,
+ "nodes": [{"id", "title", "node_type", "topic", "domain", "tags", "year", "arxiv_id", "venue", "domains", "is_local"}],
+ "edges": [{"source", "target", "rel_type", "confidence", "origin"}],
+ "stats": {"local_nodes": N, "local_edges": M, "cloud_edges": K}}
+```
+
+* `node_type` 取值为 `knowledge-card` / `paper-note` / `daily-note` / `other`；`arxiv_id` 是本地论文笔记与云端论文之间的桥接键。
+* 边的 `rel_type`：本地 wiki 链接为 `references`（`origin: "local"`）；云端同步的关系为 `cites` / `extends` / `improves_upon` / `baseline_for` / `variant_of`（`origin: "paperpulse"`）。
+* `GET /graph?local_only=1` 跳过云端边，仅返回本地图谱。
+
+认证与导入端点一致：当 `.scholar.json` 配置了 `paperpulse_token` 时，请求必须携带 `Authorization: Bearer <token>`；否则仅接受回环来源/对端的请求。该 token 是 PaperPulse 的短期登录 JWT，没有刷新流程——过期后请重新登录 PaperPulse，并更新 `.scholar.json` 中的 `paperpulse_token`。
 
 ---
 
@@ -137,6 +159,47 @@ sequenceDiagram
 - **图片提取** — 从 arXiv 源包和 PDF 中提取论文图表
 - **每日推荐** — 双轨模式：2 篇顶会论文 + 2 篇 arXiv 创新论文
 - **论文 → 知识卡片** — 将分析结果反哺知识库
+
+### 复用推荐引擎（作为库调用）
+
+每日推荐引擎是一个自包含、无 MCP 依赖的库 API——本地 MCP 工具、CLI
+与外部服务（如 PaperPulse）都调用同一个入口，共享同一份
+`.scholar.json` 配置语义，输出质量一致：
+
+```python
+from scholar_agent.engine.academic.recommender import generate_recommendations
+
+result = generate_recommendations(
+    config=my_scholar_json,   # 完整 .scholar.json 字典；省略则从磁盘加载
+    date="2026-07-17",        # 可选；默认今天
+)
+```
+
+只需 `pip install py-scholar-agent[academic]`——无需 MCP server，
+引擎层不依赖 fastmcp。
+
+关键配置键（均位于 `academic` 下）：
+
+- `research_interests.research_domains.<名称>.priority` — 领域相对权重
+  （默认 1.0）。最高优先级领域按满分计，低优先级领域的 fit 得分按
+  比例折减。
+- `unified_pipeline.reject_dedup_days` — 被 LLM 评审淘汰的候选在该天数
+  内不再进入候选池（默认 14 天），过期后重新获得资格。
+- `unified_pipeline.max_daily_recommendations` / `max_candidates` /
+  `arxiv_days` — 管线形态参数。
+
+返回字典带版本号（`schema_version: 1`），可直接 JSON 序列化：
+
+```
+{schema_version, date, papers: [{arxiv_id, title, abstract, authors, url,
+  published_date, categories, scores: {fit, recommendation, llm_novelty?,
+  llm_credibility?}, recommendation_reason, track, domain}],
+ stats: {arxiv_fetched, s2_fetched, after_dedup, candidates, llm_calls,
+  llm_tokens, duration_seconds}, warnings: [...], skipped, total_found, ...}
+```
+
+`warnings` 会显式暴露降级行为（例如未设置 `LLM_API_KEY` 时跳过 LLM
+评审、改用启发式排名）。
 
 ---
 

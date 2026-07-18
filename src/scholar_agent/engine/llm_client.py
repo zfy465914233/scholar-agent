@@ -131,29 +131,6 @@ def resolve_providers(force: bool = False) -> list[ProviderConfig]:
     return providers
 
 
-def resolve_openai_provider() -> ProviderConfig | None:
-    """Resolve a single OpenAI-compatible provider (for domain_router etc.).
-
-    Falls back to SCHOLAR_ROUTER_* → LLM_* → OPENAI_* → GITHUB_TOKEN.
-    """
-    key = (
-        os.getenv("SCHOLAR_ROUTER_API_KEY", "")
-        or os.getenv("LLM_API_KEY", "")
-        or os.getenv("OPENAI_API_KEY", "")
-        or os.getenv("GITHUB_TOKEN", "")
-    )
-    if not key:
-        return None
-    url = (
-        os.getenv("SCHOLAR_ROUTER_API_URL", "")
-        or os.getenv("LLM_API_URL", "")
-        or os.getenv("OPENAI_BASE_URL", "")
-        or "https://api.openai.com/v1"
-    )
-    model = os.getenv("SCHOLAR_ROUTER_MODEL", "") or os.getenv("LLM_MODEL", "") or "gpt-4o-mini"
-    return ProviderConfig(format="openai", url=url, key=key, model=model)
-
-
 # ---------------------------------------------------------------------------
 # HTTP transport helpers
 # ---------------------------------------------------------------------------

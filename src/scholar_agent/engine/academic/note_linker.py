@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from scholar_agent.engine.academic.paper_analyzer import title_to_filename
-from scholar_agent.engine.common import parse_frontmatter
+from scholar_agent.engine.common import MISS, BoundedMemo, parse_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -74,44 +74,6 @@ def discover_related_notes(
 
     candidates.sort(key=lambda x: x[0], reverse=True)
     return [stem for _, stem in candidates[:max_links]]
-
-
-def insert_wikilinks(
-    note_path: str,
-    related_filenames: list[str],
-) -> bool:
-    """Append ``## Related Papers`` section with links if not already present."""
-    if not related_filenames:
-        return False
-    try:
-        with open(note_path, encoding="utf-8") as fh:
-            body = fh.read()
-
-        if "## Related Papers" in body:
-            lines = body.split("\n")
-            patched: list[str] = []
-            inside = False
-            for ln in lines:
-                patched.append(ln)
-                if ln.strip() == "## Related Papers":
-                    inside = True
-                    for stem in related_filenames:
-                        link = f"- [[{stem}]]"
-                        if link not in body:
-                            patched.append(link)
-                elif inside and ln.startswith("## "):
-                    inside = False
-            body = "\n".join(patched)
-        else:
-            block = "## Related Papers\n" + "\n".join(f"- [[{s}]]" for s in related_filenames)
-            body = body.rstrip() + "\n\n" + block + "\n"
-
-        with open(note_path, "w", encoding="utf-8") as fh:
-            fh.write(body)
-        return True
-    except Exception as exc:
-        logger.error("insert_wikilinks failed: %s", exc)
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +169,60 @@ def arxiv_urls_to_wikilinks(text: str, paper_notes_dir: str) -> tuple[str, int]:
 # ---------------------------------------------------------------------------
 
 
+class _KeywordPatterns:
+    """Lazily compiled keyword-alternation patterns for one keyword mapping.
+
+    Patterns are compiled once per excluded-keyword set — the keywords whose
+    target is the note being linked (self-links are excluded from linking).
+    Most notes share the empty exclusion set, so a whole batch of notes
+    reuses a single compiled pattern instead of recompiling per note.
+    """
+
+    __slots__ = ("mapping", "variants")
+
+    def __init__(self, mapping: dict[str, str]) -> None:
+        self.mapping = mapping
+        self.variants: dict[frozenset[str], tuple[re.Pattern[str] | None, dict[str, str]]] = {}
+
+    def for_note(self, self_stem: str) -> tuple[re.Pattern[str] | None, dict[str, str]]:
+        """(pattern, keywords) for the mapping minus keywords self-linking *self_stem*."""
+        excluded = frozenset(k for k, v in self.mapping.items() if v == self_stem)
+        entry = self.variants.get(excluded)
+        if entry is None:
+            keywords = {k: v for k, v in self.mapping.items() if k not in excluded}
+            pattern: re.Pattern[str] | None = None
+            if keywords:
+                # Sort by length descending to match longer keywords first
+                sorted_kw = sorted(keywords.keys(), key=len, reverse=True)
+                pattern = re.compile(
+                    r"(?<!\[\[)(?<!\|)\b(" + "|".join(re.escape(k) for k in sorted_kw) + r")\b(?!\]\])(?!\|)",
+                    re.IGNORECASE,
+                )
+            entry = (pattern, keywords)
+            self.variants[excluded] = entry
+        return entry
+
+
+# Compiled-pattern cache. apply_wiki_links builds a fresh KeywordIndex per
+# note, so the cache lives at module level, keyed on the identity of the
+# caller's keyword mapping — callers that link many notes reuse one mapping
+# object (the build_keyword_index result), so the giant alternation compiles
+# once per keyword set instead of once per note. Entries hold a strong
+# reference to the mapping, so its id() cannot be recycled while cached.
+_PATTERN_CACHE_MAX = 4
+_pattern_cache = BoundedMemo(bound=_PATTERN_CACHE_MAX, identity=True)
+
+
+def _patterns_for(mapping: dict[str, str]) -> _KeywordPatterns:
+    """Return the shared compiled-pattern holder for *mapping*."""
+    cached = _pattern_cache.get(mapping)
+    if cached is not MISS:
+        return cast("_KeywordPatterns", cached)
+    patterns = _KeywordPatterns(mapping)
+    _pattern_cache.set(mapping, patterns)
+    return patterns
+
+
 class KeywordIndex:
     """Scans notes for linkable keywords, then applies [[wiki-links]].
 
@@ -298,8 +314,11 @@ class KeywordIndex:
 
     @classmethod
     def from_dict(cls, d: dict[str, str]) -> KeywordIndex:
+        # The mapping is shared (not copied) so the module-level pattern
+        # cache keyed on id(mapping) hits for every note in a batch — callers
+        # build the dict once via build_keyword_index and never mutate it.
         idx = cls.__new__(cls)
-        idx._mapping = dict(d)
+        idx._mapping = d
         return idx
 
     def apply_to(self, note_path: str) -> tuple[bool, int]:
@@ -318,17 +337,12 @@ class KeywordIndex:
 
         self_stem = fp.stem
 
-        # Build a single combined pattern for all keywords
-        keywords = {k: v for k, v in self._mapping.items() if v != self_stem}
-        if not keywords:
+        # Combined pattern over all keywords except those self-linking this
+        # note — compiled once per keyword set (see _patterns_for), not per
+        # note. keywords mirrors the pattern's alternation exactly.
+        combined, keywords = _patterns_for(self._mapping).for_note(self_stem)
+        if combined is None:
             return False, 0
-
-        # Sort by length descending to match longer keywords first
-        sorted_kw = sorted(keywords.keys(), key=len, reverse=True)
-        combined = re.compile(
-            r"(?<!\[\[)(?<!\|)\b(" + "|".join(re.escape(k) for k in sorted_kw) + r")\b(?!\]\])(?!\|)",
-            re.IGNORECASE,
-        )
 
         # Split document into regions
         lines = text.split("\n")
@@ -422,18 +436,6 @@ class KeywordIndex:
         fp.write_text("\n".join(new_regions), encoding="utf-8")
         logger.info("linked %s: +%d wiki-links", note_path, added)
         return True, added
-
-    def apply_to_all(self, notes_dir: str) -> tuple[int, int]:
-        """Apply to all .md files under notes_dir. Returns (files_modified, total_links)."""
-        root = Path(notes_dir)
-        total_processed = 0
-        total_links = 0
-        for md_file in root.rglob("*.md"):
-            modified, links = self.apply_to(str(md_file))
-            if modified:
-                total_processed += 1
-                total_links += links
-        return total_processed, total_links
 
 
 # ---------------------------------------------------------------------------

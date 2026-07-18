@@ -12,9 +12,11 @@ import re
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from scholar_agent.engine.academic.scoring import score_papers
+from scholar_agent.engine.retry import retry_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -113,31 +115,40 @@ def _build_dblp_url(venue_key: str, year: int, offset: int, batch_size: int) -> 
     return f"{_DBLP_API}?{urllib.parse.urlencode(params)}"
 
 
+def _fetch_dblp_page_once(url: str) -> dict[str, Any] | None:
+    """Single DBLP fetch attempt (raises on transport/HTTP errors)."""
+    if HAS_REQUESTS:
+        resp = _requests.get(url, headers={"User-Agent": "ScholarAgent/1.0"}, timeout=60)
+        resp.raise_for_status()
+        val = resp.json()
+    else:
+        req = urllib.request.Request(url, headers={"User-Agent": "ScholarAgent/1.0"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            val = json.loads(resp.read().decode("utf-8"))
+    if isinstance(val, dict):
+        return val
+    logger.warning("DBLP response is not a dict")
+    return None
+
+
 def _fetch_dblp_page(url: str, max_retries: int = 3) -> dict[str, Any] | None:
     """Fetch and parse a single DBLP API page. Returns parsed JSON or None."""
-    for attempt in range(max_retries):
-        try:
-            if HAS_REQUESTS:
-                resp = _requests.get(url, headers={"User-Agent": "ScholarAgent/1.0"}, timeout=60)
-                resp.raise_for_status()
-                val = resp.json()
-                if isinstance(val, dict):
-                    return val
-                logger.warning("DBLP response is not a dict")
-                return None
-            else:
-                req = urllib.request.Request(url, headers={"User-Agent": "ScholarAgent/1.0"})
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    val = json.loads(resp.read().decode("utf-8"))
-                    if isinstance(val, dict):
-                        return val
-                    logger.warning("DBLP response is not a dict")
-                    return None
-        except Exception as e:
-            logger.warning("dblp request failed try %d/%d: %s", attempt + 1, max_retries, e)
-            if attempt < max_retries - 1:
-                time.sleep(int(1.5**attempt * 4))
-    return None
+
+    def _log_retry(retry_number: int, exc: Exception, _delay: float) -> None:
+        logger.warning("dblp request failed try %d/%d: %s", retry_number, max_retries, exc)
+
+    try:
+        return retry_with_backoff(
+            _fetch_dblp_page_once,
+            url,
+            max_retries=max_retries - 1,
+            jitter=False,
+            delay_fn=lambda attempt, _exc: float(int(1.5**attempt * 4)),
+            on_retry=_log_retry,
+        )
+    except Exception as exc:
+        logger.warning("dblp request failed try %d/%d: %s", max_retries, max_retries, exc)
+        return None
 
 
 def _parse_dblp_hits(data: dict, venue_key: str, year: int) -> tuple[list[dict[str, Any]], int]:
@@ -257,8 +268,10 @@ def _batch_search_s2(
 ) -> dict[str, dict]:
     """Phase 1: Search S2 for all titles, return {title_lower: best_match}.
 
-    Groups titles into batches and searches concurrently. Caches all results
-    for Phase 2 matching.
+    Searches concurrently (thread pool + shared HTTP session, so connections
+    are reused instead of one fresh TCP+TLS handshake per title). Caches all
+    results for Phase 2 matching. Result mapping is keyed by title, so worker
+    completion order does not affect the output.
     """
     cache: dict[str, dict] = {}
 
@@ -266,37 +279,45 @@ def _batch_search_s2(
     if api_key:
         headers["x-api-key"] = api_key
 
-    for title in titles:
-        if not title:
-            continue
+    def _search_one(title: str) -> tuple[str, dict] | None:
         params: dict[str, Any] = {"query": title, "limit": per_query, "fields": _S2_PAPER_FIELDS}
 
-        for attempt in range(3):
-            try:
-                resp = _requests.get(_S2_SEARCH_ENDPOINT, params=params, headers=headers, timeout=15)
-                if resp.status_code == 429:
-                    logger.warning("s2 throttled...")
-                    time.sleep(_S2_THROTTLE)
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
+        def _once() -> tuple[str, dict] | None:
+            resp = session.get(_S2_SEARCH_ENDPOINT, params=params, headers=headers, timeout=15)
+            # raise_for_status turns a 429 status into an HTTPError whose message
+            # contains "429", so both throttling paths share the handling below.
+            resp.raise_for_status()
+            data = resp.json()
 
-                results = data.get("data", [])
-                if results:
-                    best = max(results, key=lambda r: _dice_title_overlap(title, r.get("title", "")))
-                    sim = _dice_title_overlap(title, best.get("title", ""))
-                    if sim >= 0.55:
-                        best["_similarity"] = round(sim, 2)
-                        cache[title.lower()] = best
-                break
+            results = data.get("data", [])
+            if results:
+                best = max(results, key=lambda r: _dice_title_overlap(title, r.get("title", "")))
+                sim = _dice_title_overlap(title, best.get("title", ""))
+                if sim >= 0.55:
+                    best["_similarity"] = round(sim, 2)
+                    return title.lower(), best
+            return None
 
-            except Exception as e:
-                msg = str(e)
-                if "429" in msg:
-                    logger.warning("s2 throttled...")
-                    time.sleep(_S2_THROTTLE)
-                elif attempt < 2:
-                    time.sleep(2**attempt)
+        def _log_retry(_retry_number: int, exc: Exception, _delay: float) -> None:
+            if "429" in str(exc):
+                logger.warning("s2 throttled...")
+
+        def _delay(attempt: int, exc: Exception) -> float:
+            return float(_S2_THROTTLE) if "429" in str(exc) else float(2**attempt)
+
+        try:
+            return retry_with_backoff(_once, max_retries=2, jitter=False, on_retry=_log_retry, delay_fn=_delay)
+        except Exception as exc:
+            # A final-attempt 429 still warns/throttles before the title is dropped.
+            if "429" in str(exc):
+                logger.warning("s2 throttled...")
+                time.sleep(_S2_THROTTLE)
+            return None
+
+    with _requests.Session() as session, ThreadPoolExecutor(max_workers=4) as pool:
+        for result in pool.map(_search_one, [t for t in titles if t]):
+            if result is not None:
+                cache[result[0]] = result[1]
 
     return cache
 

@@ -1,12 +1,16 @@
 """Tests for scholar_agent.engine.academic.conf_search pure functions."""
 
 import unittest
+from unittest.mock import MagicMock, patch
 from urllib.parse import unquote
+
+import requests
 
 from scholar_agent.engine.academic.conf_search import (
     _build_dblp_url,
     _dice_title_overlap,
     _extract_s2_fields,
+    _fetch_dblp_page,
     _fingerprint,
     _parse_dblp_hits,
     _VenueSpec,
@@ -425,6 +429,118 @@ class TestExtractS2Fields(unittest.TestCase):
         match = {}
         result = _extract_s2_fields(match)
         self.assertNotIn("affiliations", result)
+
+
+class TestFetchDblpPage(unittest.TestCase):
+    """_fetch_dblp_page: retry wrapper returning None on exhaustion."""
+
+    @patch("scholar_agent.engine.retry.time.sleep")
+    @patch("scholar_agent.engine.academic.conf_search._requests.get")
+    def test_exhaustion_returns_none_with_warnings(self, mock_get, mock_sleep):
+        mock_get.side_effect = requests.ConnectionError("boom")
+        with self.assertLogs("scholar_agent.engine.academic.conf_search", level="WARNING") as cm:
+            result = _fetch_dblp_page("http://dblp.example/api")
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, 3)
+        self.assertEqual([c[0][0] for c in mock_sleep.call_args_list], [4.0, 6.0])
+        self.assertEqual(sum("dblp request failed try" in msg for msg in cm.output), 3)
+        self.assertTrue(any("try 3/3" in msg for msg in cm.output))
+
+    @patch("scholar_agent.engine.retry.time.sleep")
+    @patch("scholar_agent.engine.academic.conf_search._requests.get")
+    def test_success_after_retry(self, mock_get, mock_sleep):
+        ok = MagicMock()
+        ok.raise_for_status.return_value = None
+        ok.json.return_value = {"result": {}}
+        mock_get.side_effect = [requests.ConnectionError("boom"), ok]
+        with self.assertLogs("scholar_agent.engine.academic.conf_search", level="WARNING"):
+            result = _fetch_dblp_page("http://dblp.example/api")
+        self.assertEqual(result, {"result": {}})
+        self.assertEqual(mock_get.call_count, 2)
+        mock_sleep.assert_called_once_with(4.0)
+
+    @patch("scholar_agent.engine.retry.time.sleep")
+    @patch("scholar_agent.engine.academic.conf_search._requests.get")
+    def test_non_dict_response_returns_none_without_retry(self, mock_get, mock_sleep):
+        resp = MagicMock()
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = [1, 2, 3]
+        mock_get.return_value = resp
+        with self.assertLogs("scholar_agent.engine.academic.conf_search", level="WARNING") as cm:
+            result = _fetch_dblp_page("http://dblp.example/api")
+        self.assertIsNone(result)
+        self.assertEqual(mock_get.call_count, 1)
+        mock_sleep.assert_not_called()
+        self.assertTrue(any("not a dict" in msg for msg in cm.output))
+
+
+class TestBatchSearchS2(unittest.TestCase):
+    """_batch_search_s2 per-title retry/throttle semantics."""
+
+    def _run_batch(self, titles, session):
+        from scholar_agent.engine.academic.conf_search import _batch_search_s2
+
+        session_cm = MagicMock()
+        session_cm.__enter__.return_value = session
+        session_cm.__exit__.return_value = False
+        # conf_search.time and retry.time are the same module object, so one
+        # patch covers both the retry-internal and the conf_search sleeps.
+        with (
+            patch("scholar_agent.engine.academic.conf_search._requests.Session", return_value=session_cm),
+            patch("scholar_agent.engine.academic.conf_search.time.sleep") as mock_sleep,
+        ):
+            cache = _batch_search_s2(titles, {})
+        return cache, mock_sleep
+
+    @staticmethod
+    def _ok_response(title):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status.return_value = None
+        resp.json.return_value = {"data": [{"title": title, "externalIds": {}}]}
+        return resp
+
+    @staticmethod
+    def _throttled_response():
+        resp = MagicMock()
+        resp.status_code = 429
+        resp.raise_for_status.side_effect = requests.HTTPError("429 Client Error: Too Many Requests")
+        return resp
+
+    def test_throttle_then_success(self):
+        session = MagicMock()
+        session.get.side_effect = [self._throttled_response(), self._ok_response("Deep Learning")]
+        with self.assertLogs("scholar_agent.engine.academic.conf_search", level="WARNING") as cm:
+            cache, mock_sleep = self._run_batch(["Deep Learning"], session)
+        self.assertIn("deep learning", cache)
+        self.assertEqual(cache["deep learning"]["_similarity"], 1.0)
+        mock_sleep.assert_called_once_with(30.0)
+        self.assertEqual(sum("s2 throttled" in msg for msg in cm.output), 1)
+
+    def test_persistent_429_drops_title_after_throttle_sleeps(self):
+        session = MagicMock()
+        session.get.side_effect = [self._throttled_response() for _ in range(3)]
+        with self.assertLogs("scholar_agent.engine.academic.conf_search", level="WARNING") as cm:
+            cache, mock_sleep = self._run_batch(["Deep Learning"], session)
+        self.assertEqual(cache, {})
+        self.assertEqual(session.get.call_count, 3)
+        self.assertEqual([c[0][0] for c in mock_sleep.call_args_list], [30.0, 30.0, 30])
+        self.assertEqual(sum("s2 throttled" in msg for msg in cm.output), 3)
+
+    def test_non_429_errors_backoff_then_drop_silently(self):
+        session = MagicMock()
+        session.get.side_effect = requests.ConnectionError("boom")
+        cache, mock_sleep = self._run_batch(["Deep Learning"], session)
+        self.assertEqual(cache, {})
+        self.assertEqual(session.get.call_count, 3)
+        self.assertEqual([c[0][0] for c in mock_sleep.call_args_list], [1.0, 2.0])
+
+    def test_low_similarity_match_dropped(self):
+        session = MagicMock()
+        session.get.return_value = self._ok_response("Completely Different Topic")
+        cache, mock_sleep = self._run_batch(["Deep Learning"], session)
+        self.assertEqual(cache, {})
+        mock_sleep.assert_not_called()
 
 
 if __name__ == "__main__":

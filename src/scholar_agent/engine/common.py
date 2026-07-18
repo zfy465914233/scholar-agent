@@ -17,6 +17,8 @@ import logging
 import os
 import re
 import tempfile
+import threading
+import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -453,3 +455,87 @@ def extract_entities(text: str) -> list[str]:
             entities.append(normalized)
 
     return entities
+
+
+# ── Bounded memoization ───────────────────────────────────────────
+
+
+class _Missing:
+    """Sentinel for cache misses (distinct from a cached ``None``)."""
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<MISS>"
+
+
+#: Returned by :meth:`BoundedMemo.get` on a miss, TTL expiry, or identity drift.
+MISS: Any = _Missing()
+
+
+class BoundedMemo:
+    """Thread-safe bounded FIFO memo, consolidating the duplicated
+    ``(path, mtime)``-keyed and ``id(obj)``-keyed caches that lived in
+    ``local_retrieve``, ``embedding_retrieve``, ``note_linker``, and
+    ``index_lifecycle``.
+
+    Two keying modes:
+
+    - **value mode** (default): *key* is any hashable (e.g. a ``(path, mtime)``
+      tuple). The entry is valid while it sits in the cache.
+    - **identity mode** (``identity=True``): *key* is the object itself; the
+      entry holds a strong reference to it and ``get`` re-checks
+      ``stored is key`` to defend against ``id()`` reuse after garbage
+      collection. Use for caches keyed on a mutable parsed payload that the
+      caller reuses.
+
+    ``ttl_seconds`` optionally expires entries: a ``get`` past the TTL returns
+    :data:`MISS`. FIFO eviction at ``bound`` keeps memory bounded.
+    """
+
+    __slots__ = ("_bound", "_d", "_identity", "_lock", "_ttl")
+
+    def __init__(
+        self,
+        bound: int = 4,
+        *,
+        ttl_seconds: float | None = None,
+        identity: bool = False,
+    ) -> None:
+        self._d: dict[Any, Any] = {}
+        self._lock = threading.Lock()
+        self._bound = bound
+        self._ttl = ttl_seconds
+        self._identity = identity
+
+    def get(self, key: Any) -> Any:
+        """Return the cached value, or :data:`MISS` on miss / expiry / identity drift."""
+        with self._lock:
+            entry = self._d.get(id(key) if self._identity else key)
+            if entry is None:
+                return MISS
+            if self._identity:
+                stored_obj, value, ts = entry
+                if stored_obj is not key:
+                    return MISS
+            else:
+                value, ts = entry
+            if self._ttl is not None and time.monotonic() - ts > self._ttl:
+                return MISS
+            return value
+
+    def set(self, key: Any, value: Any) -> None:
+        now = time.monotonic()
+        with self._lock:
+            k = id(key) if self._identity else key
+            self._d[k] = (key, value, now) if self._identity else (value, now)
+            while len(self._d) > self._bound:
+                del self._d[next(iter(self._d))]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._d.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._d)

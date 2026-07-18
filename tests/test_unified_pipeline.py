@@ -140,6 +140,14 @@ class TestHeuristicPreFilter:
         if len(result) > 1:
             assert ids.index("2501.00996") < ids.index("2501.00997")
 
+    def test_scores_contract_populated(self):
+        """Every filtered paper carries scores.fit + scores.recommendation."""
+        result = heuristic_pre_filter([_paper()], _config())
+        assert len(result) == 1
+        scores = result[0]["scores"]
+        assert scores["fit"] > 0
+        assert scores["recommendation"] == result[0]["_heuristic_score"]
+
 
 # ---------------------------------------------------------------------------
 # _parse_batch_response
@@ -203,6 +211,12 @@ class TestBatchLLMSelect:
         assert selected[0]["recommendation_reason"] == "Novel approach"
         assert calls == 1
         assert tokens == 500
+        # LLM path unifies the scores contract: heuristic recommendation +
+        # LLM sub-scores in the same scores dict
+        scores = selected[0]["scores"]
+        assert scores["recommendation"] == selected[0]["_heuristic_score"]
+        assert scores["llm_novelty"] == 4
+        assert scores["llm_credibility"] == 5
 
     def test_fallback_without_api_key(self):
         candidates = [
@@ -216,6 +230,8 @@ class TestBatchLLMSelect:
 
         assert len(selected) == 2
         assert calls == 0
+        # Heuristic fallback still populates scores.recommendation
+        assert selected[0]["scores"]["recommendation"] == 3.0
 
     def test_empty_candidates(self):
         selected, calls, _tokens = batch_llm_select([], max_select=3)
@@ -306,6 +322,7 @@ class TestRunUnifiedPipeline:
             patch("scholar_agent.engine.academic.arxiv_search.query_arxiv", return_value=[]),
             patch("scholar_agent.engine.academic.arxiv_search.collect_hot_papers", return_value=[]),
             patch("scholar_agent.engine.academic.daily_workflow.get_analyzed_paper_ids", return_value=set()),
+            patch("scholar_agent.engine.scholar_config.get_paper_db_path", return_value=tmp_path / "test.db"),
         ):
             result = run_unified_pipeline(
                 config=_config(),
@@ -315,6 +332,67 @@ class TestRunUnifiedPipeline:
         assert result["unified_pipeline"] is True
         assert result["papers"] == []
         assert result["stats"]["candidates"] == 0
+        assert result["warnings"] == []
+
+    @patch.dict(os.environ, {"LLM_API_KEY": "test-key"})
+    def test_all_reviewed_candidates_persisted(self, tmp_path):
+        """Winners persist as 'recommended', the rest as 'rejected'."""
+        from scholar_agent.engine.paper_store import PaperStore
+
+        mock_arxiv = [_paper(arxiv_id=f"2501.{i:05d}", title=f"Paper {i}") for i in range(5)]
+        paper_notes_dir = str(tmp_path / "notes")
+        db_path = tmp_path / "test.db"
+
+        mock_llm_response = {
+            "raw_content": json.dumps(
+                {
+                    "selected": [{"index": 1, "reason": "Best", "novelty": 4, "credibility": 5}],
+                    "rationale": "One winner.",
+                }
+            ),
+            "usage": {"total_tokens": 300},
+        }
+
+        with (
+            patch("scholar_agent.engine.academic.arxiv_search.query_arxiv", return_value=mock_arxiv),
+            patch("scholar_agent.engine.academic.arxiv_search.collect_hot_papers", return_value=[]),
+            patch("scholar_agent.engine.academic.daily_workflow.get_analyzed_paper_ids", return_value=set()),
+            patch("scholar_agent.engine.synthesize_answer.call_llm", return_value=mock_llm_response),
+            patch("scholar_agent.engine.scholar_config.get_paper_db_path", return_value=db_path),
+        ):
+            result = run_unified_pipeline(
+                config=_config(),
+                paper_notes_dir=paper_notes_dir,
+            )
+
+        candidates_count = result["stats"]["candidates"]
+        assert candidates_count == 5
+        with PaperStore(db_path) as store:
+            store.initialize()
+            counts = store.count_by_status()
+            rejected = store.get_papers_by_status("rejected")
+        assert counts.get("recommended") == 1
+        assert counts.get("rejected") == candidates_count - 1
+        assert all(r["rejected_at"] for r in rejected)
+
+    def test_warnings_without_api_key(self, tmp_path):
+        mock_arxiv = [_paper(arxiv_id="2501.00001")]
+        paper_notes_dir = str(tmp_path / "notes")
+
+        with (
+            patch("scholar_agent.engine.academic.arxiv_search.query_arxiv", return_value=mock_arxiv),
+            patch("scholar_agent.engine.academic.arxiv_search.collect_hot_papers", return_value=[]),
+            patch("scholar_agent.engine.academic.daily_workflow.get_analyzed_paper_ids", return_value=set()),
+            patch("scholar_agent.engine.scholar_config.get_paper_db_path", return_value=tmp_path / "test.db"),
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            os.environ.pop("LLM_API_KEY", None)
+            result = run_unified_pipeline(
+                config=_config(),
+                paper_notes_dir=paper_notes_dir,
+            )
+
+        assert any("LLM_API_KEY" in w for w in result["warnings"])
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +429,6 @@ class TestUnifiedRouting:
                 paper_notes_dir="/tmp/test",
                 dual_track=False,
                 daily_config={"unified_pipeline": {"enabled": False}},
-                precision_config={"enabled": False},
             )
             assert result.get("unified_pipeline") is None
 

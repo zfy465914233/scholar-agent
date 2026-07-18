@@ -14,11 +14,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import threading
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, cast
 
 from scholar_agent.engine.bm25 import BM25
+from scholar_agent.engine.common import MISS, BoundedMemo
 from scholar_agent.engine.scholar_config import get_index_path
 from scholar_agent.engine.synonyms import expand_query
 
@@ -34,8 +34,32 @@ logger = logging.getLogger(__name__)
 _EXPANSION_ORIG_WEIGHT = 1.0
 _EXPANSION_EXP_WEIGHT = 0.1
 
-_bm25_cache: dict[tuple[str, float], tuple[BM25, list[dict]]] = {}
-_bm25_lock = threading.Lock()
+# Bounded (path, mtime) memo caches — the parsed JSON payload and the BM25
+# index built from it. Both invalidate automatically when the file's mtime
+# changes (the key includes it), so queries after the first skip the full
+# read + parse / BM25 construction.
+_payload_cache = BoundedMemo(bound=4)
+_bm25_cache = BoundedMemo(bound=4)
+
+
+def _read_json_cached(path: Path) -> dict:
+    """Read and parse a JSON file, cached on (path, mtime).
+
+    Raises the same exceptions as ``json.loads(path.read_text())`` — callers
+    keep their own error handling.
+    """
+    try:
+        cache_key = (str(path), path.stat().st_mtime)
+    except OSError:
+        cache_key = (str(path), 0.0)
+
+    cached = _payload_cache.get(cache_key)
+    if cached is not MISS:
+        return cast("dict", cached)
+
+    payload: dict = json.loads(path.read_text(encoding="utf-8"))
+    _payload_cache.set(cache_key, payload)
+    return payload
 
 
 def _get_bm25(documents: list[dict], index_path: Path) -> BM25:
@@ -45,19 +69,12 @@ def _get_bm25(documents: list[dict], index_path: Path) -> BM25:
     except OSError:
         cache_key = (str(index_path), 0.0)
 
-    with _bm25_lock:
-        cached = _bm25_cache.get(cache_key)
-        if cached is not None:
-            return cached[0]
+    cached = _bm25_cache.get(cache_key)
+    if cached is not MISS:
+        return cast("BM25", cached[0])
 
     bm25 = BM25(documents)
-
-    with _bm25_lock:
-        _bm25_cache[cache_key] = (bm25, documents)
-        if len(_bm25_cache) > 4:
-            oldest = next(iter(_bm25_cache))
-            del _bm25_cache[oldest]
-
+    _bm25_cache.set(cache_key, (bm25, documents))
     return bm25
 
 
@@ -319,17 +336,21 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
     from scholar_agent.engine.synonyms import expand_query
 
     try:
-        payload = json.loads(index_path.read_text(encoding="utf-8"))
+        payload = _read_json_cached(index_path)
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("failed to read index %s: %s", index_path, exc)
         return {"query": query, "results": [], "error": f"Failed to read index: {exc}"}
     documents = payload.get("documents", [])
+    # Retrieval fidelity (I3): deprecated cards are known-bad — never surface
+    # them as matches. They stay on disk for provenance (I2) but are absent
+    # from the served index view.
+    documents = [d for d in documents if d.get("trust") != "deprecated"]
 
     embedding_index_path = kwargs.get("embedding_index_path")
     embedding_index = None
     if embedding_index_path and Path(embedding_index_path).exists():
         try:
-            embedding_index = json.loads(Path(embedding_index_path).read_text(encoding="utf-8"))
+            embedding_index = _read_json_cached(Path(embedding_index_path))
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("failed to read embedding index %s, falling back to BM25: %s", embedding_index_path, exc)
 
@@ -364,8 +385,10 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
     # Annotate each result with the card's confidence so callers can weight
     # trust (reviewed/trusted outrank draft) without an extra file read.
     doc_confidence = {d.get("doc_id"): d.get("confidence", "draft") for d in documents}
+    doc_trust = {d.get("doc_id"): d.get("trust", "normal") for d in documents}
     for r in results:
         r["confidence"] = doc_confidence.get(r.get("doc_id"), "draft")
+        r["trust"] = doc_trust.get(r.get("doc_id"), "normal")
 
     # Apply a capped popularity boost. With no usage recorded every boost is
     # 1.0 (no-op); with usage, frequently-surfaced cards edge up — but only on
@@ -376,13 +399,13 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
         counts = _usage.load_usage()
         for r in results:
             r["usage_boost"] = round(_usage.usage_boost(r.get("doc_id", ""), counts), 3)
-        if not rerank and counts:
-            # Reflect the popularity boost in the emitted score so the result
-            # order and the score field stay consistent — otherwise a boosted
-            # card can rank above a higher-BM25 card while reporting a lower
-            # score (the field and the order disagreed).
+        if not rerank:
+            # Reflect the popularity boost + trust penalty in the emitted score
+            # so the result order and the score field stay consistent. Stale
+            # cards sink below fresh ones at equal relevance (I3 fidelity).
             for r in results:
-                r["score"] = round(r.get("score", 0.0) * r.get("usage_boost", 1.0), 4)
+                trust_weight = 0.5 if r.get("trust") == "stale" else 1.0
+                r["score"] = round(r.get("score", 0.0) * r.get("usage_boost", 1.0) * trust_weight, 4)
             results.sort(key=lambda r: -r.get("score", 0.0))
     except Exception:
         pass

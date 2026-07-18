@@ -25,6 +25,7 @@ def retry_with_backoff(
     jitter: bool = True,
     retry_on: tuple[type[Exception], ...] = (Exception,),
     on_retry: Callable[[int, Exception, float], None] | None = None,
+    delay_fn: Callable[[int, Exception], float] | None = None,
     **kwargs: Any,
 ) -> T:
     """Call fn with exponential backoff on failure.
@@ -38,6 +39,9 @@ def retry_with_backoff(
         jitter: Add random jitter to avoid thundering herd.
         retry_on: Exception types to retry on.
         on_retry: Optional callback(retry_number, exception, delay) called before each retry.
+        delay_fn: Optional callable(attempt, exception) -> delay seconds. Overrides
+            the base_delay/exponential computation (jitter is not applied, but the
+            max_delay cap still is) for sites whose delay depends on the failure.
         **kwargs: Keyword arguments for fn.
 
     Returns:
@@ -54,9 +58,12 @@ def retry_with_backoff(
             last_exc = exc
             if attempt >= max_retries:
                 break
-            delay = min(base_delay * (2**attempt), max_delay)
-            if jitter:
-                delay *= 0.5 + random.random()
+            if delay_fn is not None:
+                delay = min(delay_fn(attempt, exc), max_delay)
+            else:
+                delay = min(base_delay * (2**attempt), max_delay)
+                if jitter:
+                    delay *= 0.5 + random.random()
             if on_retry:
                 on_retry(attempt + 1, exc, delay)
             time.sleep(delay)

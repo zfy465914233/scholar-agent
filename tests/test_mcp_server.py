@@ -641,12 +641,14 @@ class ReindexEmbeddingTest(unittest.TestCase):
 
 
 class ConfidenceFromQualityTest(unittest.TestCase):
-    """confidence_from_quality maps the quality gate result to a label."""
+    """confidence_from_quality never auto-promotes — structural quality is not
+    factual trust, so every card starts at draft regardless of score (I3)."""
 
-    def test_high_quality_is_reviewed(self) -> None:
+    def test_high_quality_still_draft(self) -> None:
         from scholar_agent.engine.close_knowledge_loop import confidence_from_quality
 
-        self.assertEqual(confidence_from_quality({"passed": True, "score": 0.8}), "reviewed")
+        # Quality measures structure, not correctness — must not auto-promote.
+        self.assertEqual(confidence_from_quality({"passed": True, "score": 0.8}), "draft")
 
     def test_low_quality_is_draft(self) -> None:
         from scholar_agent.engine.close_knowledge_loop import confidence_from_quality

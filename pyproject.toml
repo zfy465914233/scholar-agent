@@ -137,7 +137,7 @@ warn_redundant_casts = true
 exclude = ["tests/", "scripts/"]
 
 [[tool.mypy.overrides]]
-module = ["fitz.*", "pymupdf.*", "fastmcp.*", "sentence_transformers.*", "numpy.*"]
+module = ["fitz.*", "fastmcp.*", "sentence_transformers.*", "numpy.*"]
 ignore_missing_imports = true
 
 [tool.coverage.run]

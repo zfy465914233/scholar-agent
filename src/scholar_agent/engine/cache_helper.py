@@ -78,20 +78,6 @@ def invalidate(url: str) -> None:
         p.unlink(missing_ok=True)
 
 
-def clear_all() -> int:
-    """Remove all cached entries. Returns count of entries removed."""
-    if not CACHE_DIR.exists():
-        return 0
-    count = 0
-    for p in CACHE_DIR.glob("*.meta.json"):
-        k = p.stem.replace(".meta", "")
-        p.unlink()
-        md = CACHE_DIR / f"{k}.md"
-        md.unlink(missing_ok=True)
-        count += 1
-    return count
-
-
 def _evict_if_needed() -> None:
     """Prune oldest entries when cache exceeds MAX_ENTRIES."""
     if not CACHE_DIR.exists():

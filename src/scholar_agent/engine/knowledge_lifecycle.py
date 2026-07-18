@@ -12,11 +12,17 @@ Lifecycle states:
 
 Usage:
   from knowledge_lifecycle import validate_card, transition_card, detect_duplicates
+  from knowledge_lifecycle import (
+      scan_stale_card_summaries, mark_card_stale, extract_card_urls,
+      refresh_card_sources, stamp_captured_at, set_frontmatter_key,
+  )
 """
 
 from __future__ import annotations
 
+import logging
 import re
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -27,6 +33,8 @@ from scholar_agent.engine.common import parse_frontmatter as _parse_frontmatter
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # ── Lifecycle states ───────────────────────────────────────────────
 
@@ -92,6 +100,56 @@ def _freshness_years_for(domain: str | None) -> float:
         return _DEFAULT_FRESHNESS_YEARS
     key = str(domain).strip().lower()
     return _DOMAIN_FRESHNESS_YEARS.get(key, _DEFAULT_FRESHNESS_YEARS)
+
+
+def scan_stale_cards(root: Path, *, now: datetime | None = None) -> list[dict[str, Any]]:
+    """Scan a knowledge directory for stale cards.
+
+    A card is stale when ``now.year - source_year`` exceeds its per-domain
+    freshness threshold (:func:`_freshness_years_for`); the source year is the
+    first 4-digit run in ``source_date``, falling back to ``updated_at``.
+    Reserved paths, unreadable files, and files without frontmatter or a
+    parseable year are skipped.
+
+    Returns dicts ``{"path", "id", "title", "domain", "source_year",
+    "threshold_years", "days_stale"}`` sorted by path. Advisory; never raises
+    for a single unreadable card.
+    """
+    current = now or datetime.now()
+    stale: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*.md")):
+        if is_reserved_knowledge_path(path):
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not raw.startswith("---\n"):
+            continue
+        meta, _body = parse_frontmatter(raw)
+        source_date = meta.get("source_date") or meta.get("updated_at")
+        if not source_date:
+            continue
+        match = re.search(r"\d{4}", str(source_date))
+        if not match:
+            continue
+        source_year = int(match.group())
+        threshold = _freshness_years_for(meta.get("domain"))
+        years_elapsed = current.year - source_year
+        if years_elapsed <= threshold:
+            continue
+        stale.append(
+            {
+                "path": str(path),
+                "id": meta.get("id", ""),
+                "title": meta.get("title", ""),
+                "domain": meta.get("domain", ""),
+                "source_year": source_year,
+                "threshold_years": threshold,
+                "days_stale": round((years_elapsed - threshold) * 365.25),
+            }
+        )
+    return stale
 
 
 # Required fields for a valid card
@@ -271,29 +329,32 @@ def detect_duplicates(
     """
     duplicates: list[tuple[int, int, float, str]] = []
 
+    # Precompute per-card comparison material once (O(n)) — the pairwise loop
+    # below used to redo this work for the same card in every inner iteration.
+    ids = [c.get("id") for c in cards]
+    signatures = [_card_signature(c) for c in cards]
+    titles = [_normalize_for_comparison(str(c.get("title", ""))) for c in cards]
+    word_sets = [set(t.split()) for t in titles]
+
     for i in range(len(cards)):
         for j in range(i + 1, len(cards)):
             a, b = cards[i], cards[j]
 
             # Exact ID match
-            if a.get("id") and b.get("id") and a["id"] == b["id"]:
+            if ids[i] and ids[j] and ids[i] == ids[j]:
                 duplicates.append((i, j, 1.0, "identical_id"))
                 continue
 
             # Same topic + type + similar title
-            sig_a = _card_signature(a)
-            sig_b = _card_signature(b)
-            if sig_a == sig_b:
+            if signatures[i] == signatures[j]:
                 duplicates.append((i, j, 1.0, "identical_signature"))
                 continue
 
             # Title similarity
-            title_a = _normalize_for_comparison(str(a.get("title", "")))
-            title_b = _normalize_for_comparison(str(b.get("title", "")))
-            if title_a and title_b:
+            if titles[i] and titles[j]:
                 # Simple word overlap similarity
-                words_a = set(title_a.split())
-                words_b = set(title_b.split())
+                words_a = word_sets[i]
+                words_b = word_sets[j]
                 if words_a and words_b:
                     overlap = len(words_a & words_b) / max(len(words_a | words_b), 1)
                     if overlap >= similarity_threshold and a.get("topic") == b.get("topic"):
@@ -315,3 +376,210 @@ def scan_knowledge_dir(knowledge_root: Path) -> list[dict[str, Any]]:
         metadata["_path"] = str(path)
         cards.append(metadata)
     return cards
+
+
+def persist_snapshot(
+    knowledge_root: Path,
+    url: str,
+    content_md: str,
+    title: str = "",
+    *,
+    retrieval_status: str | None = None,
+) -> tuple[str, str]:
+    """G2: archive fetched content to ``knowledge_root/_snapshots/<sha1(url)[:16]>.md``.
+
+    Returns ``(snapshot_path, captured_at)`` — empty strings on failure. Shared
+    by the MCP tools (fetch_url, save_research auto-snapshot) and the CLI
+    stale-card refresh so dead links stay traceable. ``retrieval_status`` adds
+    a ``retrieval_status:`` frontmatter line when given (CLI refresh behavior);
+    omitted it matches the original MCP snapshot format byte-for-byte.
+    """
+    if not content_md:
+        return "", ""
+    try:
+        import hashlib
+
+        snap_dir = knowledge_root / "_snapshots"
+        snap_dir.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+        captured_at = datetime.now().strftime("%Y-%m-%d")
+        status_line = f"retrieval_status: {retrieval_status}\n" if retrieval_status is not None else ""
+        snap_path = snap_dir / f"{digest}.md"
+        snap_path.write_text(
+            f"---\nurl: {url}\ncaptured_at: {captured_at}\ntitle: {title}\n{status_line}---\n\n{content_md}\n",
+            encoding="utf-8",
+        )
+        return str(snap_path), captured_at
+    except Exception:
+        logger.warning("failed to persist snapshot for %s", url, exc_info=True)
+        return "", ""
+
+
+# ── Stale-card reporting & refresh ────────────────────────────
+# Business logic for `scholar-agent scan-stale` (moved here from cli.py;
+# cli keeps thin aliases). refresh_card_sources is best-effort per URL and
+# never raises.
+
+
+def scan_stale_card_summaries(
+    knowledge_root: Path,
+    *,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """F4/G3: scan a knowledge directory for stale cards.
+
+    Report-shaped wrapper over :func:`scan_stale_cards`: emits only the
+    ``{"path", "domain", "source_year", "threshold_years", "days_stale"}``
+    keys, with ``domain`` normalized to ``""`` when unset (derive the year
+    from ``source_date``, falling back to ``updated_at``; flag when
+    ``now_year - source_year > threshold``).
+
+    Returns a list of dicts for every stale card. Advisory; never raises for
+    a single unreadable card (it is skipped).
+    """
+    return [
+        {
+            "path": entry["path"],
+            "domain": entry["domain"] or "",
+            "source_year": entry["source_year"],
+            "threshold_years": entry["threshold_years"],
+            "days_stale": entry["days_stale"],
+        }
+        for entry in scan_stale_cards(knowledge_root, now=now)
+    ]
+
+
+def set_frontmatter_key(path: Path, key: str, value: str) -> bool:
+    """Set ``key: value`` in a markdown file's frontmatter in place.
+
+    Replaces an existing ``key:`` line, or inserts right after the opening
+    ``---`` delimiter when absent. Returns True if the file was written,
+    False when the file has no frontmatter block.
+    """
+    raw = path.read_text(encoding="utf-8")
+    lines = raw.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return False
+    # Walk to the closing frontmatter delimiter.
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+    if end_idx is None:
+        return False
+    for i in range(1, end_idx):
+        if lines[i].strip().startswith(f"{key}:"):
+            lines[i] = f"{key}: {value}"
+            path.write_text("\n".join(lines), encoding="utf-8")
+            return True
+    # Insert right after opening delimiter.
+    lines.insert(1, f"{key}: {value}")
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return True
+
+
+def mark_card_stale(card_path: Path) -> bool:
+    """Add `stale: true` to a card's frontmatter in place.
+
+    Inserts the key right after the opening ``---`` line if absent. Returns
+    True if the file was written, False if it already had the flag.
+    """
+    raw = card_path.read_text(encoding="utf-8")
+    lines = raw.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return False
+    # Walk to the closing frontmatter delimiter.
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+    if end_idx is None:
+        return False
+    # Already present?
+    for line in lines[1:end_idx]:
+        if line.strip().startswith("stale:"):
+            return False
+    return set_frontmatter_key(card_path, "stale", "true")
+
+
+def extract_card_urls(card_path: Path) -> list[str]:
+    """Return the http(s) URLs from a card's frontmatter ``source_refs``.
+
+    ``source_refs`` is a YAML list of URLs. Falls back to an inline ``sources``
+    list if present. Non-http entries and duplicates are skipped.
+    """
+    from scholar_agent.engine.common import extract_source_urls, parse_frontmatter
+
+    try:
+        raw = card_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    if not raw.startswith("---\n"):
+        return []
+    meta, _body = parse_frontmatter(raw)
+    return extract_source_urls(meta)
+
+
+def refresh_card_sources(
+    card_path: Path,
+    knowledge_root: Path,
+    *,
+    now: datetime | None = None,
+) -> tuple[int, int]:
+    """G3: best-effort refresh of one card's source URLs.
+
+    Re-fetches each ``source_refs`` URL via ``fetch_content``, stores a snapshot
+    under ``knowledge_root/_snapshots/<sha1(url)[:16]>.md`` on success, and
+    stamps the card's ``captured_at`` with today's date.
+
+    Returns ``(refreshed, total)`` — the count of URLs whose snapshot was
+    written and the total number of source URLs considered. Does NOT modify the
+    answer body. Per-URL failures are logged as warnings and never raise.
+    """
+    from scholar_agent.engine.research_harness import fetch_content
+
+    current = now or datetime.now()
+    today = current.strftime("%Y-%m-%d")
+
+    urls = extract_card_urls(card_path)
+    if not urls:
+        return (0, 0)
+
+    refreshed = 0
+    any_success = False
+    for url in urls:
+        try:
+            result = fetch_content(url)
+        except Exception as exc:  # best-effort: never abort the whole sweep
+            sys.stderr.write(f"[scan-stale --refresh] {url} raised {exc}\n")
+            continue
+
+        status = result.get("retrieval_status", "")
+        content_md = result.get("content_md", "") or ""
+        if status in ("succeeded", "cached") and content_md.strip():
+            title = result.get("title", "") or url
+            snap_path, _captured_at = persist_snapshot(
+                knowledge_root, url, content_md.strip(), title, retrieval_status=status
+            )
+            if snap_path:
+                refreshed += 1
+                any_success = True
+        else:
+            reason = result.get("failure_reason", "")
+            sys.stderr.write(
+                f"[scan-stale --refresh] {url} not snapshotted (status={status}{f': {reason}' if reason else ''})\n"
+            )
+
+    if any_success:
+        stamp_captured_at(card_path, today)
+    return (refreshed, len(urls))
+
+
+def stamp_captured_at(card_path: Path, today: str) -> bool:
+    """Set/replace ``captured_at`` in a card's frontmatter.
+
+    Returns True if the file was written.
+    """
+    return set_frontmatter_key(card_path, "captured_at", today)

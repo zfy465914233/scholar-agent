@@ -20,9 +20,10 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-from typing import TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, cast
 
-from scholar_agent.engine.common import atomic_write_text
+from scholar_agent.engine.common import MISS, BoundedMemo, atomic_write_text
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -38,6 +39,11 @@ logger = logging.getLogger(__name__)
 
 _last_reindex_time: float = 0.0
 _reindex_interval: float = 60.0  # minimum seconds between background rebuilds
+
+# Memo for _is_stale_vs_files: (index path, index mtime) -> is_stale, with a
+# short TTL so a steady stream of queries shares one tree scan.
+_STALE_SCAN_TTL = 10.0  # seconds a staleness verdict may be reused
+_stale_scan_memo = BoundedMemo(bound=8, ttl_seconds=_STALE_SCAN_TTL)
 
 # ── Stale marker helpers ────────────────────────────────────────────
 
@@ -79,7 +85,16 @@ def _scan_dirs() -> list[Path]:
 
 
 def _is_stale_vs_files(index_path: Path) -> bool:
-    """Return True if any card file is newer than the index."""
+    """Return True if any card file is newer than the index.
+
+    The rglob+stat scan of the whole note tree is memoized per
+    ``(index path, index mtime)`` for up to ``_STALE_SCAN_TTL`` seconds:
+    steady-state queries share one scan instead of re-walking the tree on
+    every lookup. A rebuild changes the index mtime, so it automatically
+    re-scans; :func:`ensure_ready` additionally clears the memo after a
+    successful rebuild. Worst case a freshly-written card waits one TTL
+    before triggering a rebuild.
+    """
     if not index_path.exists():
         return True
     try:
@@ -87,6 +102,18 @@ def _is_stale_vs_files(index_path: Path) -> bool:
     except OSError:
         return True
 
+    key = (str(index_path), index_mtime)
+    cached = _stale_scan_memo.get(key)
+    if cached is not MISS:
+        return cast("bool", cached)
+
+    result = _scan_newer_than(index_mtime)
+    _stale_scan_memo.set(key, result)
+    return result
+
+
+def _scan_newer_than(index_mtime: float) -> bool:
+    """True if any scanned card file has mtime newer than *index_mtime*."""
     for scan_dir in _scan_dirs():
         if not scan_dir.exists():
             continue
@@ -122,8 +149,6 @@ def async_reindex(index_path: Path) -> None:
     Rate-limited to at most one rebuild per 60 seconds to prevent thread
     spawning under rapid successive calls (e.g. bulk card writes).
     """
-    import time
-
     global _last_reindex_time
 
     mark_stale(index_path)
@@ -175,6 +200,7 @@ def ensure_ready() -> tuple[Path, bool, str | None]:
 
     if success:
         _clear_stale(index_path)
+        _stale_scan_memo.clear()
         return index_path, True, None
 
     logger.warning("Index refresh failed for %s", index_path)

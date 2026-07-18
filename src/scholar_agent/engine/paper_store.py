@@ -3,7 +3,7 @@
 Provides persistent storage, dedup, and funnel progress tracking via SQLite.
 Uses WAL mode for safe concurrent access from the MCP server process.
 
-Tables: schema_version, papers, funnel_runs, fetch_checkpoints.
+Tables: schema_version, papers, funnel_runs, fetch_checkpoints, paper_relations.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import logging
 import sqlite3
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS papers (
     recommendation_score  REAL DEFAULT 0,
     recommendation_reason TEXT,
     recommended_at        TEXT,
+    rejected_at           TEXT,
 
     fetched_at   TEXT NOT NULL DEFAULT (datetime('now')),
     processed_at TEXT
@@ -107,6 +108,28 @@ CREATE TABLE IF NOT EXISTS fetch_checkpoints (
     updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(source, category)
 );
+"""
+
+# schema v3 — relation edges between papers, synced from PaperPulse
+# (engine/graph_sync.py). Keys are arXiv ids when either end matches a local
+# paper, else the cloud UUID (kept for future use). Created via a guarded
+# migration in initialize() so existing databases upgrade in place.
+_CREATE_PAPER_RELATIONS = """
+CREATE TABLE IF NOT EXISTS paper_relations (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_key   TEXT NOT NULL,
+    target_key   TEXT NOT NULL,
+    target_title TEXT,
+    rel_type     TEXT NOT NULL,
+    confidence   REAL DEFAULT 0,
+    reason       TEXT,
+    source       TEXT NOT NULL DEFAULT 'paperpulse',
+    synced_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(source_key, target_key, rel_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_relations_source ON paper_relations(source_key);
+CREATE INDEX IF NOT EXISTS idx_paper_relations_target ON paper_relations(target_key);
 """
 
 
@@ -158,7 +181,8 @@ class PaperStore:
 
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._txn_local = threading.local()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(
             str(self.db_path),
@@ -179,20 +203,49 @@ class PaperStore:
         self.close()
 
     @contextmanager
+    def transaction(self) -> Generator[None, None, None]:
+        """Group multiple store operations into a single atomic commit.
+
+        Inside the block, the per-call commits of :meth:`_cursor` are
+        suppressed; everything commits once on clean exit, or rolls back on
+        exception. Re-entrant within the same thread (nested blocks join the
+        outer transaction). Holds the store lock for the whole block, so
+        other threads' operations serialize outside the transaction.
+        """
+        depth = getattr(self._txn_local, "depth", 0)
+        self._txn_local.depth = depth + 1
+        try:
+            with self._lock:
+                try:
+                    yield
+                except Exception:
+                    if depth == 0:
+                        self._conn.rollback()
+                    raise
+                if depth == 0:
+                    self._conn.commit()
+        finally:
+            self._txn_local.depth = depth
+
+    @contextmanager
     def _cursor(self) -> Generator[sqlite3.Cursor, None, None]:
         """Yield a cursor with commit/rollback semantics.
 
         Thread-safe: serializes concurrent database operations via an
         internal lock so that only one thread can execute a transaction
-        at a time.
+        at a time. Inside a :meth:`transaction` block the per-call
+        commit/rollback is deferred to the outer transaction.
         """
+        in_txn = getattr(self._txn_local, "depth", 0) > 0
         with self._lock:
             cur = self._conn.cursor()
             try:
                 yield cur
-                self._conn.commit()
+                if not in_txn:
+                    self._conn.commit()
             except Exception:
-                self._conn.rollback()
+                if not in_txn:
+                    self._conn.rollback()
                 raise
             finally:
                 cur.close()
@@ -200,12 +253,35 @@ class PaperStore:
     # -- Schema management ---------------------------------------------------
 
     def initialize(self) -> None:
-        """Create tables and register schema version."""
+        """Create tables and register schema version.
+
+        Idempotent: existing databases are migrated in place — columns
+        added after the initial schema are applied via guarded
+        ``ALTER TABLE`` statements keyed off ``PRAGMA table_info``.
+        """
         with self._cursor() as cur:
             cur.executescript(_CREATE_TABLES)
             cur.execute(
                 "INSERT OR IGNORE INTO schema_version (version, description) VALUES (?, ?)",
                 (_SCHEMA_VERSION, "initial"),
+            )
+            # Migration: papers.rejected_at (schema v2) — powers the
+            # cross-day reject-dedup window in the unified pipeline.
+            cols = {row["name"] for row in cur.execute("PRAGMA table_info(papers)")}
+            if "rejected_at" not in cols:
+                cur.execute("ALTER TABLE papers ADD COLUMN rejected_at TEXT")
+            cur.execute(
+                "INSERT OR IGNORE INTO schema_version (version, description) VALUES (?, ?)",
+                (2, "papers.rejected_at"),
+            )
+            # Migration: paper_relations (schema v3) — cloud relation edges
+            # synced from PaperPulse; consumed by graph export/build_graph.
+            tables = {row["name"] for row in cur.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "paper_relations" not in tables:
+                cur.executescript(_CREATE_PAPER_RELATIONS)
+            cur.execute(
+                "INSERT OR IGNORE INTO schema_version (version, description) VALUES (?, ?)",
+                (3, "paper_relations"),
             )
 
     # -- Upsert --------------------------------------------------------------
@@ -307,11 +383,10 @@ class PaperStore:
 
     def upsert_papers(self, papers: list[dict[str, Any]]) -> int:
         """Batch upsert in a single transaction. Returns count of papers processed (inserts + updates)."""
-        count = 0
-        for raw in papers:
-            self.upsert_paper(raw)
-            count += 1
-        return count
+        with self.transaction():
+            for raw in papers:
+                self.upsert_paper(raw)
+        return len(papers)
 
     # -- Query ---------------------------------------------------------------
 
@@ -340,6 +415,25 @@ class PaperStore:
                 r["_db_id"] = r["id"]
             return rows
 
+    def get_recently_rejected_ids(self, days: int, *, now: datetime | None = None) -> set[str]:
+        """Return arxiv_ids of papers rejected within the last *days* days.
+
+        Powers the cross-day reject-dedup window: candidates the LLM (or the
+        degraded heuristic ranking) turned down stay out of the daily pool for
+        ``days`` days, then become eligible again. Papers whose ``rejected_at``
+        is missing never match. Timestamps are UTC ISO-8601, so lexicographic
+        comparison against the cutoff is safe.
+        """
+        ref = now or datetime.now(timezone.utc)
+        cutoff = (ref - timedelta(days=days)).isoformat()
+        with self._cursor() as cur:
+            cur.execute(
+                """SELECT arxiv_id FROM papers
+                WHERE status = 'rejected' AND rejected_at IS NOT NULL AND rejected_at >= ?""",
+                (cutoff,),
+            )
+            return {row["arxiv_id"] for row in cur.fetchall() if row["arxiv_id"]}
+
     def update_status(self, paper_id: int, status: str, **fields: Any) -> None:
         """Update a paper's status and optional fields."""
         sets: list[str] = ["status = ?"]
@@ -360,6 +454,7 @@ class PaperStore:
                 "recommendation_score",
                 "recommendation_reason",
                 "recommended_at",
+                "rejected_at",
                 "processed_at",
                 "funnel_run_id",
             ):
@@ -367,6 +462,9 @@ class PaperStore:
                 vals.append(v)
         if status == "recommended" and "recommended_at" not in fields:
             sets.append("recommended_at = ?")
+            vals.append(datetime.now(timezone.utc).isoformat())
+        if status == "rejected" and "rejected_at" not in fields:
+            sets.append("rejected_at = ?")
             vals.append(datetime.now(timezone.utc).isoformat())
         if status in ("recommended", "skipped") and "processed_at" not in fields:
             sets.append("processed_at = ?")
@@ -378,6 +476,78 @@ class PaperStore:
                 f"UPDATE papers SET {', '.join(sets)} WHERE id = ?",
                 vals,
             )
+
+    def get_title_arxiv_map(self) -> dict[str, str]:
+        """Return {title: arxiv_id} for all papers that have an arXiv id.
+
+        Used by the graph sync/export to bridge cloud nodes and paper-notes
+        to local arXiv ids via (normalized) title matching.
+        """
+        with self._cursor() as cur:
+            cur.execute("SELECT title, arxiv_id FROM papers WHERE arxiv_id IS NOT NULL AND arxiv_id != ''")
+            return {row["title"]: row["arxiv_id"] for row in cur.fetchall()}
+
+    # -- Paper relations (graph sync) -----------------------------------------
+
+    def upsert_relation(self, relation: dict[str, Any]) -> None:
+        """Insert/update one paper relation.
+
+        Deduped on ``UNIQUE(source_key, target_key, rel_type)`` — re-syncing
+        the same edge refreshes confidence/reason/synced_at instead of
+        duplicating the row.
+        """
+        synced_at = relation.get("synced_at") or datetime.now(timezone.utc).isoformat()
+        with self._cursor() as cur:
+            cur.execute(
+                """INSERT INTO paper_relations (
+                    source_key, target_key, target_title, rel_type,
+                    confidence, reason, source, synced_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source_key, target_key, rel_type) DO UPDATE SET
+                    target_title = excluded.target_title,
+                    confidence = excluded.confidence,
+                    reason = excluded.reason,
+                    source = excluded.source,
+                    synced_at = excluded.synced_at
+                """,
+                (
+                    relation.get("source_key"),
+                    relation.get("target_key"),
+                    relation.get("target_title"),
+                    relation.get("rel_type"),
+                    relation.get("confidence", 0.0),
+                    relation.get("reason"),
+                    relation.get("source", "paperpulse"),
+                    synced_at,
+                ),
+            )
+
+    def get_relations(self, *, source: str | None = None) -> list[dict[str, Any]]:
+        """Return stored paper relations, newest first.
+
+        Args:
+            source: Optional origin filter (e.g. ``"paperpulse"``).
+        """
+        with self._cursor() as cur:
+            if source is None:
+                cur.execute("SELECT * FROM paper_relations ORDER BY synced_at DESC, id DESC")
+            else:
+                cur.execute(
+                    "SELECT * FROM paper_relations WHERE source = ? ORDER BY synced_at DESC, id DESC",
+                    (source,),
+                )
+            return [dict(row) for row in cur.fetchall()]
+
+    def get_relations_for(self, arxiv_id: str) -> list[dict[str, Any]]:
+        """Return relations where the given arXiv id is the source or the target."""
+        with self._cursor() as cur:
+            cur.execute(
+                """SELECT * FROM paper_relations
+                WHERE source_key = ? OR target_key = ?
+                ORDER BY synced_at DESC, id DESC""",
+                (arxiv_id, arxiv_id),
+            )
+            return [dict(row) for row in cur.fetchall()]
 
     # -- Checkpoints ---------------------------------------------------------
 

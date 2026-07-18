@@ -1,6 +1,6 @@
 """Tests for the `scholar-agent scan-stale` CLI subcommand (ISSUES G3 / F4).
 
-Covers the pure scanner ``_scan_stale_cards`` and the end-to-end runner
+Covers the pure scanner ``scan_stale_card_summaries`` and the end-to-end runner
 ``_run_scan_stale`` against synthetic cards written under ``tmp_path``.
 """
 
@@ -13,7 +13,12 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
-from scholar_agent.cli import _extract_card_urls, _mark_card_stale, _run_scan_stale, _scan_stale_cards
+from scholar_agent.cli import _run_scan_stale
+from scholar_agent.engine.knowledge_lifecycle import (
+    extract_card_urls,
+    mark_card_stale,
+    scan_stale_card_summaries,
+)
 
 
 def _write_card(path: Path, *, domain: str | None, source_date: str | None, updated_at: str | None = None) -> None:
@@ -51,7 +56,7 @@ class TestScanStaleClassification(unittest.TestCase):
         # AI threshold = 0.5 years; 2020 → 6 years elapsed >> 0.5 → stale.
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "ai_old.md", domain="ai", source_date="2020-01-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(len(stale), 1)
         self.assertEqual(stale[0]["source_year"], 2020)
         self.assertAlmostEqual(stale[0]["threshold_years"], 0.5)
@@ -61,21 +66,21 @@ class TestScanStaleClassification(unittest.TestCase):
         # AI threshold = 0.5 years; this year → 0 years elapsed → not stale.
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "ai_new.md", domain="ai", source_date="2026-03-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(stale, [])
 
     def test_history_domain_three_years_ago_not_stale(self):
         # History threshold = 5 years; 2023 → 3 years elapsed < 5 → not stale.
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "hist.md", domain="history", source_date="2023-06-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(stale, [])
 
     def test_history_domain_six_years_ago_is_stale(self):
         # History threshold = 5 years; 2020 → 6 years elapsed > 5 → stale.
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "hist_old.md", domain="history", source_date="2020-06-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(len(stale), 1)
         self.assertAlmostEqual(stale[0]["threshold_years"], 5.0)
 
@@ -83,14 +88,14 @@ class TestScanStaleClassification(unittest.TestCase):
         # Unknown domain → default 3 years; 2023 → 3 years elapsed, NOT > 3.
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "misc.md", domain="geology", source_date="2023-01-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(stale, [])
 
     def test_default_domain_four_years_ago_is_stale(self):
         # Unknown domain → default 3 years; 2022 → 4 years elapsed > 3 → stale.
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "misc_old.md", domain="geology", source_date="2022-01-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(len(stale), 1)
 
     def test_mixed_dir_only_flags_stale_ones(self):
@@ -99,14 +104,14 @@ class TestScanStaleClassification(unittest.TestCase):
         _write_card(tmp / "fresh1.md", domain="ai", source_date="2026-01-01")  # fresh
         _write_card(tmp / "stale2.md", domain="history", source_date="2010-01-01")  # stale
         _write_card(tmp / "fresh2.md", domain="history", source_date="2024-01-01")  # fresh
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         names = sorted(Path(s["path"]).name for s in stale)
         self.assertEqual(names, ["stale1.md", "stale2.md"])
 
     def test_nested_subdirectories_are_scanned(self):
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "sub" / "deep" / "old.md", domain="ai", source_date="2018-01-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(len(stale), 1)
         self.assertIn("deep", stale[0]["path"])
 
@@ -119,7 +124,7 @@ class TestScanStaleClassification(unittest.TestCase):
             source_date=None,
             updated_at="2019-05-01",
         )
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(len(stale), 1)
 
     def test_card_without_any_date_is_skipped(self):
@@ -130,26 +135,26 @@ class TestScanStaleClassification(unittest.TestCase):
             "---\nid: nodate\ntitle: T\ntype: knowledge\ntopic: t\nconfidence: confirmed\n---\nbody",
             encoding="utf-8",
         )
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(stale, [])
 
     def test_templates_and_readme_are_skipped(self):
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "templates" / "tpl.md", domain="ai", source_date="2000-01-01")
         _write_card(tmp / "README.md", domain="ai", source_date="2000-01-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(stale, [])
 
     def test_snapshots_are_skipped(self):
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "_snapshots" / "source.md", domain="ai", source_date="2000-01-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         self.assertEqual(stale, [])
 
     def test_days_stale_is_positive_and_reasonable(self):
         tmp = Path(self.mkdtemp_safe())
         _write_card(tmp / "ai_old.md", domain="ai", source_date="2020-01-01")
-        stale = _scan_stale_cards(tmp, now=self.now)
+        stale = scan_stale_card_summaries(tmp, now=self.now)
         # 6 years elapsed - 0.5 threshold = 5.5 years ≈ 2008 days.
         self.assertGreater(stale[0]["days_stale"], 1900)
         self.assertLess(stale[0]["days_stale"], 2100)
@@ -161,7 +166,7 @@ class TestScanStaleClassification(unittest.TestCase):
 
 
 class TestMarkCardStale(unittest.TestCase):
-    """`_mark_card_stale` edits frontmatter in place, idempotently."""
+    """`mark_card_stale` edits frontmatter in place, idempotently."""
 
     def test_inserts_stale_true(self):
         import tempfile
@@ -171,7 +176,7 @@ class TestMarkCardStale(unittest.TestCase):
             "---\nid: c\ntitle: T\ntype: knowledge\n---\nbody",
             encoding="utf-8",
         )
-        changed = _mark_card_stale(tmp)
+        changed = mark_card_stale(tmp)
         self.assertTrue(changed)
         content = tmp.read_text(encoding="utf-8")
         self.assertIn("stale: true", content.split("---")[1])
@@ -184,7 +189,7 @@ class TestMarkCardStale(unittest.TestCase):
             "---\nid: c\nstale: true\ntitle: T\ntype: knowledge\n---\nbody",
             encoding="utf-8",
         )
-        changed = _mark_card_stale(tmp)
+        changed = mark_card_stale(tmp)
         self.assertFalse(changed)
 
 
@@ -298,12 +303,12 @@ class TestScanStaleRefresh(unittest.TestCase):
             source_refs=None,
         )
 
-    def test_extract_card_urls_reads_source_refs(self):
-        urls = _extract_card_urls(self.tmp / "ai_old.md")
+    def testextract_card_urls_reads_source_refs(self):
+        urls = extract_card_urls(self.tmp / "ai_old.md")
         self.assertEqual(urls, ["https://example.com/alpha", "https://example.com/beta"])
 
-    def test_extract_card_urls_empty_when_no_sources(self):
-        self.assertEqual(_extract_card_urls(self.tmp / "ai_old_no_sources.md"), [])
+    def testextract_card_urls_empty_when_no_sources(self):
+        self.assertEqual(extract_card_urls(self.tmp / "ai_old_no_sources.md"), [])
 
     def test_refresh_writes_snapshots_and_stamps_captured_at(self):
         import hashlib

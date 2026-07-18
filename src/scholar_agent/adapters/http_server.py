@@ -2,12 +2,13 @@
 
 A lightweight HTTP server (separate from the stdio MCP transport) exposing a
 write endpoint (``/import-markdown``) for external tools such as the
-PaperPulse SaaS to push markdown into the knowledge base, plus a ``/health``
-probe. MCP tools live in :mod:`scholar_agent.server`; this module owns only the
-HTTP layer.
+PaperPulse SaaS to push markdown into the knowledge base, a read endpoint
+(``/graph``) serving the machine-readable knowledge-graph export, plus a
+``/health`` probe. MCP tools live in :mod:`scholar_agent.server`; this module
+owns only the HTTP layer.
 
 Authentication: when ``paperpulse_token`` is configured it is strictly
-enforced; otherwise writes are restricted to loopback peers/origins.
+enforced; otherwise requests are restricted to loopback peers/origins.
 """
 
 from __future__ import annotations
@@ -87,13 +88,53 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         return origin is not None and not _is_allowed_origin(origin)
 
+    def _is_authenticated(self, origin: str | None, body_data: dict | None) -> bool:
+        """Shared auth check for read/write endpoints.
+
+        When ``paperpulse_token`` is configured, a strict Bearer match is
+        enforced; otherwise only loopback peers/origins are allowed.
+        ``body_data`` (POST only; GET passes None) supplies the fallback
+        body token.
+        """
+        config = load_config()
+        configured_token: str = config.get("paperpulse_token", "").strip()
+
+        # Extract token from header or body
+        auth_header = self.headers.get("Authorization", "")
+        req_token = ""
+        if auth_header.lower().startswith("bearer "):
+            req_token = auth_header[7:].strip()
+        elif body_data is not None:
+            req_token = body_data.get("token") or body_data.get("api_token") or ""
+        req_token = str(req_token).strip()
+
+        # If token is configured, enforce strict match.
+        # If token is NOT configured, allow ONLY if request comes from local origin or no origin (direct curl/test).
+        if configured_token:
+            return req_token == configured_token
+
+        host_header = self.headers.get("Host", "")
+        is_local_host = _host_header_is_loopback(host_header)
+        is_local_origin = False
+        if origin is None:
+            is_local_origin = _is_loopback_peer(str(self.client_address[0]))
+        else:
+            from urllib.parse import urlparse
+
+            try:
+                parsed = urlparse(origin)
+                is_local_origin = bool(parsed.hostname and _is_loopback_host(parsed.hostname))
+            except Exception:
+                is_local_origin = False
+        return is_local_host and is_local_origin
+
     def do_OPTIONS(self):
         origin = self.headers.get("Origin")
         if _is_allowed_origin(origin):
             self.send_response(200)
             self.send_header("Access-Control-Allow-Origin", origin or "")
             self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS, GET")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
             self.send_header("Access-Control-Max-Age", "86400")
             # Required for Chrome Private Network Access (public HTTPS → localhost HTTP)
             if self.headers.get("Access-Control-Request-Private-Network"):
@@ -117,9 +158,30 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", origin)
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok", "version": "1.0.0"}).encode("utf-8"))
+        elif self.path == "/graph" or self.path.startswith("/graph?"):
+            self._handle_graph(origin)
         else:
             self.send_response(404)
             self.end_headers()
+
+    def _handle_graph(self, origin: str | None) -> None:
+        """Serve the machine-readable graph export (personal data → same auth as writes)."""
+        if not self._is_authenticated(origin, None):
+            self.send_error_response(
+                401, "Unauthorized: Invalid or missing token, or read rejected for security reasons.", origin
+            )
+            return
+        try:
+            from urllib.parse import parse_qs, urlsplit
+
+            from scholar_agent.engine.graph_export import build_graph_export
+
+            query = parse_qs(urlsplit(self.path).query)
+            include_cloud = query.get("local_only", [""])[0] != "1"
+            self.send_success_response(origin, build_graph_export(include_cloud=include_cloud))
+        except Exception:
+            logger.warning("HTTP /graph failed", exc_info=True)
+            self.send_error_response(500, "Internal server error", origin)
 
     def do_POST(self):
         if self._origin_is_forbidden():
@@ -155,39 +217,7 @@ class ScholarAgentLocalServer(BaseHTTPRequestHandler):
 
             # Check Authentication Token
             config = load_config()
-            configured_token = config.get("paperpulse_token", "").strip()
-
-            # Extract token from header or body
-            auth_header = self.headers.get("Authorization", "")
-            req_token = ""
-            if auth_header.lower().startswith("bearer "):
-                req_token = auth_header[7:].strip()
-            else:
-                req_token = data.get("token") or data.get("api_token") or ""
-            req_token = str(req_token).strip()
-
-            # If token is configured, enforce strict match.
-            # If token is NOT configured, allow ONLY if request comes from local origin or no origin (direct curl/test).
-            is_authenticated = False
-            if configured_token:
-                is_authenticated = req_token == configured_token
-            else:
-                host_header = self.headers.get("Host", "")
-                is_local_host = _host_header_is_loopback(host_header)
-                is_local_origin = False
-                if origin is None:
-                    is_local_origin = _is_loopback_peer(str(self.client_address[0]))
-                else:
-                    from urllib.parse import urlparse
-
-                    try:
-                        parsed = urlparse(origin)
-                        is_local_origin = bool(parsed.hostname and _is_loopback_host(parsed.hostname))
-                    except Exception:
-                        is_local_origin = False
-                is_authenticated = is_local_host and is_local_origin
-
-            if not is_authenticated:
+            if not self._is_authenticated(origin, data):
                 self.send_error_response(
                     401, "Unauthorized: Invalid or missing token, or write rejected for security reasons.", origin
                 )

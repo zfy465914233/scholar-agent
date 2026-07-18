@@ -652,13 +652,16 @@ Some more text after code block.
 def test_v11() -> None:
     _section("V11: MCP Server Tool Validation")
 
-    # Read the server.py source for static analysis
-    mcp_path = str(_ROOT / "src" / "scholar_agent" / "server.py")
-    with open(mcp_path, encoding="utf-8") as f:
-        source = f.read()
+    # Academic tools live in adapters/mcp_academic.py since the Phase-4
+    # split; knowledge tools and infra remain in server.py.
+    server_path = _ROOT / "src" / "scholar_agent" / "server.py"
+    academic_path = _ROOT / "src" / "scholar_agent" / "adapters" / "mcp_academic.py"
+    with open(server_path, encoding="utf-8") as f:
+        server_source = f.read()
+    with open(academic_path, encoding="utf-8") as f:
+        academic_source = f.read()
 
     # V11-1: All tool functions exist and are decorated with @tool
-    # We look for function definitions under the SCHOLAR_ACADEMIC block
     tool_functions = [
         "search_papers",
         "search_conf_papers",
@@ -678,32 +681,35 @@ def test_v11() -> None:
         "ingest_source",
         "build_graph",
     ]
-    all_tools = tool_functions + non_academic_tools
 
-    for fn_name in all_tools:
+    for fn_name in tool_functions:
         # Check function is defined
         fn_pattern = rf"def {fn_name}\s*\("
-        found = bool(re.search(fn_pattern, source))
+        found = bool(re.search(fn_pattern, academic_source))
+        _report(f"V11-1-{fn_name}", found, f"Function {fn_name} defined: {found}")
+
+    for fn_name in non_academic_tools:
+        fn_pattern = rf"def {fn_name}\s*\("
+        found = bool(re.search(fn_pattern, server_source))
         _report(f"V11-1-{fn_name}", found, f"Function {fn_name} defined: {found}")
 
     # Check @tool decorator on non-academic tools
     for fn_name in non_academic_tools:
-        # @tool should appear before the def
-        decorator_pattern = rf"@tool\s*\ndef {fn_name}\s*\("
-        has_decorator = bool(re.search(decorator_pattern, source))
+        # @tool should appear before the def (sync or async)
+        decorator_pattern = rf"@tool\s*\n(?:async\s+)?def {fn_name}\s*\("
+        has_decorator = bool(re.search(decorator_pattern, server_source))
         _report(f"V11-1d-{fn_name}", has_decorator, f"@tool decorator on {fn_name}: {has_decorator}")
 
-    # Check @tool on academic tools (indented under if SCHOLAR_ACADEMIC:)
+    # Check @tool on academic tools (indented inside register_academic_tools)
     for fn_name in tool_functions:
-        # Academic tools are indented (4 spaces) inside `if SCHOLAR_ACADEMIC:`
-        decorator_pattern = rf"^\s*@tool\s*\n\s*def {fn_name}\s*\("
-        has_decorator = bool(re.search(decorator_pattern, source, re.MULTILINE))
+        decorator_pattern = rf"^\s*@tool\s*\n\s*(?:async\s+)?def {fn_name}\s*\("
+        has_decorator = bool(re.search(decorator_pattern, academic_source, re.MULTILINE))
         _report(f"V11-1a-{fn_name}", has_decorator, f"@tool decorator on {fn_name}: {has_decorator}")
 
     # V11-2: All imports from academic modules reference correct functions
     import_checks = [
         ("search_and_score", "academic.arxiv_search"),
-        ("_load_config", "academic.arxiv_search"),
+        ("load_research_config", "academic.arxiv_search"),
         ("search_and_score_conferences", "academic.conf_search"),
         ("_CONF_CATALOG", "academic.conf_search"),
         ("generate_note", "academic.paper_analyzer"),
@@ -714,18 +720,20 @@ def test_v11() -> None:
         ("check_note_quality", "academic.paper_analyzer"),
         ("build_keyword_index", "academic.note_linker"),
         ("apply_wiki_links", "academic.note_linker"),
-        ("generate_daily_recommendations", "academic.daily_workflow"),
+        # The daily_recommend shell now calls the public engine entry point
+        ("generate_recommendations", "academic.recommender"),
         ("build_daily_note", "academic.daily_workflow"),
     ]
 
     for name, module in import_checks:
-        import_pattern = rf"from {re.escape(module)} import.*{re.escape(name)}"
-        found = bool(re.search(import_pattern, source))
+        # Imports use the full package path and may be parenthesized/multi-line
+        import_pattern = rf"from (?:scholar_agent\.engine\.)?{re.escape(module)} import.*{re.escape(name)}"
+        found = bool(re.search(import_pattern, academic_source, re.DOTALL))
         _report(f"V11-2-{name}", found, f"Import {name} from {module}: {found}")
 
     # V11-3: search_papers default config does NOT contain "大模型"
     # Extract the default config section from search_papers
-    sp_match = re.search(r"def search_papers.*?(?=\n    @tool|\n    def |\nclass |\Z)", source, re.DOTALL)
+    sp_match = re.search(r"def search_papers.*?(?=\n    @tool|\n    def |\nclass |\Z)", academic_source, re.DOTALL)
     if sp_match:
         sp_body = sp_match.group(0)
         has_damo = "大模型" in sp_body
@@ -735,7 +743,7 @@ def test_v11() -> None:
 
     # V11-4: search_conf_papers _CONF_CATALOG iteration works with _VenueSpec
     # Check that _CONF_CATALOG.keys() is used correctly
-    conf_match = re.search(r"def search_conf_papers.*?(?=\n    @tool|\n    def |\nclass |\Z)", source, re.DOTALL)
+    conf_match = re.search(r"def search_conf_papers.*?(?=\n    @tool|\n    def |\nclass |\Z)", academic_source, re.DOTALL)
     if conf_match:
         conf_body = conf_match.group(0)
         # Check that _upper_map builds from _CONF_CATALOG
@@ -749,7 +757,7 @@ def test_v11() -> None:
         _report("V11-4", False, "Could not extract search_conf_papers function body")
 
     # V11-5: extract_paper_images passes through image list correctly
-    ext_match = re.search(r"def extract_paper_images.*?(?=\n    @tool|\n    def |\nclass |\Z)", source, re.DOTALL)
+    ext_match = re.search(r"def extract_paper_images.*?(?=\n    @tool|\n    def |\nclass |\Z)", academic_source, re.DOTALL)
     if ext_match:
         ext_body = ext_match.group(0)
         # Check that images list is returned directly from the tool
@@ -763,7 +771,7 @@ def test_v11() -> None:
         _report("V11-5", False, "Could not extract extract_paper_images function body")
 
     # V11-6: analyze_paper calls generate_note with correct params
-    ap_match = re.search(r"def analyze_paper.*?(?=\n    @tool|\n    def |\nclass |\Z)", source, re.DOTALL)
+    ap_match = re.search(r"def analyze_paper.*?(?=\n    @tool|\n    def |\nclass |\Z)", academic_source, re.DOTALL)
     if ap_match:
         ap_body = ap_match.group(0)
         # Check generate_note call has required params (multi-line call)

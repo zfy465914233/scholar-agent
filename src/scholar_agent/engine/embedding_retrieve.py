@@ -28,6 +28,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from scholar_agent.engine.common import MISS, BoundedMemo
+
 # ── Backend detection ──────────────────────────────────────────────
 
 _LOCAL_MODEL_AVAILABLE = False
@@ -295,6 +297,61 @@ def build_embedding_index(documents: list[dict], existing_index: dict[str, Any] 
 
 # ── Retrieval ──────────────────────────────────────────────────────
 
+# Doc-matrix cache: rebuilding the N x d float64 numpy array from the raw
+# embedding lists is the dominant per-query cost on large indexes. It is
+# cached keyed on the identity of the parsed embeddings payload — the same
+# object local_retrieve reuses per (path, mtime) via its payload cache, so
+# the matrix follows the same invalidation lifecycle. Entries hold a strong
+# reference to the payload, so id() values cannot be recycled while cached.
+_doc_matrix_cache = BoundedMemo(bound=4, identity=True)
+
+
+def _topk_from_matrix(
+    query_vec: list[float],
+    D: Any,
+    d_norms: Any,
+    doc_ids: list[str],
+    k: int,
+) -> list[tuple[str, float]]:
+    """Top-k cosine similarities against a precomputed doc matrix + row norms."""
+    q = _np.asarray(query_vec, dtype=_np.float64)
+    q_norm = _np.linalg.norm(q)
+    denom = d_norms * q_norm
+    sims = _np.zeros(D.shape[0], dtype=_np.float64)
+    nonzero = denom > 0
+    if nonzero.any():
+        sims[nonzero] = (D[nonzero] @ q) / denom[nonzero]
+    positive = _np.where(sims > 0)[0]
+    if positive.size == 0:
+        return []
+    order = _np.argsort(sims[positive])[::-1][: min(k, positive.size)]
+    selected = positive[order]
+    return [(doc_ids[i], float(sims[i])) for i in selected]
+
+
+def _doc_matrix_for(embeddings: list, doc_ids: list) -> tuple[list[str], Any, Any]:
+    """(valid_ids, matrix, row_norms) for a parsed embedding index payload.
+
+    Drops docs without an embedding (keeping ids/vectors aligned) and builds
+    the N x d float64 matrix once per payload; subsequent queries hit the
+    identity-keyed cache. The matrix is None when no usable array exists (no
+    valid pairs, or not a non-empty 2-D array) — callers treat that as "no
+    results".
+    """
+    cached = _doc_matrix_cache.get(embeddings)
+    if cached is not MISS and cached[0] is doc_ids:
+        return cached[1], cached[2], cached[3]
+
+    pairs = [(did, emb) for did, emb in zip(doc_ids, embeddings, strict=False) if emb]
+    valid_ids = [did for did, _ in pairs]
+    D = _np.asarray([emb for _, emb in pairs], dtype=_np.float64) if pairs else None
+    if D is not None and (D.ndim != 2 or D.shape[0] == 0):
+        D = None
+    d_norms = _np.linalg.norm(D, axis=1) if D is not None else None
+
+    _doc_matrix_cache.set(embeddings, (doc_ids, valid_ids, D, d_norms))
+    return valid_ids, D, d_norms
+
 
 def _cosine_topk(
     query_vec: list[float],
@@ -313,23 +370,10 @@ def _cosine_topk(
         return []
 
     if _HAS_NUMPY:
-        q = _np.asarray(query_vec, dtype=_np.float64)
         D = _np.asarray(doc_vecs, dtype=_np.float64)
         if D.ndim != 2 or D.shape[0] == 0:
             return []
-        q_norm = _np.linalg.norm(q)
-        d_norms = _np.linalg.norm(D, axis=1)
-        denom = d_norms * q_norm
-        sims = _np.zeros(D.shape[0], dtype=_np.float64)
-        nonzero = denom > 0
-        if nonzero.any():
-            sims[nonzero] = (D[nonzero] @ q) / denom[nonzero]
-        positive = _np.where(sims > 0)[0]
-        if positive.size == 0:
-            return []
-        order = _np.argsort(sims[positive])[::-1][: min(k, positive.size)]
-        selected = positive[order]
-        return [(doc_ids[i], float(sims[i])) for i in selected]
+        return _topk_from_matrix(query_vec, D, _np.linalg.norm(D, axis=1), doc_ids, k)
 
     scores: list[tuple[str, float]] = []
     for doc_id, emb in zip(doc_ids, doc_vecs, strict=False):
@@ -355,6 +399,15 @@ def retrieve_by_embedding(
 
     doc_ids = embedding_index.get("doc_ids", [])
     embeddings = embedding_index.get("embeddings", [])
+
+    if _HAS_NUMPY:
+        # Doc matrix is cached per parsed payload — repeated queries skip
+        # both the pair filtering and the N x d array construction.
+        valid_ids, D, d_norms = _doc_matrix_for(embeddings, doc_ids)
+        if D is None:
+            return []
+        return _topk_from_matrix(query_embedding, D, d_norms, valid_ids, k)
+
     # Pair ids with embeddings, dropping docs that have no embedding (e.g.
     # backend failure during index build) so the two lists stay aligned.
     pairs = [(did, emb) for did, emb in zip(doc_ids, embeddings, strict=False) if emb]

@@ -58,6 +58,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _stale_flag(metadata: dict[str, object]) -> bool:
+    """True if the card's frontmatter marks it stale (bool or 'true'/'yes'/'1')."""
+    v = metadata.get("stale", False)
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("true", "yes", "1")
+
+
+def _trust_tier(review_status: str, metadata: dict[str, object]) -> str:
+    """Retrieval-facing trust tier: ``deprecated`` (filtered out) → ``stale``
+    (score-penalized) → ``normal``. Drives retrieval fidelity (I3): known-bad
+    cards never surface as matches; stale ones sink below fresh ones."""
+    if review_status == "deprecated":
+        return "deprecated"
+    if review_status == "stale" or _stale_flag(metadata):
+        return "stale"
+    return "normal"
+
+
 def parse_card(path: Path, knowledge_root: Path | None = None) -> dict[str, object]:
     raw = path.read_text(encoding="utf-8")
     metadata, body = split_frontmatter(raw)
@@ -83,7 +102,11 @@ def parse_card(path: Path, knowledge_root: Path | None = None) -> dict[str, obje
         "tags": metadata.get("tags", []),
         "source_refs": metadata.get("source_refs", []),
         "updated_at": metadata.get("updated_at"),
-        "confidence": str(metadata.get("confidence", metadata.get("review_status", "draft"))),
+        "confidence": str(metadata.get("confidence", metadata.get("review_status", "draft"))).strip().lower(),
+        "trust": _trust_tier(
+            str(metadata.get("confidence", metadata.get("review_status", "draft"))).strip().lower(),
+            metadata,
+        ),
         "search_text": build_search_text(metadata, body),
         "links": links,
     }

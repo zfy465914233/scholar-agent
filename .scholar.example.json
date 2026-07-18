@@ -4,6 +4,10 @@
   "knowledge_dir": "../knowledge",
   "index_path": "./indexes/local/index.json",
 
+  "_paperpulse_comment": "PaperPulse cloud sync. paperpulse_token is the short-lived login JWT: it guards the loopback endpoints (/import-markdown, /graph) via 'Authorization: Bearer <token>' and authenticates 'scholar-agent graph sync'. No refresh flow — when it expires, log in to PaperPulse again and paste the new token here. Leave empty to restrict the loopback server to loopback origins/peers only.",
+  "paperpulse_url": "https://mindpulse.top",
+  "paperpulse_token": "",
+
   "academic": {
     "search": {
       "sources": ["arxiv", "dblp", "semantic_scholar"],
@@ -38,7 +42,16 @@
       "max_links": 5,
       "min_shared_keywords": 1
     },
+    "unified_pipeline": {
+      "_comment": "Daily recommendation pipeline. reject_dedup_days: candidates rejected by the LLM review stay out of the pool for this many days (default 14), then re-enter.",
+      "enabled": true,
+      "max_daily_recommendations": 3,
+      "max_candidates": 15,
+      "arxiv_days": 7,
+      "reject_dedup_days": 14
+    },
     "research_interests": {
+      "_comment": "Per-domain 'priority' (default 1.0) weights that domain's fit contribution relative to your highest-priority domain — the top domain scores at full weight, lower-priority domains proportionally less.",
       "research_domains": {
         "Machine Learning": {
           "keywords": ["deep learning", "neural network", "transformer", "pre-training", "fine-tuning", "representation learning"],

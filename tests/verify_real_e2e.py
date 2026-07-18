@@ -46,9 +46,9 @@ def safe_json(obj):
 
 print_sep("LOADING CONFIG")
 
-from scholar_agent.engine.academic.arxiv_search import _load_config
+from scholar_agent.engine.academic.arxiv_search import load_research_config
 
-config = _load_config("/nonexistent.yaml")  # triggers default fallback
+config = load_research_config("/nonexistent.yaml")  # triggers default fallback
 print("Using default fallback config")
 
 print(f"Research domains: {list(config.get('research_domains', {}).keys())}")

@@ -62,6 +62,15 @@ _TITLE_PTS = 1.0
 _ABSTRACT_PTS = 0.3
 _CATEGORY_PTS = 1.0
 
+
+def _safe_priority(raw: Any) -> float:
+    """Coerce a domain ``priority`` config value to a positive float (default 1.0)."""
+    try:
+        priority = float(raw)
+    except (TypeError, ValueError):
+        return 1.0
+    return priority if priority > 0 else 1.0
+
 # Quality: flat weighted lexicon — each term has a pre-assigned weight.
 # Sum all matching weights, cap at _CEILING.  No branching logic.
 _QUALITY_WEIGHTS: dict[str, float] = {
@@ -176,7 +185,7 @@ class PaperScorer:
             re.compile("|".join(re.escape(e) for e in self.excluded), re.IGNORECASE) if self.excluded else None
         )
         # Precompile domain keyword patterns for single-pass matching
-        self._domain_patterns: list[tuple[str, re.Pattern[str], list[str], list[str]]] = []
+        self._domain_patterns: list[tuple[str, re.Pattern[str], list[str], list[str], float]] = []
         for name, cfg in domains.items():
             kws = cfg.get("keywords", [])
             cats = cfg.get("arxiv_categories", [])
@@ -187,7 +196,11 @@ class PaperScorer:
                 )
             else:
                 pat = re.compile(r"(?!)")  # never matches
-            self._domain_patterns.append((name, pat, kws, cats))
+            priority = _safe_priority(cfg.get("priority", 1.0))
+            self._domain_patterns.append((name, pat, kws, cats, priority))
+        # Relative priority scale: the highest-priority domain keeps full
+        # weight, lower-priority domains are discounted proportionally.
+        self._max_priority = max((p for *_rest, p in self._domain_patterns), default=1.0)
 
     # -- public API ----------------------------------------------------------
 
@@ -282,7 +295,16 @@ class PaperScorer:
         self,
         paper: dict[str, Any],
     ) -> tuple[float, str | None, list[str]]:
-        """Single-pass keyword matching using precompiled regex patterns."""
+        """Single-pass keyword matching using precompiled regex patterns.
+
+        Domain priority weighting: each domain's raw fit points are scaled by
+        its relative priority, ``priority / max(priorities)`` — ``priority``
+        defaults to 1.0, so configs without priorities score exactly as
+        before. The top-priority domain keeps full weight while lower-priority
+        domains contribute proportionally less, which steers both the
+        best-domain pick and the fit score toward the domains the user cares
+        about most. The weighted score is still capped at ``_CEILING``.
+        """
         corpus = paper.get("title", "").lower() + "\n" + (paper.get("summary", "") or paper.get("abstract", "")).lower()
         title_text = paper.get("title", "").lower()
         cats = set(paper.get("categories", []))
@@ -296,7 +318,7 @@ class PaperScorer:
         best_domain: str | None = None
         best_kw: list[str] = []
 
-        for name, pat, kws, domain_cats in self._domain_patterns:
+        for name, pat, kws, domain_cats, priority in self._domain_patterns:
             pts = 0.0
             matched: list[str] = []
             seen_words: set[str] = set()
@@ -319,6 +341,8 @@ class PaperScorer:
                 if cat in cats:
                     pts += _CATEGORY_PTS
                     matched.append(cat)
+
+            pts *= priority / self._max_priority
 
             if pts > best:
                 best = pts

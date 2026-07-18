@@ -1,9 +1,11 @@
 """Tests for scholar_agent.engine.academic.arxiv_search pure functions."""
 
+import os
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from scholar_agent.engine.academic.arxiv_search import (
     DateWindow,
@@ -526,6 +528,93 @@ class TestTimeAgnosticSearch(unittest.TestCase):
         result = search_and_score(config=self._config())
         self.assertEqual(result["date_windows"]["scope"], "recent")
         self.assertIn("past_year", result["date_windows"])
+
+
+class TestWithRetry(unittest.TestCase):
+    """_with_retry: wraps retry_with_backoff, returns None on exhaustion."""
+
+    def test_success_returns_result(self):
+        from scholar_agent.engine.academic.arxiv_search import _with_retry
+
+        fn = MagicMock(return_value="body")
+        self.assertEqual(_with_retry(fn, "url", log_prefix="arxiv"), "body")
+        self.assertEqual(fn.call_count, 1)
+
+    @patch("scholar_agent.engine.retry.time.sleep")
+    def test_retries_then_succeeds(self, mock_sleep):
+        from scholar_agent.engine.academic.arxiv_search import _with_retry
+
+        fn = MagicMock(side_effect=[ValueError("boom"), "ok"])
+        with self.assertLogs("scholar_agent.engine.academic.arxiv_search", level="WARNING") as cm:
+            result = _with_retry(fn, "url", log_prefix="arxiv")
+        self.assertEqual(result, "ok")
+        self.assertEqual(fn.call_count, 2)
+        self.assertTrue(any("try 1" in msg for msg in cm.output))
+        mock_sleep.assert_called_once_with(2.0)
+
+    @patch("scholar_agent.engine.retry.time.sleep")
+    def test_exhaustion_returns_none_and_logs_error(self, mock_sleep):
+        from scholar_agent.engine.academic.arxiv_search import _with_retry
+
+        fn = MagicMock(side_effect=ValueError("always"))
+        with self.assertLogs("scholar_agent.engine.academic.arxiv_search", level="WARNING") as cm:
+            result = _with_retry(fn, "url", max_tries=3, log_prefix="s2")
+        self.assertIsNone(result)
+        self.assertEqual(fn.call_count, 3)
+        self.assertEqual([c[0][0] for c in mock_sleep.call_args_list], [2.0, 4.0])
+        self.assertEqual(sum("try " in msg for msg in cm.output), 2)
+        self.assertTrue(any("retries exhausted" in msg for msg in cm.output))
+
+
+class TestLoadResearchConfig(unittest.TestCase):
+    """Tests for load_research_config(config_path) error handling."""
+
+    def test_missing_file_returns_default_config(self):
+        from scholar_agent.engine.academic.arxiv_search import load_research_config
+
+        with self.assertLogs("scholar_agent.engine.academic.arxiv_search", level="ERROR"):
+            cfg = load_research_config("/nonexistent/path/config.yaml")
+        self.assertIn("deep-learning", cfg["research_domains"])
+        self.assertEqual(cfg["excluded_keywords"], ["3D reconstruction", "tutorial"])
+
+    def test_malformed_yaml_warns_and_returns_empty(self):
+        from scholar_agent.engine.academic.arxiv_search import load_research_config
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+            fh.write("research_domains: [unclosed\n\tbad indent:\n")
+            path = fh.name
+        try:
+            with self.assertLogs("scholar_agent.engine.academic.arxiv_search", level="WARNING") as cm:
+                cfg = load_research_config(path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(cfg, {})
+        self.assertTrue(any(path in msg for msg in cm.output))
+
+    def test_non_mapping_yaml_warns_and_returns_empty(self):
+        from scholar_agent.engine.academic.arxiv_search import load_research_config
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+            fh.write("- just\n- a\n- list\n")
+            path = fh.name
+        try:
+            with self.assertLogs("scholar_agent.engine.academic.arxiv_search", level="WARNING"):
+                cfg = load_research_config(path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(cfg, {})
+
+    def test_valid_yaml_returned_as_is(self):
+        from scholar_agent.engine.academic.arxiv_search import load_research_config
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as fh:
+            fh.write("research_domains:\n  agents:\n    keywords: [llm agents]\n")
+            path = fh.name
+        try:
+            cfg = load_research_config(path)
+        finally:
+            os.unlink(path)
+        self.assertEqual(cfg["research_domains"]["agents"]["keywords"], ["llm agents"])
 
 
 if __name__ == "__main__":

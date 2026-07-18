@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 from urllib import request as _url_lib
 
 from scholar_agent.engine.academic.scoring import score_papers
+from scholar_agent.engine.retry import retry_with_backoff
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -72,19 +73,20 @@ _S2_KEY = os.environ.get("S2_API_KEY", "")
 # ---------------------------------------------------------------------------
 
 
-def _load_config(config_path: str) -> dict[str, Any]:
-    """Read a YAML research-interests file and return a config dict."""
+def load_research_config(config_path: str) -> dict[str, Any]:
+    """Read a YAML research-interests file and return a config dict.
+
+    A missing/unreadable file (OSError) keeps the legacy fallback to a
+    built-in default domain config. A malformed YAML file logs a warning
+    and returns an empty dict so callers fall back to
+    ``get_research_interests()`` instead of silently using that default.
+    """
     try:
         import yaml
 
         with open(config_path, encoding="utf-8") as fh:
             cfg = yaml.safe_load(fh) or {}
-        global _S2_KEY
-        key = cfg.get("semantic_scholar", {}).get("api_key", "")
-        if key:
-            _S2_KEY = key
-        return cfg
-    except Exception as exc:
+    except (ImportError, OSError) as exc:
         logger.error("Config load error: %s", exc)
         return {
             "research_domains": {
@@ -96,6 +98,17 @@ def _load_config(config_path: str) -> dict[str, Any]:
             },
             "excluded_keywords": ["3D reconstruction", "tutorial"],
         }
+    except yaml.YAMLError as exc:
+        logger.warning("Ignoring malformed research config %s: %s", config_path, exc)
+        return {}
+    if not isinstance(cfg, dict):
+        logger.warning("Ignoring malformed research config %s: top-level value is not a mapping", config_path)
+        return {}
+    global _S2_KEY
+    key = cfg.get("semantic_scholar", {}).get("api_key", "")
+    if key:
+        _S2_KEY = key
+    return cfg
 
 
 # ---------------------------------------------------------------------------
@@ -110,18 +123,28 @@ def _with_retry(
     backoff_base: int = 2,
     log_prefix: str = "",
 ):
-    """Call *fn* with *args*, retrying on exceptions with exponential backoff."""
-    for attempt in range(max_tries):
-        try:
-            return fn(*args)
-        except Exception as exc:
-            if attempt < max_tries - 1:
-                wait = backoff_base ** (attempt + 1)
-                logger.warning("%s fetch error (try %d): %s", log_prefix, attempt + 1, exc)
-                time.sleep(wait)
-            else:
-                logger.error("%s: retries exhausted", log_prefix)
-    return None
+    """Call *fn* with *args*, retrying on exceptions with exponential backoff.
+
+    Returns None (logging an error) when all *max_tries* attempts fail,
+    instead of raising. Delays match ``backoff_base=2`` usage exactly
+    (2s, 4s, ...).
+    """
+
+    def _log_retry(retry_number: int, exc: Exception, _delay: float) -> None:
+        logger.warning("%s fetch error (try %d): %s", log_prefix, retry_number, exc)
+
+    try:
+        return retry_with_backoff(
+            fn,
+            *args,
+            max_retries=max_tries - 1,
+            base_delay=float(backoff_base),
+            jitter=False,
+            on_retry=_log_retry,
+        )
+    except Exception:
+        logger.error("%s: retries exhausted", log_prefix)
+        return None
 
 
 # ---------------------------------------------------------------------------

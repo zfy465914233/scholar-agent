@@ -317,3 +317,143 @@ class TestContextManager:
             papers = store2.get_papers_by_status("fetched")
             ids = [p["arxiv_id"] for p in papers]
             assert "2501.persist" in ids
+
+
+class TestTransaction:
+    """Tests for the transaction() batch-commit context manager."""
+
+    def test_transaction_commits_all_operations(self, store: PaperStore) -> None:
+        with store.transaction():
+            store.upsert_paper(_arxiv_paper(arxiv_id="2501.00001"))
+            store.upsert_paper(_arxiv_paper(arxiv_id="2501.00002"))
+        assert store.count_by_status()["fetched"] == 2
+
+    def test_transaction_rolls_back_on_error(self, store: PaperStore) -> None:
+        with pytest.raises(RuntimeError, match="boom"), store.transaction():
+            store.upsert_paper(_arxiv_paper(arxiv_id="2501.00001"))
+            raise RuntimeError("boom")
+        assert not store.paper_exists(arxiv_id="2501.00001")
+
+    def test_transaction_reads_see_own_writes(self, store: PaperStore) -> None:
+        # Same-connection reads inside the block see uncommitted writes, and
+        # the re-entrant lock does not deadlock.
+        with store.transaction():
+            store.upsert_paper(_arxiv_paper())
+            assert store.paper_exists(arxiv_id="2501.12345")
+
+    def test_transaction_nested_joins_outer(self, store: PaperStore) -> None:
+        with store.transaction():
+            store.upsert_paper(_arxiv_paper(arxiv_id="2501.00001"))
+            with store.transaction():
+                store.upsert_paper(_arxiv_paper(arxiv_id="2501.00002"))
+        assert store.count_by_status()["fetched"] == 2
+
+    def test_upsert_papers_is_atomic(self, store: PaperStore, monkeypatch: pytest.MonkeyPatch) -> None:
+        papers = [_arxiv_paper(arxiv_id="2501.00001"), _arxiv_paper(arxiv_id="2501.00002")]
+        original = store.upsert_paper
+        calls = 0
+
+        def fail_second(raw: dict) -> int:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("simulated mid-batch failure")
+            return original(raw)
+
+        monkeypatch.setattr(store, "upsert_paper", fail_second)
+        with pytest.raises(RuntimeError, match="simulated mid-batch failure"):
+            store.upsert_papers(papers)
+        # The first insert rolled back together with the failed batch
+        assert not store.paper_exists(arxiv_id="2501.00001")
+        assert store.count_by_status() == {}
+
+
+class TestRejectedStatus:
+    """Rejected candidates carry a rejected_at timestamp for cross-day dedup."""
+
+    def test_rejected_at_auto_set(self, store: PaperStore) -> None:
+        row_id = store.upsert_paper(_arxiv_paper())
+        store.update_status(row_id, "rejected", skip_reason="not_selected")
+        paper = store.get_papers_by_status("rejected")[0]
+        assert paper["rejected_at"], "rejected_at should be auto-set on status='rejected'"
+
+    def test_rejected_at_explicit_honored(self, store: PaperStore) -> None:
+        row_id = store.upsert_paper(_arxiv_paper())
+        ts = "2025-01-01T00:00:00+00:00"
+        store.update_status(row_id, "rejected", rejected_at=ts)
+        paper = store.get_papers_by_status("rejected")[0]
+        assert paper["rejected_at"] == ts
+
+    def test_get_recently_rejected_ids_window(self, store: PaperStore) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        recent = store.upsert_paper(_arxiv_paper(arxiv_id="2501.00001", title="Recent"))
+        old = store.upsert_paper(_arxiv_paper(arxiv_id="2501.00002", title="Old"))
+        other = store.upsert_paper(_arxiv_paper(arxiv_id="2501.00003", title="Other"))
+        store.update_status(recent, "rejected", rejected_at=(now - timedelta(days=1)).isoformat())
+        store.update_status(old, "rejected", rejected_at=(now - timedelta(days=20)).isoformat())
+        store.update_status(other, "recommended")
+
+        assert store.get_recently_rejected_ids(14) == {"2501.00001"}
+        assert store.get_recently_rejected_ids(30) == {"2501.00001", "2501.00002"}
+
+    def test_initialize_migrates_existing_db(self, tmp_path: Path) -> None:
+        """A pre-v2 database (no rejected_at column) is migrated idempotently."""
+        db_path = tmp_path / "legacy.db"
+        conn = sqlite3.connect(str(db_path))
+        # Full v1 papers schema — every column except rejected_at
+        conn.execute(
+            """CREATE TABLE papers (
+                id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+                arxiv_id                    TEXT UNIQUE,
+                s2_id                       TEXT,
+                doi                         TEXT,
+                title                       TEXT NOT NULL,
+                abstract                    TEXT,
+                authors                     TEXT,
+                affiliations                TEXT,
+                categories                  TEXT,
+                published_date              TEXT,
+                venue                       TEXT,
+                source                      TEXT NOT NULL DEFAULT 'arxiv',
+                citation_count              INTEGER DEFAULT 0,
+                influential_citation_count  INTEGER DEFAULT 0,
+                pdf_url                     TEXT,
+                url                         TEXT,
+                status          TEXT NOT NULL DEFAULT 'fetched',
+                is_historical   INTEGER NOT NULL DEFAULT 0,
+                funnel_run_id   INTEGER,
+                relevance_score REAL DEFAULT 0,
+                best_domain     TEXT,
+                domain_keywords TEXT,
+                skip_reason        TEXT,
+                llm_review_passed   INTEGER DEFAULT 0,
+                llm_review_detail   TEXT,
+                llm_novelty         REAL,
+                llm_credibility     REAL,
+                llm_depth           REAL,
+                llm_rigor           REAL,
+                llm_model           TEXT,
+                recommendation_score  REAL DEFAULT 0,
+                recommendation_reason TEXT,
+                recommended_at        TEXT,
+                fetched_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                processed_at TEXT
+            )"""
+        )
+        conn.execute("INSERT INTO papers (arxiv_id, title) VALUES ('2501.99999', 'Legacy Paper')")
+        conn.commit()
+        conn.close()
+
+        with PaperStore(db_path) as store:
+            store.initialize()
+            # Second initialize is a no-op (idempotent)
+            store.initialize()
+            cols = {row["name"] for row in store._conn.execute("PRAGMA table_info(papers)")}
+            assert "rejected_at" in cols
+            # Existing rows survive; new writes can use the column
+            row_id = store.upsert_paper(_arxiv_paper())
+            store.update_status(row_id, "rejected")
+            assert store.get_recently_rejected_ids(14)
+            assert store.paper_exists(arxiv_id="2501.99999")

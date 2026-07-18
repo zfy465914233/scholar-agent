@@ -46,6 +46,28 @@ Scholar Agent is part of the **MindPulse Academic Suite**, forming a powerful sy
 * **One-Click Sync**: When your Scholar Agent MCP server is running locally, simply click the **"Import to Local Scholar Agent"** button on the PaperPulse web interface. The note will be instantly synced and written to your local `knowledge/` directory via a secure local loopback interface, bypass browser sandbox constraints and rebuild your search index automatically!
 * **Manual Export**: You can also click **"Export Markdown"** to download the standard Markdown note and place it into your knowledge base directory manually.
 
+### Knowledge Graph Sync
+
+Beyond note import, Scholar Agent syncs the knowledge graph itself with PaperPulse in both directions:
+
+* **Local → Cloud**: while `scholar-agent serve-http` is running, the PaperPulse graph page reads `GET http://127.0.0.1:8374/graph` from your browser and merges your local notes into the cloud graph view.
+* **Cloud → Local**: `scholar-agent graph sync` pulls paper relation edges from PaperPulse into the local paper store (tune with `--max-nodes` / `--min-confidence`), so they show up in future exports.
+* **CLI**: `scholar-agent graph` builds the interactive HTML graph; `scholar-agent graph --json [PATH]` exports the machine-readable JSON contract (stdout when PATH is omitted).
+
+`GET /graph` returns the schema_version 1 contract:
+
+```json
+{"schema_version": 1,
+ "nodes": [{"id", "title", "node_type", "topic", "domain", "tags", "year", "arxiv_id", "venue", "domains", "is_local"}],
+ "edges": [{"source", "target", "rel_type", "confidence", "origin"}],
+ "stats": {"local_nodes": N, "local_edges": M, "cloud_edges": K}}
+```
+
+* `node_type` is one of `knowledge-card` / `paper-note` / `daily-note` / `other`; `arxiv_id` bridges local paper notes to cloud papers.
+* Edge `rel_type` is `references` for local wiki-links (`origin: "local"`), or `cites` / `extends` / `improves_upon` / `baseline_for` / `variant_of` for synced cloud relations (`origin: "paperpulse"`).
+* `GET /graph?local_only=1` skips cloud edges and returns only the local graph.
+
+Auth matches the import endpoint: when `paperpulse_token` is set in `.scholar.json`, requests must send `Authorization: Bearer <token>`; otherwise only loopback origins/peers are accepted. The token is a short-lived PaperPulse login JWT with no refresh flow — when it expires, log in to PaperPulse again and update `paperpulse_token` in `.scholar.json`.
 
 ---
 
@@ -140,6 +162,48 @@ For paper research, Scholar Agent provides:
 - **Figure Extraction** — From arXiv source archives and PDFs
 - **Daily Recommendations** — Dual-track: 2 top-conference papers + 2 arXiv innovation papers
 - **Paper → Knowledge Card** — Feed analyses back into the knowledge base
+
+### Reusing the Recommendation Engine
+
+The daily recommendation engine is a self-contained, MCP-free library API —
+the local MCP tool, the CLI, and external services all call the same entry
+point with the same `.scholar.json` config semantics:
+
+```python
+from scholar_agent.engine.academic.recommender import generate_recommendations
+
+result = generate_recommendations(
+    config=my_scholar_json,   # full .scholar.json dict; omit to load from disk
+    date="2026-07-17",        # optional; default today
+)
+```
+
+`pip install py-scholar-agent[academic]` is all you need — no MCP server,
+no fastmcp dependency in the engine layer.
+
+Key config keys (all under `academic`):
+
+- `research_interests.research_domains.<name>.priority` — relative domain
+  weight (default 1.0). The top-priority domain scores at full weight;
+  lower-priority domains contribute proportionally less to the fit score.
+- `unified_pipeline.reject_dedup_days` — papers rejected by the LLM review
+  stay out of the candidate pool for this many days (default 14), then
+  become eligible again.
+- `unified_pipeline.max_daily_recommendations` / `max_candidates` /
+  `arxiv_days` — pipeline shape knobs.
+
+The returned dict is versioned (`schema_version: 1`) and JSON-serializable:
+
+```
+{schema_version, date, papers: [{arxiv_id, title, abstract, authors, url,
+  published_date, categories, scores: {fit, recommendation, llm_novelty?,
+  llm_credibility?}, recommendation_reason, track, domain}],
+ stats: {arxiv_fetched, s2_fetched, after_dedup, candidates, llm_calls,
+  llm_tokens, duration_seconds}, warnings: [...], skipped, total_found, ...}
+```
+
+`warnings` surfaces degraded behavior (e.g. LLM review skipped because
+`LLM_API_KEY` is unset and heuristic ranking was used instead).
 
 ---
 

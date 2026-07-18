@@ -309,17 +309,20 @@ def validate_answer_schema(answer_data: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 QUALITY_THRESHOLD_SAVE_RESEARCH = 0.30
 QUALITY_THRESHOLD_CAPTURE_ANSWER = 0.20
-# Above this quality score, a freshly-saved card auto-promotes from draft to
-# reviewed (it cleared the gate AND is substantively rich). trusted remains a
-# manual / usage-driven step — so the knowledge base self-refines instead of
-# every card sitting at draft forever.
-REVIEWED_QUALITY_THRESHOLD = 0.6
 
 
 def confidence_from_quality(quality_result: dict) -> str:
-    """Map a quality_score_answer_data result to a confidence label."""
-    if quality_result.get("passed") and quality_result.get("score", 0.0) >= REVIEWED_QUALITY_THRESHOLD:
-        return "reviewed"
+    """Map a quality_score_answer_data result to a confidence label.
+
+    Always returns ``draft``: quality measures structural completeness
+    (length, claims, optional fields), not factual correctness — letting it
+    auto-promote a card to ``reviewed`` would let a well-structured-but-wrong
+    card masquerade as verified authority, polluting the trust signal retrieval
+    relies on (I3). ``reviewed``/``trusted`` are reached only by an explicit
+    verification path (manual review, multi-source cross-check, dead-link
+    clearance). The argument is kept for call-site compatibility.
+    """
+    _ = quality_result
     return "draft"
 
 

@@ -1,7 +1,7 @@
 """Unified lightweight pipeline for daily paper recommendations.
 
-Replaces the 3 existing paths (dual-track, precision funnel, single-track)
-with a single fast path optimized for local use:
+Replaces the legacy dual-track and single-track paths with a single fast
+path optimized for local use:
 
   Concurrent fetch (arXiv + S2) → CPU pre-filter → 1 batch LLM call → ≤3 papers
 
@@ -17,7 +17,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from scholar_agent.engine.academic.innovation_scorer import (
     _INNOVATION_SIGNALS,
@@ -26,6 +26,9 @@ from scholar_agent.engine.academic.innovation_scorer import (
     _RED_FLAG_TITLES,
 )
 from scholar_agent.engine.academic.scoring import PaperScorer
+
+if TYPE_CHECKING:
+    from scholar_agent.engine.paper_store import PaperStore
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +275,10 @@ def heuristic_pre_filter(
             score += max(1.5 * (1.0 - age_days / 365.0), 0.0)
 
         p["_heuristic_score"] = round(score, 2)
+        p["scores"] = {
+            "fit": round(fit_score, 2),
+            "recommendation": round(score, 2),
+        }
         p["relevance_score"] = fit_score
         p["best_domain"] = domain
         p["domain_keywords"] = keywords
@@ -284,6 +291,19 @@ def heuristic_pre_filter(
 # ---------------------------------------------------------------------------
 # Batch LLM selection (1 call)
 # ---------------------------------------------------------------------------
+
+
+def _ensure_scores(p: dict[str, Any]) -> dict[str, Any]:
+    """Guarantee the stable ``scores`` contract on a returned paper.
+
+    Every paper leaving the unified pipeline carries ``scores.fit`` and
+    ``scores.recommendation`` — downstream shells (MCP, CLI, library
+    consumers) read those keys instead of the internal ``_heuristic_score``.
+    """
+    scores: dict[str, Any] = p.setdefault("scores", {})
+    scores.setdefault("fit", round(p.get("relevance_score", 0) or 0, 2))
+    scores.setdefault("recommendation", p.get("_heuristic_score", 0) or 0)
+    return scores
 
 
 def _parse_batch_response(raw: str) -> dict[str, Any]:
@@ -323,7 +343,10 @@ def batch_llm_select(
     api_key = os.environ.get("LLM_API_KEY", "")
     if not api_key:
         logger.info("[UnifiedPipeline] No LLM_API_KEY, using heuristic-only selection")
-        return candidates[:max_select], 0, 0
+        selected = candidates[:max_select]
+        for p in selected:
+            _ensure_scores(p)
+        return selected, 0, 0
 
     # Build candidates text
     candidates_text = ""
@@ -367,7 +390,10 @@ def batch_llm_select(
 
         if not selected_indices:
             logger.warning("[UnifiedPipeline] LLM selected no papers, falling back to heuristic")
-            return candidates[:max_select], 1, tokens
+            fallback = candidates[:max_select]
+            for p in fallback:
+                _ensure_scores(p)
+            return fallback, 1, tokens
 
         recommended = []
         for idx in sorted(selected_indices):
@@ -376,13 +402,19 @@ def batch_llm_select(
             p["recommendation_reason"] = sel.get("reason", "")
             p["llm_novelty"] = max(1, min(5, sel.get("novelty", 3)))
             p["llm_credibility"] = max(1, min(5, sel.get("credibility", 3)))
+            scores = _ensure_scores(p)
+            scores["llm_novelty"] = p["llm_novelty"]
+            scores["llm_credibility"] = p["llm_credibility"]
             recommended.append(p)
 
         return recommended[:max_select], 1, tokens
 
     except Exception as exc:
         logger.warning("[UnifiedPipeline] LLM call failed: %s — heuristic fallback", exc)
-        return candidates[:max_select], 0, 0
+        fallback = candidates[:max_select]
+        for p in fallback:
+            _ensure_scores(p)
+        return fallback, 0, 0
 
 
 # ---------------------------------------------------------------------------
@@ -402,10 +434,14 @@ def run_unified_pipeline(
     Steps:
       1. Refine queries from config
       2. Concurrent fetch (arXiv + S2)
-      3. Merge, dedup, filter already-analyzed
+      3. Merge, dedup, filter already-analyzed + recently-rejected
       4. Heuristic pre-filter (CPU, ≤15 candidates)
       5. Batch LLM select (1 call, ≤3 papers)
-      6. Save to SQLite, return results
+      6. Persist run + all reviewed candidates to SQLite, return results
+
+    Returns a dict with ``papers``, ``total_found``, ``skipped``,
+    ``unified_pipeline``, ``stats`` — plus ``warnings`` surfacing degraded
+    behavior (e.g. LLM selection skipped without ``LLM_API_KEY``).
     """
     t0 = time.monotonic()
 
@@ -414,33 +450,39 @@ def run_unified_pipeline(
     arxiv_days = uc.get("arxiv_days", 7)
     max_candidates = uc.get("max_candidates", 15)
     max_arxiv = uc.get("max_arxiv_results", 200)
+    reject_dedup_days = int(uc.get("reject_dedup_days", 14) or 0)
 
-    # 1. Refine queries
-    arxiv_cats, _s2_phrases = refine_queries(config)
+    date_str = (target_date or datetime.now()).strftime("%Y-%m-%d")
+    warnings: list[str] = []
 
-    # 2. Concurrent fetch
-    arxiv_papers, s2_papers = concurrent_fetch(
-        arxiv_categories=arxiv_cats,
-        target_date=target_date,
-        arxiv_days=arxiv_days,
-        max_arxiv=max_arxiv,
-        config=config,
-    )
+    run_id = _start_funnel_run(date_str, uc)
+    try:
+        # 1. Refine queries
+        arxiv_cats, _s2_phrases = refine_queries(config)
 
-    # 3. Dedup + skip already-analyzed
-    if existing_ids is None:
-        from scholar_agent.engine.academic.daily_workflow import get_analyzed_paper_ids
+        # 2. Concurrent fetch
+        arxiv_papers, s2_papers = concurrent_fetch(
+            arxiv_categories=arxiv_cats,
+            target_date=target_date,
+            arxiv_days=arxiv_days,
+            max_arxiv=max_arxiv,
+            config=config,
+        )
+        _record_fetch_checkpoints(date_str, len(arxiv_papers), len(s2_papers))
 
-        existing_ids = get_analyzed_paper_ids(paper_notes_dir)
-    merged, skipped = _dedup_papers(arxiv_papers, s2_papers, existing_ids)
+        # 3. Dedup + skip already-analyzed + skip recently-rejected
+        if existing_ids is None:
+            from scholar_agent.engine.academic.daily_workflow import get_analyzed_paper_ids
 
-    if not merged:
-        return {
-            "papers": [],
-            "total_found": 0,
-            "skipped": 0,
-            "unified_pipeline": True,
-            "stats": {
+            existing_ids = get_analyzed_paper_ids(paper_notes_dir)
+        if reject_dedup_days > 0:
+            rejected_ids = _get_recently_rejected_ids(reject_dedup_days)
+            if rejected_ids:
+                existing_ids = set(existing_ids) | rejected_ids
+        merged, skipped = _dedup_papers(arxiv_papers, s2_papers, existing_ids)
+
+        if not merged:
+            stats = {
                 "arxiv_fetched": len(arxiv_papers),
                 "s2_fetched": len(s2_papers),
                 "after_dedup": 0,
@@ -448,30 +490,59 @@ def run_unified_pipeline(
                 "llm_calls": 0,
                 "llm_tokens": 0,
                 "duration_seconds": round(time.monotonic() - t0, 2),
-            },
+            }
+            _persist_results(run_id, [], [], stats)
+            return {
+                "papers": [],
+                "total_found": 0,
+                "skipped": 0,
+                "unified_pipeline": True,
+                "warnings": warnings,
+                "stats": stats,
+            }
+
+        # 4. Heuristic pre-filter
+        candidates = heuristic_pre_filter(merged, config, max_candidates=max_candidates)
+
+        # 5. Batch LLM select
+        selected, llm_calls, llm_tokens = batch_llm_select(candidates, max_select=max_rec)
+        if candidates and llm_calls == 0:
+            if os.environ.get("LLM_API_KEY"):
+                warnings.append("LLM selection failed — fell back to heuristic ranking")
+            else:
+                warnings.append("LLM selection skipped (LLM_API_KEY not set) — heuristic ranking used")
+
+        # Candidates the selection did not pick (LLM-rejected, or below the
+        # cut when degraded to heuristic ranking).
+        selected_ids = {id(p) for p in selected}
+        rejected = [p for p in candidates if id(p) not in selected_ids]
+
+        # 6. Persist run + all reviewed candidates in one transaction
+        stats = {
+            "arxiv_fetched": len(arxiv_papers),
+            "s2_fetched": len(s2_papers),
+            "after_dedup": len(merged),
+            "candidates": len(candidates),
+            "llm_calls": llm_calls,
+            "llm_tokens": llm_tokens,
+            "duration_seconds": round(time.monotonic() - t0, 2),
         }
-
-    # 4. Heuristic pre-filter
-    candidates = heuristic_pre_filter(merged, config, max_candidates=max_candidates)
-
-    # 5. Batch LLM select
-    selected, llm_calls, llm_tokens = batch_llm_select(candidates, max_select=max_rec)
-
-    # 6. Save to SQLite
-    _save_to_store(selected)
+        _persist_results(run_id, selected, rejected, stats)
+    except Exception as exc:
+        _fail_funnel_run(run_id, exc)
+        raise
 
     for p in selected:
         p["track"] = "unified_pipeline"
 
-    duration = time.monotonic() - t0
     logger.info(
         "Unified pipeline: %d arXiv + %d S2 → %d merged → %d candidates → %d recommended (%.1fs)",
-        len(arxiv_papers),
-        len(s2_papers),
-        len(merged),
-        len(candidates),
+        stats["arxiv_fetched"],
+        stats["s2_fetched"],
+        stats["after_dedup"],
+        stats["candidates"],
         len(selected),
-        duration,
+        stats["duration_seconds"],
     )
 
     return {
@@ -479,35 +550,119 @@ def run_unified_pipeline(
         "total_found": len(merged),
         "skipped": skipped,
         "unified_pipeline": True,
-        "stats": {
-            "arxiv_fetched": len(arxiv_papers),
-            "s2_fetched": len(s2_papers),
-            "after_dedup": len(merged),
-            "candidates": len(candidates),
-            "llm_calls": llm_calls,
-            "llm_tokens": llm_tokens,
-            "duration_seconds": round(duration, 2),
-        },
+        "warnings": warnings,
+        "stats": stats,
     }
 
 
-def _save_to_store(papers: list[dict[str, Any]]) -> None:
-    """Persist recommended papers to SQLite."""
+# ---------------------------------------------------------------------------
+# Persistence (SQLite paper store)
+# ---------------------------------------------------------------------------
+
+
+def _open_store() -> PaperStore:
+    """Open the configured paper store (caller closes)."""
+    from scholar_agent.engine.paper_store import PaperStore
+    from scholar_agent.engine.scholar_config import get_paper_db_path
+
+    db_path = get_paper_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    store = PaperStore(db_path)
+    store.initialize()
+    return store
+
+
+def _start_funnel_run(date_str: str, unified_config: dict[str, Any]) -> int | None:
+    """Record the start of a pipeline run; None when persistence is unavailable."""
     try:
-        from scholar_agent.engine.paper_store import PaperStore
+        with _open_store() as store:
+            return store.start_funnel_run(date_str, {"unified_pipeline": unified_config})
+    except Exception:
+        logger.debug("funnel_runs tracking unavailable", exc_info=True)
+        return None
+
+
+def _record_fetch_checkpoints(date_str: str, arxiv_count: int, s2_count: int) -> None:
+    """Checkpoint per-source fetch progress for the run date."""
+    try:
+        with _open_store() as store, store.transaction():
+            store.set_checkpoint("unified_arxiv", "", date_str, arxiv_count)
+            store.set_checkpoint("unified_s2", "", date_str, s2_count)
+    except Exception:
+        logger.debug("fetch checkpoint write failed", exc_info=True)
+
+
+def _get_recently_rejected_ids(days: int) -> set[str]:
+    """Arxiv IDs rejected within the dedup window (best-effort)."""
+    try:
         from scholar_agent.engine.scholar_config import get_paper_db_path
 
-        db_path = get_paper_db_path()
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        with PaperStore(db_path) as store:
-            store.initialize()
-            for p in papers:
+        if not get_paper_db_path().exists():
+            return set()
+        with _open_store() as store:
+            return store.get_recently_rejected_ids(days)
+    except Exception:
+        logger.debug("reject dedup lookup unavailable", exc_info=True)
+        return set()
+
+
+def _persist_results(
+    run_id: int | None,
+    selected: list[dict[str, Any]],
+    rejected: list[dict[str, Any]],
+    stats: dict[str, Any],
+) -> None:
+    """Persist all reviewed candidates and close out the funnel run.
+
+    Every candidate that entered LLM review (or heuristic selection when
+    degraded) is stored: winners as ``recommended`` (score + reason), the
+    rest as ``rejected`` (score + ``rejected_at``) so the reject-dedup
+    window can keep them out of future runs. Candidates dropped earlier by
+    the heuristic pre-filter are NOT persisted. One transaction, one commit.
+    """
+    try:
+        with _open_store() as store, store.transaction():
+            for p in selected:
                 row_id = store.upsert_paper(p)
-                store.update_status(
-                    row_id,
-                    "recommended",
-                    recommendation_score=p.get("_heuristic_score", 0),
-                    recommendation_reason=p.get("recommendation_reason", ""),
+                fields: dict[str, Any] = {
+                    "recommendation_score": p.get("_heuristic_score", 0),
+                    "recommendation_reason": p.get("recommendation_reason", ""),
+                }
+                if run_id is not None:
+                    fields["funnel_run_id"] = run_id
+                store.update_status(row_id, "recommended", **fields)
+            for p in rejected:
+                row_id = store.upsert_paper(p)
+                fields = {
+                    "recommendation_score": p.get("_heuristic_score", 0),
+                    "skip_reason": "not_selected",
+                }
+                if run_id is not None:
+                    fields["funnel_run_id"] = run_id
+                store.update_status(row_id, "rejected", **fields)
+            if run_id is not None:
+                store.update_funnel_run(
+                    run_id,
+                    stage1_input=stats.get("arxiv_fetched", 0) + stats.get("s2_fetched", 0),
+                    stage2_output=stats.get("after_dedup", 0),
+                    stage3_output=stats.get("candidates", 0),
+                    stage4_output=len(selected),
+                    recommended=len(selected),
+                    llm_calls=stats.get("llm_calls", 0),
+                    llm_tokens=stats.get("llm_tokens", 0),
+                    duration_seconds=stats.get("duration_seconds", 0),
+                    status="success",
                 )
     except Exception as exc:
         logger.warning("Failed to save to SQLite: %s", exc)
+
+
+def _fail_funnel_run(run_id: int | None, exc: Exception) -> None:
+    """Mark the funnel run as failed (best-effort)."""
+    if run_id is None:
+        return
+    try:
+        with _open_store() as store:
+            store.update_funnel_run(run_id, status="failed", error_message=str(exc))
+    except Exception:
+        logger.debug("funnel run failure write failed", exc_info=True)

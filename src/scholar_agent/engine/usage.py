@@ -56,22 +56,35 @@ def load_usage() -> dict[str, int]:
         return _usage
 
 
-def record_usage(doc_ids: list[str]) -> None:
-    """Increment counts for *doc_ids* and persist atomically."""
+def record_usage(doc_ids: list[str], *, persist: bool = True) -> None:
+    """Increment counts for *doc_ids* and persist atomically.
+
+    With ``persist=False`` only the in-memory counts are updated — hot
+    callers (the MCP query path) debounce the disk write and flush later
+    via :func:`persist_usage`.
+    """
     if not doc_ids:
         return
-    path = _usage_path()
     with _lock:
         for d in doc_ids:
             key = str(d)
             _usage[key] = _usage.get(key, 0) + 1
+    if persist:
+        persist_usage()
+
+
+def persist_usage() -> bool:
+    """Atomically write current counts to ``SCHOLAR_HOME/usage.json``."""
+    path = _usage_path()
+    with _lock:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(path.suffix + ".tmp")
             tmp.write_text(json.dumps(_usage, ensure_ascii=False) + "\n", encoding="utf-8")
             tmp.replace(path)
+            return True
         except OSError:
-            pass
+            return False
 
 
 def usage_boost(doc_id: str, usage: dict[str, int] | None = None) -> float:

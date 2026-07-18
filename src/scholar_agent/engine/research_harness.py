@@ -181,13 +181,22 @@ def run_discovery(
     seen_urls: set[str] = set()
     merged_evidence: list[dict[str, Any]] = []
 
-    for variant in query_variants:
+    def _search_variant(index: int, variant: str) -> list[dict[str, Any]]:
         payload = run_search_pipeline(
             query=variant,
             providers=[prov],
-            external_batch=external_batch if variant == query_variants[0] else None,
+            external_batch=external_batch if index == 0 else None,
         )
-        for item in payload["evidence"]:
+        return list(payload["evidence"])
+
+    # Fan the variants out to a small pool (4-7 blocking HTTP calls each run);
+    # pool.map preserves variant order, so merge/dedup semantics match the
+    # previous serial loop exactly.
+    with ThreadPoolExecutor(max_workers=min(len(query_variants), 4)) as pool:
+        variant_results = pool.map(_search_variant, range(len(query_variants)), query_variants)
+
+    for evidence in variant_results:
+        for item in evidence:
             url = item.get("url", "")
             if url and url in seen_urls:
                 continue

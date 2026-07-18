@@ -58,6 +58,21 @@ class TestRetryWithBackoff(unittest.TestCase):
         retry_with_backoff(fn, "a", "b", key="val", max_retries=0)
         fn.assert_called_once_with("a", "b", key="val")
 
+    @patch("scholar_agent.engine.retry.time.sleep")
+    def test_delay_fn_overrides_backoff_and_skips_jitter(self, mock_sleep: MagicMock) -> None:
+        fn = MagicMock(side_effect=[ValueError("429 boom"), ValueError("nope"), "ok"])
+        delays = {0: 30.0, 1: 1.0}
+        result = retry_with_backoff(
+            fn,
+            max_retries=2,
+            base_delay=999.0,
+            jitter=True,  # ignored when delay_fn is given
+            retry_on=(ValueError,),
+            delay_fn=lambda attempt, _exc: delays[attempt],
+        )
+        self.assertEqual(result, "ok")
+        self.assertEqual([c[0][0] for c in mock_sleep.call_args_list], [30.0, 1.0])
+
 
 if __name__ == "__main__":
     unittest.main()
