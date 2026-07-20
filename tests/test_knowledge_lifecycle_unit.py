@@ -311,11 +311,15 @@ class TestTransitionCardInvalid(unittest.TestCase):
         self.assertIsNotNone(error)
         self.assertEqual(updated["review_status"], "trusted")
 
-    def test_draft_to_trusted(self):
+    def test_draft_to_trusted_is_valid(self):
+        # draft → trusted is now legal: a user can vouch for a draft directly
+        # via review_card. (Only the auto dead-link sweep opts out of staling
+        # drafts — that's a product choice in _mark_stale, not a state-machine
+        # rule.) Kept in this class to document the contrast with trusted→draft.
         meta = {"review_status": "draft"}
-        _updated, error = transition_card(meta, LifecycleState.TRUSTED)
-        self.assertIsNotNone(error)
-        self.assertIn("Cannot transition", error)
+        updated, error = transition_card(meta, LifecycleState.TRUSTED)
+        self.assertIsNone(error)
+        self.assertEqual(updated["review_status"], "trusted")
 
     def test_deprecated_to_anything(self):
         for target in LifecycleState:

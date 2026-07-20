@@ -66,21 +66,19 @@ def _stale_flag(metadata: dict[str, object]) -> bool:
     return str(v).strip().lower() in ("true", "yes", "1")
 
 
-def _trust_tier(review_status: str, metadata: dict[str, object]) -> str:
-    """Retrieval-facing trust tier: ``deprecated`` (filtered out) → ``stale``
-    (score-penalized) → ``normal``. Drives retrieval fidelity (I3): known-bad
-    cards never surface as matches; stale ones sink below fresh ones.
+def _trust_tier(metadata: dict[str, object]) -> str:
+    """Retrieval-facing trust tier from a card's frontmatter: ``deprecated``
+    (filtered out) → ``stale`` (score-penalized) → ``normal``.
 
-    Checks both the normalized *review_status* (which parse_card derives as
-    confidence-or-review_status) and the raw frontmatter fields directly, so an
-    explicit ``review_status`` is never masked by a ``confidence`` value — e.g.
-    ``confidence: confirmed`` + ``review_status: deprecated`` must still be
-    deprecated."""
-    rs_raw = str(metadata.get("review_status", "")).strip().lower()
-    conf_raw = str(metadata.get("confidence", "")).strip().lower()
-    if review_status == "deprecated" or rs_raw == "deprecated" or conf_raw == "deprecated":
+    Single source of truth: reads ``review_status`` / ``confidence`` / ``stale``
+    here so callers don't each re-derive. An explicit ``review_status`` is never
+    masked by a ``confidence`` value (``confidence: confirmed`` +
+    ``review_status: deprecated`` → deprecated)."""
+    rs = str(metadata.get("review_status", "")).strip().lower()
+    conf = str(metadata.get("confidence", "")).strip().lower()
+    if "deprecated" in (rs, conf):
         return "deprecated"
-    if review_status == "stale" or rs_raw == "stale" or conf_raw == "stale" or _stale_flag(metadata):
+    if "stale" in (rs, conf) or _stale_flag(metadata):
         return "stale"
     return "normal"
 
@@ -111,6 +109,7 @@ def parse_card(path: Path, knowledge_root: Path | None = None) -> dict[str, obje
             domain = relative_parts[0]
         if not topic and len(relative_parts) >= 3:
             topic = relative_parts[1]
+    confidence = str(metadata.get("confidence", metadata.get("review_status", "draft"))).strip().lower()
     return {
         "doc_id": str(metadata.get("id", path.stem)),
         "path": str(path.as_posix()),
@@ -121,11 +120,8 @@ def parse_card(path: Path, knowledge_root: Path | None = None) -> dict[str, obje
         "tags": metadata.get("tags", []),
         "source_refs": metadata.get("source_refs", []),
         "updated_at": metadata.get("updated_at"),
-        "confidence": str(metadata.get("confidence", metadata.get("review_status", "draft"))).strip().lower(),
-        "trust": _trust_tier(
-            str(metadata.get("confidence", metadata.get("review_status", "draft"))).strip().lower(),
-            metadata,
-        ),
+        "confidence": confidence,
+        "trust": _trust_tier(metadata),
         "search_text": build_search_text(metadata, body),
         "links": links,
     }

@@ -177,9 +177,15 @@ def _mark_stale(card_path: Path) -> bool:
     if not raw.startswith("---\n"):
         return False
     meta, _ = parse_frontmatter(raw)
+    # Draft cards are unverified — the auto dead-link sweep opts out of marking
+    # them stale (the state machine permits draft→stale, but only an explicit
+    # user review_card call should stale a draft). Deprecated is terminal.
+    current = str(meta.get("review_status") or meta.get("confidence") or "draft")
+    if current == "draft":
+        return False
     _updated, err = transition_card(dict(meta), LifecycleState.STALE)
     if err:
-        return False  # draft / deprecated / invalid — respect lifecycle contract
+        return False  # deprecated (terminal) / invalid — respect lifecycle contract
     return set_frontmatter_key(card_path, "review_status", "stale")
 
 

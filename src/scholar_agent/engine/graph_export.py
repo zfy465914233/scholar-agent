@@ -145,7 +145,7 @@ def _open_paper_store() -> PaperStore | None:
         return None
 
 
-def _store_title_map(store: PaperStore | None) -> dict[str, str]:
+def store_title_map(store: PaperStore | None) -> dict[str, str]:
     """{normalized_title: arxiv_id} over all stored papers with an arXiv id."""
     if store is None:
         return {}
@@ -190,7 +190,7 @@ def build_graph_export(index_path: Path | None = None, *, include_cloud: bool = 
     cloud_edges = 0
     cloud_degradations: list[dict[str, str]] = []
     try:
-        store_titles = _store_title_map(store)
+        store_titles = store_title_map(store)
         nodes, arxiv_to_doc = _build_nodes(documents, store_titles)
         edges = _build_local_edges(documents, all_ids)
         if include_cloud:

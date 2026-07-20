@@ -84,11 +84,11 @@ def _get_local_model() -> Any:
 
 # ── Query embedding cache ──────────────────────────────────────────
 
-# Plain dict keyed on query text; insertion order gives us LRU eviction for
-# free. We avoid functools.lru_cache here because embed_query can return []
-# on backend failure and we want to retry rather than cache the miss.
-_query_cache: dict[tuple[str, str, str], list[float]] = {}
-_QUERY_CACHE_MAX = 128
+# Query embedding cache (same BoundedMemo pattern as _doc_matrix_cache).
+# Plain dict + manual FIFO was the old form; this unifies it. We avoid
+# functools.lru_cache because embed_query can return [] on backend failure and
+# we want to retry rather than cache the miss (so only non-empty results are set).
+_query_cache = BoundedMemo(bound=128)
 
 
 # ── Core embedding functions ───────────────────────────────────────
@@ -156,16 +156,13 @@ def embed_query(query: str) -> list[float]:
     """
     cache_key = (_get_backend(), _get_model(), query)
     cached = _query_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if cached is not MISS:
+        return cached  # type: ignore[no-any-return]
     result = embed_texts([query])
     embedding = result[0] if result else []
     # Only cache successful embeddings — failures should retry on next call.
     if embedding:
-        if len(_query_cache) >= _QUERY_CACHE_MAX:
-            # Drop oldest entry (Python 3.7+ dict preserves insertion order)
-            _query_cache.pop(next(iter(_query_cache)))
-        _query_cache[cache_key] = embedding
+        _query_cache.set(cache_key, embedding)
     return embedding
 
 
@@ -339,7 +336,9 @@ def _doc_matrix_for(embeddings: list, doc_ids: list) -> tuple[list[str], Any, An
     results".
     """
     cached = _doc_matrix_cache.get(embeddings)
-    if cached is not MISS and cached[0] is doc_ids:
+    if cached is not MISS:
+        # identity-mode BoundedMemo already guards embeddings reuse; doc_ids
+        # comes from the same parsed payload, so it moves with embeddings.
         return cached[1], cached[2], cached[3]
 
     pairs = [(did, emb) for did, emb in zip(doc_ids, embeddings, strict=False) if emb]

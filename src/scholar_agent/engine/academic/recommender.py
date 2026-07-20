@@ -70,7 +70,10 @@ def generate_recommendations(
     full_config = config if config is not None else load_config()
     academic = full_config.get("academic", {}) if isinstance(full_config, dict) else {}
 
-    research_config = _resolve_research_config(academic, config_path)
+    research_config = resolve_research_interests(
+        config_path=config_path,
+        interests=academic.get("research_interests", {}),
+    )
 
     # Merge daily_recommend + unified_pipeline configs (unified_pipeline may
     # live under either key; daily_recommend.unified_pipeline wins).
@@ -130,14 +133,6 @@ def resolve_research_interests(
             "excluded_keywords": interests.get("excluded_keywords", []),
         }
     return default if default is not None else {"research_domains": {}, "excluded_keywords": []}
-
-
-def _resolve_research_config(academic: dict[str, Any], config_path: str) -> dict[str, Any]:
-    """Resolve the research-interests ladder for the library entry point."""
-    return resolve_research_interests(
-        config_path=config_path,
-        interests=academic.get("research_interests", {}),
-    )
 
 
 def _normalize_result(result: dict[str, Any], target_date: datetime) -> dict[str, Any]:

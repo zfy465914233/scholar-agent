@@ -93,16 +93,15 @@ def _get_json(session: Any, url: str, *, params: dict[str, Any]) -> dict[str, An
 
 
 def _local_title_map(store: PaperStore | None) -> dict[str, str]:
-    """{normalized_title: arxiv_id} from PaperStore papers and paper-note frontmatter."""
-    mapping: dict[str, str] = {}
-    if store is not None:
-        try:
-            for title, arxiv_id in store.get_title_arxiv_map().items():
-                norm = normalize_title(title)
-                if norm and arxiv_id:
-                    mapping.setdefault(norm, arxiv_id)
-        except Exception:
-            logger.debug("paper store title scan failed", exc_info=True)
+    """{normalized_title: arxiv_id} from PaperStore papers and paper-note frontmatter.
+
+    The store half reuses graph_export.store_title_map (single source for the
+    normalize_title+setdefault loop); only the paper-notes frontmatter scan is
+    specific to sync (it widens the match set beyond what's in the SQLite store).
+    """
+    from scholar_agent.engine.graph_export import store_title_map
+
+    mapping: dict[str, str] = dict(store_title_map(store)) if store is not None else {}
     try:
         from scholar_agent.engine.scholar_config import get_paper_notes_dir
 
@@ -164,22 +163,23 @@ def _extract_relations(
         except (TypeError, ValueError):
             return 1.0
 
+    def _rel(source: str, target: str, rel_type: str, item: dict[str, Any], title: str, match_method: str, reason: Any) -> dict[str, Any]:
+        return {
+            "source_key": source,
+            "target_key": target,
+            "target_title": title,
+            "rel_type": rel_type,
+            "confidence": _confidence(item),
+            "reason": reason,
+            "match_method": match_method,
+        }
+
     for item in context.get("citations_outgoing") or []:
         if not isinstance(item, dict):
             continue
         key, title, match_method = _target_key(item, title_map, local_arxivs)
         if key:
-            relations.append(
-                {
-                    "source_key": source_arxiv,
-                    "target_key": key,
-                    "target_title": title,
-                    "rel_type": "cites",
-                    "confidence": _confidence(item),
-                    "reason": None,
-                    "match_method": match_method,
-                }
-            )
+            relations.append(_rel(source_arxiv, key, "cites", item, title, match_method, None))
     for item in context.get("citations_incoming") or []:
         if not isinstance(item, dict):
             continue
@@ -187,17 +187,7 @@ def _extract_relations(
         # the "cites" edge keeps its true direction (citing → cited).
         key, title, match_method = _target_key(item, title_map, local_arxivs)
         if key:
-            relations.append(
-                {
-                    "source_key": key,
-                    "target_key": source_arxiv,
-                    "target_title": title,
-                    "rel_type": "cites",
-                    "confidence": _confidence(item),
-                    "reason": None,
-                    "match_method": match_method,
-                }
-            )
+            relations.append(_rel(key, source_arxiv, "cites", item, title, match_method, None))
     for item in context.get("semantic_relations") or []:
         if not isinstance(item, dict):
             continue
@@ -206,17 +196,7 @@ def _extract_relations(
             continue
         key, title, match_method = _target_key(item, title_map, local_arxivs)
         if key:
-            relations.append(
-                {
-                    "source_key": source_arxiv,
-                    "target_key": key,
-                    "target_title": title,
-                    "rel_type": rel_type,
-                    "confidence": _confidence(item),
-                    "reason": item.get("reason"),
-                    "match_method": match_method,
-                }
-            )
+            relations.append(_rel(source_arxiv, key, rel_type, item, title, match_method, item.get("reason")))
     return relations
 
 

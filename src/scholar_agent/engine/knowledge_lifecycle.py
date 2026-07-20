@@ -48,7 +48,7 @@ class LifecycleState(str, Enum):
 
 
 VALID_TRANSITIONS: dict[LifecycleState, set[LifecycleState]] = {
-    LifecycleState.DRAFT: {LifecycleState.REVIEWED, LifecycleState.DEPRECATED},
+    LifecycleState.DRAFT: {LifecycleState.REVIEWED, LifecycleState.TRUSTED, LifecycleState.STALE, LifecycleState.DEPRECATED},
     LifecycleState.REVIEWED: {LifecycleState.TRUSTED, LifecycleState.STALE, LifecycleState.DEPRECATED},
     LifecycleState.TRUSTED: {LifecycleState.STALE, LifecycleState.DEPRECATED},
     LifecycleState.STALE: {LifecycleState.REVIEWED, LifecycleState.TRUSTED, LifecycleState.DEPRECATED},

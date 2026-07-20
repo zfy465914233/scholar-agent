@@ -578,8 +578,13 @@ class PaperStore:
                 for row in cur.fetchall()
                 if (row["source_key"], row["target_key"], row["rel_type"]) not in expected_keys
             ]
-            for row_id in to_delete:
-                cur.execute("DELETE FROM paper_relations WHERE id = ?", (row_id,))
+            # Batch the deletes (chunked under SQLite's 999-param limit) — one
+            # round-trip per chunk instead of one per row. Inside the caller's
+            # transaction, so semantics are unchanged.
+            for start in range(0, len(to_delete), 900):
+                chunk = to_delete[start : start + 900]
+                placeholders = ",".join("?" for _ in chunk)
+                cur.execute(f"DELETE FROM paper_relations WHERE id IN ({placeholders})", chunk)
             return len(to_delete)
 
     # -- Checkpoints ---------------------------------------------------------

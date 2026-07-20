@@ -734,6 +734,95 @@ def capture_answer(query: str, answer: str, tags: str = "", language: str = "zh"
 
 
 @tool
+def review_card(card_id: str, target_status: str, reason: str, superseded_by: str = "") -> str:
+    """Adjust a knowledge card's trust state per the user's EXPLICIT instruction.
+
+    This is the authority-management interface. You (the AI) MUST only call it
+    when the user explicitly tells you to change a card's trust — e.g. "this is
+    wrong", "this is outdated", "this turned out solid", "this is superseded by
+    <X>". Never decide trust on your own and never call this speculatively.
+
+    Args:
+        card_id: The card's frontmatter `id` (the `doc_id` shown in
+            query_knowledge results).
+        target_status: One of `reviewed` | `trusted` | `stale` | `deprecated`.
+            - `stale`: "wrong / outdated but may be fixed" — the DEFAULT for
+              "错了/过时": reversible (a later update lifts it back to reviewed).
+            - `deprecated`: "retire permanently" — TERMINAL and IRREVERSIBLE.
+              Use only when the user clearly means permanent retirement.
+            - `reviewed` / `trusted`: lift a card's trust.
+        reason: REQUIRED. Restate why the user wants this (their words /
+            context). Written to the card and the changelog for auditability.
+        superseded_by: Optional card_id of the replacement (use with
+            stale/deprecated when the user points to a newer card).
+
+    The transition is validated against the lifecycle state machine; an illegal
+    one (e.g. promoting from deprecated, which is terminal) returns an error
+    instead of forcing the file.
+    """
+    from scholar_agent.engine.close_knowledge_loop import append_changelog
+    from scholar_agent.engine.common import now_iso
+    from scholar_agent.engine.knowledge_lifecycle import (
+        LifecycleState,
+        parse_frontmatter,
+        set_frontmatter_key,
+        transition_card,
+    )
+    from scholar_agent.engine.local_index import iter_cards
+    from scholar_agent.engine.scholar_config import get_knowledge_dir
+
+    valid = {"reviewed", "trusted", "stale", "deprecated"}
+    if target_status not in valid:
+        return json.dumps({"error": f"target_status must be one of {sorted(valid)}"})
+    if not reason or not reason.strip():
+        return json.dumps({"error": "reason is required — restate why the user wants this change"})
+
+    root = get_knowledge_dir()
+    card_path = None
+    try:
+        for candidate in iter_cards(root):
+            try:
+                # frontmatter lives at the file head — read 4KB, not the whole note
+                with candidate.open("rb") as fh:
+                    meta, _ = parse_frontmatter(fh.read(4096).decode("utf-8", errors="replace"))
+            except OSError:
+                continue
+            if str(meta.get("id", candidate.stem)) == card_id:
+                card_path = candidate
+                break
+    except Exception:
+        logger.debug("card lookup failed for %s", card_id, exc_info=True)
+    if card_path is None:
+        return json.dumps({"error": f"no card with id '{card_id}' found under {root}"})
+
+    meta, _ = parse_frontmatter(card_path.read_text(encoding="utf-8", errors="replace"))
+    current = str(meta.get("review_status") or "draft")
+
+    _new_meta, err = transition_card(dict(meta), LifecycleState(target_status))
+    if err:
+        return json.dumps({"error": err, "current_status": current, "target_status": target_status})
+
+    reason_text = reason.strip()
+    set_frontmatter_key(card_path, "review_status", target_status)
+    set_frontmatter_key(card_path, "status_reason", json.dumps(reason_text, ensure_ascii=False))
+    set_frontmatter_key(card_path, "status_changed_at", now_iso())
+    if superseded_by and superseded_by.strip():
+        set_frontmatter_key(card_path, "superseded_by", superseded_by.strip())
+
+    try:
+        append_changelog(root, "transitioned", card_id, f"{current}->{target_status}: {reason_text}")
+    except Exception:
+        logger.warning("changelog append failed for %s", card_id, exc_info=True)
+
+    _async_reindex(get_index_path())
+
+    return json.dumps(
+        {"status": "ok", "card_id": card_id, "from": current, "to": target_status, "reason": reason_text},
+        ensure_ascii=False,
+    )
+
+
+@tool
 async def ingest_source(
     source: str, title: str = "", tags: str = "", language: str = "zh", ctx: Context | None = None
 ) -> str:

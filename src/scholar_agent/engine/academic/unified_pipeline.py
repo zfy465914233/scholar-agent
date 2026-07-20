@@ -622,24 +622,17 @@ def _persist_results(
     """
     try:
         with _open_store() as store, store.transaction():
+            def _persist(p: dict[str, Any], status: str, **extra: Any) -> None:
+                row_id = store.upsert_paper(p)
+                fields: dict[str, Any] = {"recommendation_score": p.get("_heuristic_score", 0), **extra}
+                if run_id is not None:
+                    fields["funnel_run_id"] = run_id
+                store.update_status(row_id, status, **fields)
+
             for p in selected:
-                row_id = store.upsert_paper(p)
-                fields: dict[str, Any] = {
-                    "recommendation_score": p.get("_heuristic_score", 0),
-                    "recommendation_reason": p.get("recommendation_reason", ""),
-                }
-                if run_id is not None:
-                    fields["funnel_run_id"] = run_id
-                store.update_status(row_id, "recommended", **fields)
+                _persist(p, "recommended", recommendation_reason=p.get("recommendation_reason", ""))
             for p in rejected:
-                row_id = store.upsert_paper(p)
-                fields = {
-                    "recommendation_score": p.get("_heuristic_score", 0),
-                    "skip_reason": "not_selected",
-                }
-                if run_id is not None:
-                    fields["funnel_run_id"] = run_id
-                store.update_status(row_id, "rejected", **fields)
+                _persist(p, "rejected", skip_reason="not_selected")
             if run_id is not None:
                 store.update_funnel_run(
                     run_id,

@@ -38,21 +38,24 @@ def _docs(*specs: tuple[str, str]) -> list[dict]:
 
 
 class TestTrustTier(unittest.TestCase):
-    def test_deprecated(self) -> None:
-        self.assertEqual(_trust_tier("deprecated", {}), "deprecated")
+    def test_deprecated_via_review_status(self) -> None:
+        self.assertEqual(_trust_tier({"review_status": "deprecated"}), "deprecated")
+
+    def test_deprecated_via_confidence(self) -> None:
+        self.assertEqual(_trust_tier({"confidence": "deprecated"}), "deprecated")
 
     def test_stale_status(self) -> None:
-        self.assertEqual(_trust_tier("stale", {}), "stale")
+        self.assertEqual(_trust_tier({"review_status": "stale"}), "stale")
 
     def test_stale_flag_bool(self) -> None:
-        self.assertEqual(_trust_tier("draft", {"stale": True}), "stale")
+        self.assertEqual(_trust_tier({"stale": True}), "stale")
 
     def test_stale_flag_string(self) -> None:
-        self.assertEqual(_trust_tier("reviewed", {"stale": "true"}), "stale")
+        self.assertEqual(_trust_tier({"review_status": "reviewed", "stale": "true"}), "stale")
 
     def test_normal(self) -> None:
-        self.assertEqual(_trust_tier("draft", {}), "normal")
-        self.assertEqual(_trust_tier("reviewed", {"stale": False}), "normal")
+        self.assertEqual(_trust_tier({}), "normal")
+        self.assertEqual(_trust_tier({"review_status": "reviewed", "stale": False}), "normal")
 
 
 class TestParseCardTrust(unittest.TestCase):
