@@ -1,25 +1,29 @@
 """Scholar Agent — MCP server exposing knowledge tools to Claude Code and Copilot.
 
-Tools:
+SCHOLAR_TOOLSET selects which tools the server exposes (see resolve_toolset):
+unset / ``default`` / ``all`` = everything; otherwise a list of the groups below.
+
+``core`` — knowledge read/write:
   - query_knowledge: Search the local knowledge base
-  - save_research: Persist structured research results as a knowledge card
-  - fetch_url: Fetch a web URL → main content as markdown + local snapshot (G5/G2)
   - list_knowledge: Browse all knowledge cards, optionally filtered by topic
+  - save_research: Persist structured research results as a knowledge card
   - capture_answer: Capture a Q&A answer as a draft knowledge card
+  - review_card: Adjust a card's trust state on the user's explicit instruction
   - ingest_source: Ingest a URL or raw text into the knowledge base
+  - fetch_url: Fetch a web URL → main content as markdown + local snapshot (G5/G2)
+
+``paper`` — paper notes and graph:
   - build_graph: Build an interactive knowledge graph visualization
+  - import_paperpulse_note: Import a distilled PaperPulse note into the knowledge base
+  - Academic tools, registered only with SCHOLAR_ACADEMIC=1: search_papers,
+    search_conf_papers, analyze_paper, download_paper, extract_paper_images,
+    paper_to_card, daily_recommend, link_paper_keywords
+
+``maintenance`` — read-only governance:
   - validate_knowledge: Validate local knowledge cards without writing files
   - lint_knowledge: Report content-level knowledge graph issues without writing files
   - scan_stale_knowledge: Report stale cards without writing files
-
-Academic tools (set SCHOLAR_ACADEMIC=1 to enable):
-  - search_papers: Search arXiv + Semantic Scholar with scoring
-  - search_conf_papers: Search conference papers via DBLP + S2 enrichment
-  - analyze_paper: Generate structured markdown notes for a paper
-  - extract_paper_images: Extract figures from arXiv source/PDF
-  - paper_to_card: Convert paper analysis into a knowledge card
-  - daily_recommend: Full daily recommendation workflow
-  - link_paper_keywords: Auto-link keywords as [[wikilinks]]
+  - scan_dead_links: Diagnose dead source URLs across knowledge cards
 
 Usage:
   scholar-agent serve-mcp
@@ -42,7 +46,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
 from scholar_agent.adapters.http_server import start_local_server
 from scholar_agent.engine.close_knowledge_loop import (
@@ -88,6 +92,106 @@ except ImportError:
 
     def tool(fn):  # type: ignore[misc]
         return fn
+
+
+# ── Toolset selection (SCHOLAR_TOOLSET) ────────────────────────────
+# Every tool registers at import time through @tool, so the selection can only
+# happen at startup (main()) — never at module level, which would strip tools
+# from every test that imports this module.
+
+# Registered by adapters.mcp_academic.register_academic_tools (only when
+# SCHOLAR_ACADEMIC=1); members of the ``paper`` group.
+ACADEMIC_TOOL_NAMES: frozenset[str] = frozenset(
+    {
+        "search_papers",
+        "search_conf_papers",
+        "analyze_paper",
+        "download_paper",
+        "extract_paper_images",
+        "paper_to_card",
+        "daily_recommend",
+        "link_paper_keywords",
+    }
+)
+
+TOOLSET_GROUPS: dict[str, frozenset[str]] = {
+    "core": frozenset(
+        {
+            "query_knowledge",
+            "list_knowledge",
+            "save_research",
+            "capture_answer",
+            "review_card",
+            "ingest_source",
+            "fetch_url",
+        }
+    ),
+    "paper": frozenset({"build_graph", "import_paperpulse_note"}) | ACADEMIC_TOOL_NAMES,
+    "maintenance": frozenset({"validate_knowledge", "lint_knowledge", "scan_stale_knowledge", "scan_dead_links"}),
+}
+
+# Reserved values that expose every registered tool.
+TOOLSET_ALL: tuple[str, ...] = ("default", "all")
+
+
+class ToolsetError(ValueError):
+    """Invalid ``SCHOLAR_TOOLSET`` value (unknown group name)."""
+
+
+def resolve_toolset(toolset: str | None, registered: Collection[str]) -> set[str]:
+    """Return the subset of *registered* tool names that *toolset* exposes.
+
+    Pure function and single source of truth for the ``SCHOLAR_TOOLSET``
+    syntax: unset, empty, ``default`` or ``all`` expose every registered tool;
+    anything else is a list of group names (:data:`TOOLSET_GROUPS` keys)
+    separated by commas, spaces or ``+``, case-insensitive. An unknown group
+    raises :class:`ToolsetError` naming the legal values — never skipped silently.
+    """
+    names = set(registered)
+    tokens = [token for token in re.split(r"[,\s+]+", (toolset or "").strip().lower()) if token]
+    if not tokens:
+        return names
+    requested: set[str] = set()
+    for token in tokens:
+        if token in TOOLSET_ALL:
+            return names
+        if token not in TOOLSET_GROUPS:
+            legal = ", ".join((*TOOLSET_ALL, *TOOLSET_GROUPS))
+            raise ToolsetError(f"unknown group {token!r}; expected a list of: {legal}")
+        requested.add(token)
+    keep: set[str] = set()
+    for group in requested:
+        keep |= TOOLSET_GROUPS[group]
+    return names & keep
+
+
+def _remove_tool(mcp: FastMCP, name: str) -> None:
+    """Unregister *name* on *mcp*.
+
+    fastmcp >= 3 deprecates ``FastMCP.remove_tool`` in favour of the local
+    provider's; fastmcp 2.x only has the former.
+    """
+    provider = getattr(mcp, "local_provider", None)
+    if provider is not None and hasattr(provider, "remove_tool"):
+        provider.remove_tool(name)
+    else:
+        mcp.remove_tool(name)
+
+
+async def _registered_tool_names(mcp: FastMCP) -> list[str]:
+    return [tool.name for tool in await mcp.list_tools()]
+
+
+def apply_toolset(mcp: FastMCP, toolset: str | None, registered: Collection[str]) -> set[str]:
+    """Unregister every tool that *toolset* excludes, in place on *mcp*.
+
+    Call once at startup, after every ``@tool`` registration. Returns the names
+    kept. An unknown group raises :class:`ToolsetError` before *mcp* is touched.
+    """
+    keep = resolve_toolset(toolset, registered)
+    for name in sorted(set(registered) - keep):
+        _remove_tool(mcp, name)
+    return keep
 
 
 # ── Long-running tool execution (non-blocking + timeout + progress) ──
@@ -1300,6 +1404,19 @@ def main() -> int:
     if mcp is None:
         print("Error: fastmcp not installed. Run: pip install fastmcp", file=sys.stderr)
         return 1
+
+    # Narrow the tool surface before serving. An unknown SCHOLAR_TOOLSET group is
+    # a configuration error: fail fast with the legal values rather than serve a
+    # silently reduced (or full) tool set.
+    raw_toolset = os.environ.get("SCHOLAR_TOOLSET")
+    try:
+        registered = asyncio.run(_registered_tool_names(mcp))
+        kept = apply_toolset(mcp, raw_toolset, registered)
+    except ToolsetError as exc:
+        print(f"Error: invalid SCHOLAR_TOOLSET={raw_toolset!r}: {exc}", file=sys.stderr)
+        return 2
+    if len(kept) < len(registered):
+        logger.info("SCHOLAR_TOOLSET=%s: exposing %d of %d tools", raw_toolset, len(kept), len(registered))
 
     # Flush debounced metrics/usage snapshots on clean shutdown
     atexit.register(_flush_query_state)

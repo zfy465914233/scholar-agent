@@ -207,7 +207,10 @@ def build_parser() -> argparse.ArgumentParser:
     install_parser.add_argument(
         "--toolset",
         default="default",
-        help="Toolset profile to encode into the generated fragment.",
+        help=(
+            "Toolset the server exposes (written as SCHOLAR_TOOLSET): 'default' or 'all' = every tool; "
+            "otherwise a comma/space/'+'-separated list of groups: core, paper, maintenance."
+        ),
     )
     install_parser.add_argument(
         "--academic",

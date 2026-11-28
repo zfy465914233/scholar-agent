@@ -11,6 +11,12 @@ if TYPE_CHECKING:
 
 
 def build_shared_env(*, profile: str, toolset: str, academic: bool, scholar_home: str | None = None) -> dict[str, str]:
+    """MCP ``env`` block shared by every host installer.
+
+    ``SCHOLAR_TOOLSET`` is read by the server at startup: ``default`` / ``all``
+    expose every tool, anything else is a list of groups (``core``, ``paper``,
+    ``maintenance``) — see ``scholar_agent.server.resolve_toolset``.
+    """
     env = {
         "SCHOLAR_PROFILE": profile,
         "SCHOLAR_TOOLSET": toolset,
