@@ -1,8 +1,10 @@
 """Tests for scholar_agent.runtime pure functions."""
 
 import os
+import subprocess
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scholar_agent.runtime import (
     _build_pipx_install_plan,
@@ -110,12 +112,22 @@ class TestBuildPipxInstallPlan(unittest.TestCase):
 
     def test_force_install_not_yet_installed(self):
         """When force=True but package is not installed, should use --force flag."""
-        uninstall, install, mode = _build_pipx_install_plan(
-            pipx_command_prefix=["pipx"],
-            resolved_python="/usr/bin/python3",
-            resolved_wheel=Path("/tmp/pkg.whl"),
-            force=True,
+        # force=True makes the plan shell out to ``pipx list --json`` to decide
+        # between reinstall and install.  Fake an empty pipx list at the
+        # subprocess boundary so the test neither depends on nor writes to the
+        # developer's real pipx state (~/.local/pipx).
+        empty_pipx_list = subprocess.CompletedProcess(
+            args=["pipx", "list", "--json"], returncode=0, stdout='{"venvs": {}}'
         )
+        with patch("scholar_agent.runtime.subprocess.run", return_value=empty_pipx_list) as run:
+            uninstall, install, mode = _build_pipx_install_plan(
+                pipx_command_prefix=["pipx"],
+                resolved_python="/usr/bin/python3",
+                resolved_wheel=Path("/tmp/pkg.whl"),
+                force=True,
+            )
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0], ["pipx", "list", "--json"])
         self.assertIsNone(uninstall)
         self.assertEqual(mode, "install")
         self.assertIn("--force", install)
