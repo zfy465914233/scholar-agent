@@ -15,15 +15,26 @@ from scholar_agent.server import list_knowledge, query_knowledge, save_research
 
 _TEST_INDEX = _ROOT / "indexes" / "local" / "index.json"
 _TEST_KNOWLEDGE = _ROOT / "tests" / "fixtures"
-scholar_config._config_cache = {
-    "knowledge_dir": str(_TEST_KNOWLEDGE),
-    "index_path": str(_TEST_INDEX),
-    "scholar_dir": str(_ROOT),
-}
 
 
-def tearDownModule() -> None:
-    scholar_config.clear_cache()
+def _pin_test_config() -> None:
+    scholar_config._config_cache = {
+        "knowledge_dir": str(_TEST_KNOWLEDGE),
+        "index_path": str(_TEST_INDEX),
+        "scholar_dir": str(_ROOT),
+    }
+
+
+class _PinnedConfigTestCase(unittest.TestCase):
+    """Pin scholar_config to the fixture/index dirs above for every test.
+
+    Done in setUp, not at module import or setUpClass: conftest.py clears the
+    process-wide config cache before each test (SCHOLAR_HOME isolation), which
+    wipes anything pinned earlier.
+    """
+
+    def setUp(self) -> None:
+        _pin_test_config()
 
 
 def _build_index() -> None:
@@ -55,7 +66,7 @@ def _cleanup_card(card_path_str: str) -> None:
     _build_index()
 
 
-class QueryKnowledgeValidationTest(unittest.TestCase):
+class QueryKnowledgeValidationTest(_PinnedConfigTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         _build_index()
@@ -74,7 +85,7 @@ class QueryKnowledgeValidationTest(unittest.TestCase):
         self.assertNotIn("limit must be", result.get("error", ""))
 
 
-class SaveResearchValidationTest(unittest.TestCase):
+class SaveResearchValidationTest(_PinnedConfigTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         _build_index()
@@ -106,7 +117,7 @@ class SaveResearchValidationTest(unittest.TestCase):
         _cleanup_card(result["card_path"])
 
 
-class ListKnowledgeValidationTest(unittest.TestCase):
+class ListKnowledgeValidationTest(_PinnedConfigTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         _build_index()
