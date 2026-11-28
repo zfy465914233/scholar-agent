@@ -162,15 +162,22 @@ class TestRetrieveHybrid(unittest.TestCase):
     def test_hybrid_with_empty_embedding_index(self) -> None:
         """Empty embedding_index dict falls back to BM25."""
         docs = _make_documents(5)
-        results = retrieve_hybrid(
-            "markov chain",
-            docs,
-            embedding_index={},
-            bm25_weight=0.6,
-            limit=3,
-        )
+        # retrieve_by_embedding embeds the query before it looks at the index;
+        # stub the backend (embed_texts → "no backend available") so the
+        # fallback is reached without a real network/model call.
+        with patch("scholar_agent.engine.embedding_retrieve.embed_texts", return_value=[]):
+            results = retrieve_hybrid(
+                "markov chain",
+                docs,
+                embedding_index={},
+                bm25_weight=0.6,
+                limit=3,
+            )
         # Should still return results (bm25 fallback due to no embedding scores)
         self.assertIsInstance(results, list)
+        self.assertGreater(len(results), 0)
+        for r in results:
+            self.assertEqual(r["source"], "bm25")
 
     def test_hybrid_with_mock_embedding(self) -> None:
         """Hybrid retrieval with mocked embedding returns results."""
@@ -537,8 +544,12 @@ class TestResultSnippet(unittest.TestCase):
 
     def test_hybrid_results_have_snippet(self) -> None:
         docs = _make_documents(5)
-        # empty embedding index → BM25 fallback path, still must carry snippet
-        results = retrieve_hybrid("markov chain", docs, {"doc_ids": [], "embeddings": []}, 0.8, 3)
+        # empty embedding index → BM25 fallback path, still must carry snippet.
+        # Stub the embedding backend so the fallback is reached without the
+        # 30s network timeout of a real embed call.
+        with patch("scholar_agent.engine.embedding_retrieve.embed_texts", return_value=[]):
+            results = retrieve_hybrid("markov chain", docs, {"doc_ids": [], "embeddings": []}, 0.8, 3)
+        self.assertGreater(len(results), 0)
         for r in results:
             self.assertIn("snippet", r)
 
