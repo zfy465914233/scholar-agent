@@ -251,9 +251,36 @@ Scholar Agent 作为 MCP 服务器运行，直接接入你的工具：
 - **VS Code Copilot** — `scholar-agent install vscode --write`
 - **OpenCode** — `scholar-agent install opencode --write`
 
-**核心工具**（始终可用）：`query_knowledge` · `save_research` · `list_knowledge` · `capture_answer` · `ingest_source` · `build_graph` · `validate_knowledge` · `lint_knowledge` · `scan_stale_knowledge` · `scan_dead_links`
+**内置工具**（始终可用——13 个）。*Toolset* 列是该工具所属的 `SCHOLAR_TOOLSET` 分组：
 
-**学术工具**（设置 `SCHOLAR_ACADEMIC=1` 启用）：`search_papers` · `search_conf_papers` · `download_paper` · `analyze_paper` · `extract_paper_images` · `paper_to_card` · `daily_recommend` · `link_paper_keywords`
+| 工具 | Toolset | 说明 |
+|------|---------|------|
+| `query_knowledge` | core | 检索本地知识库；返回命中卡片以及 `knowledge_status` 摘要（`total_cards`、`draft_backlog`） |
+| `list_knowledge` | core | 浏览全部知识卡片，可按主题过滤 |
+| `save_research` | core | 把结构化、带来源的答案存为知识卡片 |
+| `capture_answer` | core | 把一段问答答案存为草稿卡片 |
+| `review_card` | core | 按用户的明确指令调整卡片信任状态（`reviewed` / `trusted` / `stale` / `deprecated`） |
+| `ingest_source` | core | 把 URL 或原始文本摄取为草稿卡片 |
+| `fetch_url` | core | 抓取网页正文为 markdown，并保存本地快照 |
+| `build_graph` | paper | 生成交互式知识图谱可视化 |
+| `import_paperpulse_note` | paper | 从 PaperPulse SaaS 导入提炼好的论文笔记 |
+| `validate_knowledge` | maintenance | 校验卡片 frontmatter、正文密度和来源时效，不写文件 |
+| `lint_knowledge` | maintenance | 报告孤儿卡片、断链、陈旧卡片和标题重叠 |
+| `scan_stale_knowledge` | maintenance | 报告来源超出领域时效阈值的卡片 |
+| `scan_dead_links` | maintenance | 探测卡片来源 URL 的 404 / 410 / 连接失败 |
+
+**学术工具**（设置 `SCHOLAR_ACADEMIC=1` 启用——8 个，均属于 `paper` 分组）：
+
+| 工具 | 说明 |
+|------|------|
+| `search_papers` | 检索 arXiv + Semantic Scholar 并打分 |
+| `search_conf_papers` | 通过 DBLP + Semantic Scholar 增强检索会议论文 |
+| `download_paper` | 下载论文 PDF 到本地 |
+| `analyze_paper` | 生成结构化的深度分析 markdown 笔记 |
+| `extract_paper_images` | 从 arXiv 源码包或 PDF 中提取插图 |
+| `paper_to_card` | 把论文分析转换为知识卡片 |
+| `daily_recommend` | 运行每日论文推荐流程 |
+| `link_paper_keywords` | 为笔记中的关键词自动添加 `[[wikilinks]]` |
 
 `save_research` 启用来源门禁：必须提供非空 `sources` 数组，并让每个 `supporting_claims[].evidence_ids` 引用来源。没有来源的对话沉淀请用 `capture_answer`。URL 摄取和 `fetch_url` 会把一手来源快照存到 `knowledge/_snapshots/`；这些内部快照不会进入卡片索引和治理扫描。
 
@@ -310,6 +337,7 @@ Scholar Agent 作为 MCP 服务器运行，直接接入你的工具：
 | 变量 | 必需 | 说明 |
 |------|------|------|
 | `SCHOLAR_ACADEMIC` | 否 | 设为 `1` 启用学术工具 |
+| `SCHOLAR_TOOLSET` | 否 | 服务端暴露哪些工具。未设置、`default` 或 `all` = 全部；否则是逗号 / 空格 / `+` 分隔的分组列表——`core`（知识读写）、`paper`（图谱、PaperPulse 导入和学术工具）、`maintenance`（只读治理扫描）。未知分组会在启动时报错退出并列出合法取值。 |
 | `SCHOLAR_HOME` | 否 | 覆盖 Scholar home。未设置时，配置/索引默认在 `~/.scholar/`，知识数据默认在 `~/scholar/`；设置后，两者都放在 `SCHOLAR_HOME` 下。 |
 | `S2_API_KEY` | 否 | Semantic Scholar API key（[免费申请](https://api.semanticscholar.org/)） |
 | `LLM_API_KEY` | 否 | LLM API key（用于高级合成管线） |

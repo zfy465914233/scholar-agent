@@ -18,7 +18,7 @@ scholar-agent config init
 scholar-agent/
 ├── src/scholar_agent/
 │   ├── __init__.py
-│   ├── server.py              # MCP server (14 tools)
+│   ├── server.py              # MCP server: @tool registrations + SCHOLAR_TOOLSET filter
 │   ├── cli.py                 # CLI entry point (scholar-agent command)
 │   ├── engine/                # Core business logic
 │   │   ├── academic/          # Academic research modules
@@ -46,10 +46,11 @@ scholar-agent/
 ## Running Tests
 
 ```bash
-python -m pytest tests/ -v
+pip install -e ".[dev]"
+python -m pytest
 ```
 
-All tests run offline — no API keys or external services needed. 1117 tests covering BM25 retrieval, academic scoring, MCP tools, and input validation.
+`pyproject.toml` already points pytest at `tests/` — no extra flags needed. The suite runs offline (no API keys or external services) and isolates itself from your real Scholar data: every test gets a temporary `SCHOLAR_HOME`, so nothing touches `~/.scholar` or `~/scholar`. It covers BM25 retrieval, academic scoring, MCP tools, and input validation.
 
 ## Code Quality
 
@@ -77,7 +78,7 @@ scholar-agent doctor
 scholar-agent serve-mcp  # (Ctrl+C to stop)
 
 # Run test suite
-python -m pytest tests/ -v
+python -m pytest
 
 # Run with coverage
 python -m pytest tests/ --cov=scholar_agent --cov-report=term-missing

@@ -255,9 +255,36 @@ Scholar Agent runs as an MCP server, integrating directly into your tools:
 - **VS Code Copilot** — `scholar-agent install vscode --write`
 - **OpenCode** — `scholar-agent install opencode --write`
 
-**Core tools** (always available): `query_knowledge` · `save_research` · `list_knowledge` · `capture_answer` · `ingest_source` · `build_graph` · `validate_knowledge` · `lint_knowledge` · `scan_stale_knowledge` · `scan_dead_links`
+**Built-in tools** (always available — 13). The *Toolset* column is the `SCHOLAR_TOOLSET` group the tool belongs to:
 
-**Academic tools** (set `SCHOLAR_ACADEMIC=1`): `search_papers` · `search_conf_papers` · `download_paper` · `analyze_paper` · `extract_paper_images` · `paper_to_card` · `daily_recommend` · `link_paper_keywords`
+| Tool | Toolset | Description |
+|------|---------|-------------|
+| `query_knowledge` | core | Search the local knowledge base; returns matching cards plus a `knowledge_status` summary (`total_cards`, `draft_backlog`) |
+| `list_knowledge` | core | Browse all knowledge cards, optionally filtered by topic |
+| `save_research` | core | Persist a structured, source-backed answer as a knowledge card |
+| `capture_answer` | core | Capture a Q&A answer as a draft knowledge card |
+| `review_card` | core | Adjust a card's trust state (`reviewed` / `trusted` / `stale` / `deprecated`) on the user's explicit instruction |
+| `ingest_source` | core | Ingest a URL or raw text into the knowledge base as a draft card |
+| `fetch_url` | core | Fetch a web URL as markdown and archive a local snapshot |
+| `build_graph` | paper | Build an interactive knowledge graph visualization |
+| `import_paperpulse_note` | paper | Import a distilled paper note from PaperPulse SaaS |
+| `validate_knowledge` | maintenance | Validate card frontmatter, body density and source freshness without writing files |
+| `lint_knowledge` | maintenance | Report orphan cards, broken wiki-links, stale cards and overlapping titles |
+| `scan_stale_knowledge` | maintenance | Report cards whose sources exceed the domain freshness threshold |
+| `scan_dead_links` | maintenance | Probe source URLs across cards for 404 / 410 / connection failures |
+
+**Academic tools** (set `SCHOLAR_ACADEMIC=1` — 8, all in the `paper` toolset):
+
+| Tool | Description |
+|------|-------------|
+| `search_papers` | Search arXiv + Semantic Scholar with scoring |
+| `search_conf_papers` | Search conference papers via DBLP + Semantic Scholar enrichment |
+| `download_paper` | Download a paper PDF to local storage |
+| `analyze_paper` | Generate a structured deep-analysis markdown note |
+| `extract_paper_images` | Extract figures from the arXiv source archive or PDF |
+| `paper_to_card` | Convert a paper analysis into a knowledge card |
+| `daily_recommend` | Run the daily paper recommendation workflow |
+| `link_paper_keywords` | Auto-link keywords in notes as `[[wikilinks]]` |
 
 `save_research` is provenance-gated: pass a non-empty `sources` array and cite those sources from every `supporting_claims[].evidence_ids`. For unsourced conversation captures, use `capture_answer` instead. URL ingestion and `fetch_url` archive first-hand source snapshots under `knowledge/_snapshots/`; those internal snapshots are excluded from card indexing and governance scans.
 
@@ -314,6 +341,7 @@ Knowledge is indexed with **BM25** for fast keyword search — no external depen
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SCHOLAR_ACADEMIC` | No | Set to `1` to enable academic tools |
+| `SCHOLAR_TOOLSET` | No | Which tools the server exposes. Unset, `default` or `all` = everything; otherwise a comma / space / `+` separated list of groups — `core` (knowledge read/write), `paper` (graph, PaperPulse import and the academic tools), `maintenance` (read-only governance scans). An unknown group aborts startup with the legal values. |
 | `SCHOLAR_HOME` | No | Override Scholar home. When unset, config/indexes default to `~/.scholar/` and knowledge data defaults to `~/scholar/`; when set, both are rooted in `SCHOLAR_HOME`. |
 | `S2_API_KEY` | No | Semantic Scholar API key ([get one free](https://api.semanticscholar.org/)) |
 | `LLM_API_KEY` | No | LLM API key for advanced synthesis pipeline |
