@@ -1,12 +1,13 @@
 ---
 name: scholar-agent
-description: "严谨执行论文搜索、文献综述、related work、paper search、literature review、survey synthesis、baseline comparison 与研究路线设计。Use when the user asks for papers, SOTA, baselines, related work, or research planning."
+description: "严谨执行论文搜索、文献综述、related work、paper search、literature review、survey synthesis、baseline comparison 与研究路线设计；回答技术或研究问题、写知识卡、做网络调研前先查已有知识库（query_knowledge）。Use when the user asks for papers, SOTA, baselines, related work, or research planning, or when answering a technical or research question that the existing knowledge base may already cover."
 argument-hint: "描述研究主题、范围、时间区间与期望产出"
 ---
 
 # Scholar-Agent
 
 ## 适用场景
+- 回答技术或研究问题前，先查已有知识库（可能已有带出处的答案）
 - 搜索论文、找 benchmark 或 baseline
 - 编写文献综述、related work、survey 或阅读清单
 - 比较方法、归纳研究脉络、制定研究方向
@@ -80,6 +81,13 @@ argument-hint: "描述研究主题、范围、时间区间与期望产出"
 - 综述、研究结论或路线建议必须建立在论文级笔记之上。
 - 明确共识、分歧、趋势、空白点与潜在机会。
 - 最终展示完整产出清单：论文笔记列表，以及综述卡片或综合结论列表。
+
+## 知识问答与复核（先查库）
+- 回答可能已有积累的技术或研究问题前，先 `query_knowledge`；写新知识卡、做网络调研前同理——库里可能已有带出处的答案，命中就直接用，不重复调研。
+- 引用卡片时给出卡片路径（结果里的 `path`），让用户能回溯原文。
+- 回答里产生了有来源、可复用的新知识且用户认可时，用 `save_research` 存卡；未经同意不要批量存卡。
+- `query_knowledge` 返回的 `knowledge_status.draft_backlog` > 0 时，在合适的时机（如回答收尾）提醒用户可以复核；复核用 `review_card`，且只在用户明确指令下调用（见该工具说明）。
+- 知识类工具一览：查 `query_knowledge` / `list_knowledge`；存 `save_research` / `capture_answer` / `ingest_source` / `fetch_url`；复核 `review_card`；治理 `validate_knowledge` / `lint_knowledge` / `scan_stale_knowledge` / `scan_dead_links`。
 
 ## 知识卡沉淀工作流（一手抓取 → save_research）
 沉淀「看卡不用查网」的深度知识卡（区别于论文笔记）时，走一手抓取工作流，让卡片自带出处、防链接失效：

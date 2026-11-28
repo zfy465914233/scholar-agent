@@ -339,8 +339,12 @@ def _flush_query_state() -> None:
 def query_knowledge(query: str, limit: int = 5, rerank: bool = False) -> str:
     """Search the local knowledge base for relevant information.
 
+    Call this FIRST — before answering a technical or research question, writing
+    a new knowledge card, or starting web research: the knowledge base may already
+    hold a sourced answer. The response carries `knowledge_status` with
+    `total_cards` and `draft_backlog` (cards still awaiting review).
+
     Returns top-k knowledge cards matching the query, with scores and content.
-    Use this to find existing knowledge before doing web research.
 
     Args:
         query: The search query in natural language.
@@ -1036,6 +1040,8 @@ def _scan_domain_stale_cards(knowledge_root: Path, *, now: datetime | None = Non
 
 
 def _lint_knowledge_payload(stale_days: int = 90) -> dict[str, Any]:
+    from scholar_agent.engine.local_index import lifecycle_state
+
     cards = _knowledge_cards_for_report()
     card_ids = {str(card.get("id", "")) for card in cards if card.get("id")}
     stale_cutoff = datetime.now(timezone.utc) - timedelta(days=stale_days)
@@ -1106,6 +1112,9 @@ def _lint_knowledge_payload(stale_days: int = 90) -> dict[str, Any]:
         "status": "ok" if issue_count == 0 else "issues",
         "knowledge_dir": str(get_knowledge_dir()),
         "total": len(cards),
+        # Informational, like query_knowledge's knowledge_status: cards still
+        # awaiting review. Not an issue — a draft is unverified, not defective.
+        "draft_backlog": sum(1 for card in cards if lifecycle_state(card) == "draft"),
         "issue_count": issue_count,
         "issues": {
             "orphans": orphans,
@@ -1169,7 +1178,9 @@ def lint_knowledge(stale_days: int = 90) -> str:
     """Run read-only content health checks over the local knowledge base.
 
     Reports orphan cards, broken wiki-links, cards not updated within
-    stale_days, and highly overlapping titles. This tool never edits files.
+    stale_days, and highly overlapping titles, plus `draft_backlog` (cards
+    still awaiting review — the same count query_knowledge returns in
+    `knowledge_status`). This tool never edits files.
 
     Args:
         stale_days: Age threshold in days for the updated_at lint check.

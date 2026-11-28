@@ -11,7 +11,10 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 from scholar_agent.engine.common import (
     atomic_write_text,
@@ -94,6 +97,21 @@ def _is_deprecated_doc(doc: dict[str, object]) -> bool:
     return doc.get("trust") == "deprecated"
 
 
+def lifecycle_state(metadata: Mapping[str, object]) -> str:
+    """Lifecycle state a card currently sits in: ``review_status`` when the
+    frontmatter sets it, else the creation-time ``confidence`` label, else
+    ``draft``.
+
+    ``review_card`` only ever writes ``review_status`` while ``confidence`` is
+    fixed when the card is built (``draft`` for every card the pipeline writes),
+    so the state machine's field wins. Index documents written before
+    ``review_status`` was indexed carry only ``confidence`` — hence the
+    fallback, which keeps ``draft_backlog`` counts working on older indexes.
+    """
+    state = str(metadata.get("review_status") or metadata.get("confidence") or "draft").strip().lower()
+    return state or "draft"
+
+
 def parse_card(path: Path, knowledge_root: Path | None = None) -> dict[str, object]:
     raw = path.read_text(encoding="utf-8")
     metadata, body = split_frontmatter(raw)
@@ -121,6 +139,7 @@ def parse_card(path: Path, knowledge_root: Path | None = None) -> dict[str, obje
         "source_refs": metadata.get("source_refs", []),
         "updated_at": metadata.get("updated_at"),
         "confidence": confidence,
+        "review_status": str(metadata.get("review_status") or "").strip().lower(),
         "trust": _trust_tier(metadata),
         "search_text": build_search_text(metadata, body),
         "links": links,
@@ -260,7 +279,10 @@ def _attach_backlinks(documents: list[dict]) -> None:
         doc["backlinks"] = bl_map.get(doc["doc_id"], [])
 
 
-_INDEX_SCHEMA_VERSION = 2
+# 3: documents carry ``review_status``. Incremental rebuilds only re-parse
+# changed cards, so without a version bump every index built before the field
+# existed would keep counting already-reviewed cards as drafts.
+_INDEX_SCHEMA_VERSION = 3
 
 
 def build_index(knowledge_root: Path, extra_dirs: list[Path] | None = None) -> dict[str, object]:

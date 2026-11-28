@@ -7,10 +7,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scholar_agent.engine.bm25 import BM25
+from scholar_agent.engine.local_index import lifecycle_state
 from scholar_agent.engine.local_retrieve import (
     _bm25_ranked_with_expansion,
     _is_ambiguous,
     _normalize_scores,
+    knowledge_status,
     retrieve,
     retrieve_bm25,
     retrieve_hybrid,
@@ -369,6 +371,46 @@ class TestRetrieve(unittest.TestCase):
             index_path = self._make_index_file(tmp)
             result = retrieve("custom query text", index_path, limit=5)
             self.assertEqual(result["query"], "custom query text")
+
+    def test_retrieve_reports_knowledge_status_over_served_cards_only(self) -> None:
+        """Deprecated docs leave the served view before the status is counted."""
+        docs = [*_make_documents(3), {"doc_id": "gone", "search_text": "markov", "trust": "deprecated"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            index_path = self._make_index_file(tmp, docs=docs)
+            result = retrieve("markov chain", index_path, limit=5)
+        # _make_documents carry neither review_status nor confidence → draft.
+        self.assertEqual({"total_cards": 3, "draft_backlog": 3}, result["knowledge_status"])
+
+    def test_retrieve_error_payload_carries_no_status(self) -> None:
+        """An unreadable index has unknown totals — do not report zeros."""
+        result = retrieve("test", Path("/nonexistent/path/index.json"), limit=5)
+        self.assertIn("error", result)
+        self.assertNotIn("knowledge_status", result)
+
+
+class TestKnowledgeStatus(unittest.TestCase):
+    """knowledge_status / lifecycle_state — the draft backlog query_knowledge exposes."""
+
+    def test_counts_cards_in_draft_lifecycle_state(self) -> None:
+        docs = [
+            {"doc_id": "a", "confidence": "draft", "review_status": "draft"},  # untouched draft
+            {"doc_id": "b", "confidence": "draft", "review_status": "reviewed"},  # promoted via review_card
+            {"doc_id": "c", "confidence": "draft", "review_status": "trusted"},
+            {"doc_id": "d", "confidence": "draft", "review_status": "stale"},
+            {"doc_id": "e", "confidence": "confirmed", "review_status": ""},  # older index: confidence only
+            {"doc_id": "f"},  # neither field
+        ]
+        self.assertEqual({"total_cards": 6, "draft_backlog": 2}, knowledge_status(docs))
+
+    def test_empty_index(self) -> None:
+        self.assertEqual({"total_cards": 0, "draft_backlog": 0}, knowledge_status([]))
+
+    def test_lifecycle_state_precedence(self) -> None:
+        # review_card writes review_status only, so it outranks the creation-time confidence.
+        self.assertEqual("reviewed", lifecycle_state({"review_status": "reviewed", "confidence": "draft"}))
+        self.assertEqual("confirmed", lifecycle_state({"confidence": "Confirmed"}))
+        self.assertEqual("draft", lifecycle_state({"review_status": None, "confidence": ""}))
+        self.assertEqual("draft", lifecycle_state({}))
 
 
 class TestParseArgs(unittest.TestCase):

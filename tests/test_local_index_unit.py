@@ -5,7 +5,14 @@ from __future__ import annotations
 import textwrap
 from typing import TYPE_CHECKING
 
-from scholar_agent.engine.local_index import build_index, build_search_text, is_card, parse_card, split_frontmatter
+from scholar_agent.engine.local_index import (
+    build_index,
+    build_search_text,
+    is_card,
+    lifecycle_state,
+    parse_card,
+    split_frontmatter,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -154,6 +161,20 @@ class TestParseCard:
         result = parse_card(card)
         assert result["doc_id"] == "empty"
         assert result["search_text"].strip() == ""
+
+    def test_review_status_is_indexed_alongside_confidence(self, tmp_path: Path) -> None:
+        """review_card only writes review_status; the index must carry it so the
+        draft backlog (lifecycle_state) drops after a promotion."""
+        reviewed = tmp_path / "reviewed.md"
+        reviewed.write_text("---\nid: r1\nconfidence: draft\nreview_status: Reviewed\n---\nBody", encoding="utf-8")
+        result = parse_card(reviewed)
+        assert result["confidence"] == "draft"
+        assert result["review_status"] == "reviewed"
+        assert lifecycle_state(result) == "reviewed"
+
+        plain = tmp_path / "plain.md"
+        plain.write_text("---\nid: p1\n---\nBody", encoding="utf-8")
+        assert parse_card(plain)["review_status"] == ""
 
     def test_build_index_skips_snapshots(self, tmp_path: Path) -> None:
         card = tmp_path / "topic" / "real.md"

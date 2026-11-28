@@ -19,6 +19,7 @@ from typing import TypeVar, cast
 
 from scholar_agent.engine.bm25 import BM25
 from scholar_agent.engine.common import MISS, BoundedMemo
+from scholar_agent.engine.local_index import lifecycle_state
 from scholar_agent.engine.scholar_config import get_index_path
 from scholar_agent.engine.synonyms import expand_query
 
@@ -324,6 +325,19 @@ def _is_ambiguous(results: list[dict]) -> bool:
     return (s1 - s2) / s1 < AMBIGUOUS_RELATIVE_DIFF
 
 
+def knowledge_status(documents: list[dict]) -> dict[str, int]:
+    """Card-level summary of the served index view, reported next to results.
+
+    ``draft_backlog`` counts cards still in the ``draft`` lifecycle state, so it
+    shrinks as cards are promoted through ``review_card``. Computed from the
+    documents already loaded for the query — no additional file reads.
+    """
+    return {
+        "total_cards": len(documents),
+        "draft_backlog": sum(1 for doc in documents if lifecycle_state(doc) == "draft"),
+    }
+
+
 def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, **kwargs) -> dict[str, Any]:
     """Main retrieval entry point — backward compatible with existing callers.
 
@@ -331,6 +345,9 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
     passes them through :func:`scholar_agent.engine.rerank.rerank` for LLM-based
     cross-encoder scoring. This adds one LLM call per candidate (~2s each) and
     is opt-in for callers that need high-quality top-1 ranking.
+
+    The payload carries ``knowledge_status`` (:func:`knowledge_status`) over the
+    served (non-deprecated) cards.
     """
     from scholar_agent.engine import metrics
     from scholar_agent.engine.synonyms import expand_query
@@ -345,6 +362,7 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
     # them as matches. They stay on disk for provenance (I2) but are absent
     # from the served index view.
     documents = [d for d in documents if d.get("trust") != "deprecated"]
+    status = knowledge_status(documents)
 
     embedding_index_path = kwargs.get("embedding_index_path")
     embedding_index = None
@@ -409,7 +427,7 @@ def retrieve(query: str, index_path: Path, limit: int, *, rerank: bool = False, 
             results.sort(key=lambda r: -r.get("score", 0.0))
     except Exception:
         pass
-    return {"query": query, "results": results, "ambiguous": ambiguous}
+    return {"query": query, "results": results, "ambiguous": ambiguous, "knowledge_status": status}
 
 
 def main() -> int:

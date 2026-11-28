@@ -111,6 +111,41 @@ class QueryKnowledgeTest(_PinnedConfigTestCase):
         result = json.loads(query_knowledge("Markov chain", limit=2))
         self.assertLessEqual(len(result["results"]), 2)
 
+    def test_query_returns_knowledge_status(self) -> None:
+        """knowledge_status counts the served cards and those still in the draft
+        lifecycle state (review_card writes review_status, never confidence)."""
+        from scholar_agent.engine.local_index import build_index
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "knowledge"
+            root.mkdir()
+            cards = {
+                "d1": "confidence: draft\nreview_status: draft",  # untouched draft
+                "d2": "confidence: draft\nreview_status: reviewed",  # promoted via review_card
+                "d3": "confidence: draft",  # older card: confidence only
+                "d4": "review_status: deprecated",  # terminal — never indexed
+                "d5": "confidence: confirmed",
+            }
+            for card_id, fields in cards.items():
+                (root / f"{card_id}.md").write_text(
+                    f"---\nid: {card_id}\ntitle: {card_id}\ntype: knowledge\ntopic: test\n{fields}\n---\n"
+                    "Markov chain probability notes. " * 5,
+                    encoding="utf-8",
+                )
+            index_path = Path(tmp) / "index.json"
+            index_path.write_text(json.dumps(build_index(root)), encoding="utf-8")
+            scholar_config._config_cache = {
+                "knowledge_dir": str(root),
+                "index_path": str(index_path),
+                "scholar_dir": str(_ROOT),
+            }
+
+            result = json.loads(query_knowledge("Markov chain"))
+
+        self.assertNotIn("index_refreshed", result)
+        self.assertEqual({"total_cards": 4, "draft_backlog": 2}, result["knowledge_status"])
+        self.assertEqual(4, len(result["results"]))
+
 
 class SaveResearchTest(_PinnedConfigTestCase):
     @classmethod
@@ -355,6 +390,29 @@ class KnowledgeGovernanceToolTest(unittest.TestCase):
         self.assertEqual(1, result["total"])
         self.assertGreaterEqual(result["issue_count"], 1)
         self.assertEqual("missing-card", result["issues"]["broken_links"][0]["target"])
+
+    def test_lint_knowledge_reports_draft_backlog(self) -> None:
+        """draft_backlog follows the lifecycle state (review_status first), so a
+        card promoted by review_card — whose confidence stays draft — leaves it."""
+        body = "This is a substantial body for governance validation. " * 8
+
+        def card(card_id: str, status_fields: str) -> str:
+            return f"---\nid: {card_id}\ntitle: T\ntype: knowledge\ntopic: test\n{status_fields}\nupdated_at: 2026-06-01\n---\n\n{body}"
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "confirmed.md").write_text(card("confirmed-card", "confidence: confirmed"), encoding="utf-8")
+            (root / "reviewed.md").write_text(
+                card("reviewed-card", "confidence: draft\nreview_status: reviewed"), encoding="utf-8"
+            )
+            (root / "draft.md").write_text(card("draft-card", "confidence: draft"), encoding="utf-8")
+            with patch("scholar_agent.server.get_knowledge_dir", return_value=root):
+                result = json.loads(lint_knowledge(stale_days=30))
+        self.assertEqual(3, result["total"])
+        self.assertEqual(1, result["draft_backlog"])
+        # Informational only: a draft is unverified, not a lint issue.
+        issue_lists = result["issues"]
+        self.assertEqual(result["issue_count"], sum(len(v) for v in issue_lists.values()))
 
     def test_scan_stale_knowledge_skips_snapshots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
